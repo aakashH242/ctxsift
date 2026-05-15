@@ -2,7 +2,12 @@
 
 from pathlib import Path
 
-from ctxsift.extraction import ExtractionContext, build_extracted_terms, extract_referenced_files, extract_signal
+from ctxsift.extraction import (
+    ExtractionContext,
+    build_extracted_terms,
+    extract_referenced_files,
+    extract_signal,
+)
 
 
 def test_extract_signal_finds_paths_tests_symbols_packages_and_commands(tmp_path: Path) -> None:
@@ -40,7 +45,9 @@ def test_extract_signal_finds_paths_tests_symbols_packages_and_commands(tmp_path
     assert signal.warning_lines == ["warning: deprecated setting"]
     assert "tests/test_auth.py::test_login FAILED" in signal.error_lines
     assert ("src/auth.py", "file") in {(term.term, term.kind) for term in terms}
-    assert ("src/auth.py:9 in login", "traceback_frame") in {(term.term, term.kind) for term in terms}
+    assert ("src/auth.py:9 in login", "traceback_frame") in {
+        (term.term, term.kind) for term in terms
+    }
     assert ("pytest", "command") in {(term.term, term.kind) for term in terms}
 
 
@@ -97,7 +104,7 @@ def test_extract_signal_matches_docker_domain(tmp_path: Path) -> None:
     text = "\n".join(
         [
             "docker compose build api",
-            "failed to solve: process \"/bin/sh -c pnpm build\" did not complete successfully: exit code: 2",
+            'failed to solve: process "/bin/sh -c pnpm build" did not complete successfully: exit code: 2',
             "service api exited with code 2",
         ]
     )
@@ -198,7 +205,10 @@ def test_extract_signal_matches_pylint_domain(tmp_path: Path) -> None:
 
     assert "pylint" in signal.matched_domains
     assert "pylint" in signal.command_terms
-    assert "src/app.py:1:0: C0114: Missing module docstring (missing-module-docstring)" in signal.error_lines
+    assert (
+        "src/app.py:1:0: C0114: Missing module docstring (missing-module-docstring)"
+        in signal.error_lines
+    )
 
 
 def test_extract_signal_matches_black_domain(tmp_path: Path) -> None:
@@ -214,13 +224,15 @@ def test_extract_signal_matches_black_domain(tmp_path: Path) -> None:
 
 def test_extract_signal_matches_mypy_domain(tmp_path: Path) -> None:
     context = ExtractionContext(cwd=tmp_path, workspace_root=tmp_path)
-    text = "src/app.py:8: error: Item \"None\" has no attribute \"id\"  [union-attr]\nmypy src"
+    text = 'src/app.py:8: error: Item "None" has no attribute "id"  [union-attr]\nmypy src'
 
     signal = extract_signal(text, context)
 
     assert "mypy" in signal.matched_domains
     assert "mypy" in signal.command_terms
-    assert "src/app.py:8: error: Item \"None\" has no attribute \"id\"  [union-attr]" in signal.error_lines
+    assert (
+        'src/app.py:8: error: Item "None" has no attribute "id"  [union-attr]' in signal.error_lines
+    )
 
 
 def test_extract_signal_matches_npm_install_errors(tmp_path: Path) -> None:
@@ -296,7 +308,7 @@ def test_extract_signal_matches_terraform_plan_errors(tmp_path: Path) -> None:
         [
             "terraform plan",
             "Error: Unsupported argument",
-            "  on main.tf line 12, in resource \"aws_s3_bucket\" \"logs\":",
+            '  on main.tf line 12, in resource "aws_s3_bucket" "logs":',
             "  12:   bad_arg = true",
         ]
     )

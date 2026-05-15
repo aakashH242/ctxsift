@@ -3,6 +3,7 @@
 from pathlib import Path
 import sqlite3
 import sys
+from typing import cast
 
 from typer.testing import CliRunner
 
@@ -13,7 +14,9 @@ from ctxsift.cli import app
 runner = CliRunner()
 
 
-def test_run_command_preserves_child_exit_code_and_stores_metadata(tmp_path: Path, monkeypatch) -> None:
+def test_run_command_preserves_child_exit_code_and_stores_metadata(
+    tmp_path: Path, monkeypatch
+) -> None:
     monkeypatch.chdir(tmp_path)
     env = {"CTXSIFT_DB_PATH": str(tmp_path / "ctxsift.db")}
     seen: dict[str, object] = {}
@@ -43,9 +46,10 @@ def test_run_command_preserves_child_exit_code_and_stores_metadata(tmp_path: Pat
 
     assert result.exit_code == 3
     assert "Run summary" in result.stdout
-    assert "Stdout:" in seen["raw_input"]
-    assert "Stderr:" in seen["raw_input"]
-    assert "Git repo:" in seen["raw_input"]
+    raw_input = cast(str, seen["raw_input"])
+    assert "Stdout:" in raw_input
+    assert "Stderr:" in raw_input
+    assert "Git repo:" in raw_input
     with sqlite3.connect(Path(env["CTXSIFT_DB_PATH"])) as connection:
         row = connection.execute(
             """

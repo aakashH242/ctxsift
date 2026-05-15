@@ -83,7 +83,9 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
     "remote.api_key": ConfigKeySpec(("remote", "api_key"), TypeAdapter(str)),
     "remote.api_version": ConfigKeySpec(("remote", "api_version"), TypeAdapter(str)),
     "remote.model_name": ConfigKeySpec(("remote", "model_name"), TypeAdapter(str)),
-    "remote.reasoning_mode": ConfigKeySpec(("remote", "reasoning_mode"), TypeAdapter(ReasoningMode)),
+    "remote.reasoning_mode": ConfigKeySpec(
+        ("remote", "reasoning_mode"), TypeAdapter(ReasoningMode)
+    ),
     "local.backend": ConfigKeySpec(("local", "backend"), TypeAdapter(str)),
     "local.model": ConfigKeySpec(("local", "model"), TypeAdapter(str)),
     "local.device": ConfigKeySpec(("local", "device"), TypeAdapter(str)),

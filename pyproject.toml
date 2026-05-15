@@ -19,9 +19,13 @@ dependencies = [
 
 [project.scripts]
 ctxsift = "ctxsift.cli:app"
+fmt = "ctxsift.dev:fmt"
+lint = "ctxsift.dev:lint"
 
 [dependency-groups]
 dev = [
+    "black>=25.1,<26.0",
+    "mypy>=1.16,<2.0",
     "pytest>=8.4,<9.0",
     "ruff>=0.12,<0.13",
 ]
@@ -38,3 +42,14 @@ testpaths = ["tests"]
 [tool.ruff]
 line-length = 100
 target-version = "py312"
+include = ["src/**/*.py", "tests/**/*.py"]
+
+[tool.black]
+line-length = 100
+target-version = ["py312"]
+include = '^/(src|tests)/.*\.pyi?$'
+
+[tool.mypy]
+files = ["src", "tests"]
+mypy_path = ["src"]
+explicit_package_bases = true

@@ -2,6 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -26,7 +27,7 @@ def test_build_messages_preserves_exact_signal_values() -> None:
     )
 
     messages = build_messages(request)
-    user_text = messages[1]["content"][0]["text"]
+    user_text = cast(str, cast(list[dict[str, Any]], messages[1]["content"])[0]["text"])
 
     assert "src/auth.py" in user_text
     assert "src/auth.py:9 in login" in user_text
@@ -46,7 +47,7 @@ def test_resolve_device_forces_cpu_when_cuda_unavailable() -> None:
 def test_transformers_backend_uses_pipeline_async(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     def fake_pipeline(**kwargs):
         captured["init"] = kwargs

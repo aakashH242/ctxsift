@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -50,6 +51,22 @@ class WorkspaceContext(StrictModel):
     db_path: str | None = None
 
 
+class StorageInitResult(StrictModel):
+    """Result of database initialization."""
+
+    db_path: Path
+    schema_version: str
+
+
+class CacheLookupResult(StrictModel):
+    """Stored exact-cache hit details."""
+
+    record_id: int
+    compressed_output: str
+    model_provider: str | None = None
+    model_name: str | None = None
+
+
 class CompressionRequest(StrictModel):
     """Compression input carried through the pipeline."""
 
@@ -79,6 +96,37 @@ class CompressionResult(StrictModel):
     model_provider: str | None = None
     model_name: str | None = None
     record_id: int | None = None
+
+
+class RecallRecord(StrictModel):
+    """Recall result displayed to the user."""
+
+    record_id: int
+    created_at: str
+    freshness_status: FreshnessStatus
+    instruction: str
+    compressed_output: str
+    command: str | None = None
+    command_exit_code: int | None = None
+    referenced_files: list[str] = Field(default_factory=list)
+    matched_fields: list[str] = Field(default_factory=list)
+    score: int = 0
+
+
+class RecallStorageRecord(StrictModel):
+    """Stored record plus related rows used by recall."""
+
+    record_id: int
+    created_at: str
+    workspace_root: str | None = None
+    instruction: str
+    compressed_output: str
+    command: str | None = None
+    command_exit_code: int | None = None
+    referenced_files: list["ReferencedFileRecord"] = Field(default_factory=list)
+    extracted_terms: list["ExtractedTermRecord"] = Field(default_factory=list)
+    matched_fields: list[str] = Field(default_factory=list)
+    score: int = 0
 
 
 class ExtractedSignal(StrictModel):

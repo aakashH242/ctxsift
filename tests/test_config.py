@@ -30,13 +30,15 @@ def test_reasoning_mode_rejects_invalid_values() -> None:
         )
 
 
-def test_global_config_prefers_platform_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_global_config_prefers_platform_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     platform_path = tmp_path / "platform" / "config.toml"
     legacy_path = tmp_path / "legacy" / "config.toml"
     platform_path.parent.mkdir(parents=True)
     legacy_path.parent.mkdir(parents=True)
-    platform_path.write_text('max_output_tokens = 640\n', encoding="utf-8")
-    legacy_path.write_text('max_output_tokens = 320\n', encoding="utf-8")
+    platform_path.write_text("max_output_tokens = 640\n", encoding="utf-8")
+    legacy_path.write_text("max_output_tokens = 320\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
     monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
@@ -46,11 +48,13 @@ def test_global_config_prefers_platform_path(tmp_path: Path, monkeypatch: pytest
     assert paths.write_path == platform_path
 
 
-def test_global_config_falls_back_to_legacy_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_global_config_falls_back_to_legacy_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     platform_path = tmp_path / "platform" / "config.toml"
     legacy_path = tmp_path / "legacy" / "config.toml"
     legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text('max_output_tokens = 320\n', encoding="utf-8")
+    legacy_path.write_text("max_output_tokens = 320\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
     monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
@@ -85,10 +89,10 @@ def test_config_resolution_uses_expected_precedence(
     git_dir.mkdir(parents=True)
     workspace_config = git_dir / "ctxsift" / "config.toml"
     workspace_config.parent.mkdir(parents=True)
-    workspace_config.write_text('max_output_tokens = 256\n', encoding="utf-8")
+    workspace_config.write_text("max_output_tokens = 256\n", encoding="utf-8")
     platform_path = tmp_path / "platform" / "config.toml"
     platform_path.parent.mkdir(parents=True)
-    platform_path.write_text('max_output_tokens = 128\n', encoding="utf-8")
+    platform_path.write_text("max_output_tokens = 128\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
     monkeypatch.setattr(
         config_store,

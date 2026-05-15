@@ -6,15 +6,22 @@ from dataclasses import dataclass, field
 import re
 
 
-PYTHON_TRACEBACK_RE = re.compile(r'File ["\'](?P<path>[^"\']+)["\'], line (?P<line>\d+)(?:, in (?P<func>[^\n]+))?')
-PYTHON_CAUSE_RE = re.compile(r"^(?:During handling of the above exception|The above exception was the direct cause)", re.IGNORECASE)
+PYTHON_TRACEBACK_RE = re.compile(
+    r'File ["\'](?P<path>[^"\']+)["\'], line (?P<line>\d+)(?:, in (?P<func>[^\n]+))?'
+)
+PYTHON_CAUSE_RE = re.compile(
+    r"^(?:During handling of the above exception|The above exception was the direct cause)",
+    re.IGNORECASE,
+)
 PYTHON_EXCEPTION_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9_]*Error|[A-Za-z_][A-Za-z0-9_]*Exception)\b")
 MODULE_RE = re.compile(
     r"(?:No module named|Cannot find module|ModuleNotFoundError: No module named)\s+['\"](?P<package>[^'\"]+)['\"]"
 )
 PYTEST_TEST_RE = re.compile(r"(?P<test>[\w./\\-]+::[\w\[\].-]+)")
 PYTEST_FAILURE_RE = re.compile(r"\b(?:FAILED|ERROR)\b")
-RUFF_LINE_RE = re.compile(r"^(?P<path>.+?\.(?:py|pyi)):(?P<line>\d+):(?P<col>\d+):\s+(?P<code>[A-Z]\d{3,4})\b")
+RUFF_LINE_RE = re.compile(
+    r"^(?P<path>.+?\.(?:py|pyi)):(?P<line>\d+):(?P<col>\d+):\s+(?P<code>[A-Z]\d{3,4})\b"
+)
 PYLINT_LINE_RE = re.compile(
     r"^(?P<path>.+?\.(?:py|pyi)):(?P<line>\d+):(?P<col>\d+):\s+(?P<code>[CRWEFI]\d{4}):\s+.+$"
 )
@@ -33,7 +40,9 @@ ESLINT_LINE_RE = re.compile(
     r"^\s*\d+:\d+\s+(?:error|warning)\s+.+\s+(?P<rule>@?[\w-]+(?:/[\w-]+)?(?:/[\w-]+)?)\s*$",
     re.IGNORECASE,
 )
-DOCKER_ERROR_RE = re.compile(r"\b(?:docker|docker-compose|compose)\b.*\b(?:error|failed|denied|pull)\b", re.IGNORECASE)
+DOCKER_ERROR_RE = re.compile(
+    r"\b(?:docker|docker-compose|compose)\b.*\b(?:error|failed|denied|pull)\b", re.IGNORECASE
+)
 KUBERNETES_ERROR_RE = re.compile(
     r"(?:Error from server|kubectl|deployment\.apps/|pod/|service/|configmap/).*(?:error|failed|forbidden|not found|crashloopbackoff)?",
     re.IGNORECASE,
@@ -42,7 +51,10 @@ TERRAFORM_ERROR_RE = re.compile(
     r".*\b(?:Error:|Failed to|Unsupported argument|Unsupported block type|No value for required variable|│ Error:|Initializing the backend\.\.\.)\b.*",
     re.IGNORECASE,
 )
-TERRAFORM_RESOURCE_RE = re.compile(r"\b(?:on\s+.+\.tf\s+line\s+\d+|with\s+[\w.\"\-\[\]]+|resource\s+[\w_]+\s+\"[^\"]+\")\b", re.IGNORECASE)
+TERRAFORM_RESOURCE_RE = re.compile(
+    r"\b(?:on\s+.+\.tf\s+line\s+\d+|with\s+[\w.\"\-\[\]]+|resource\s+[\w_]+\s+\"[^\"]+\")\b",
+    re.IGNORECASE,
+)
 NPM_ERROR_RE = re.compile(r"^\s*npm ERR!\s+.+$", re.IGNORECASE)
 PNPM_ERROR_RE = re.compile(r".*\b(?:ERR_PNPM_[A-Z0-9_]+|ELIFECYCLE)\b.*", re.IGNORECASE)
 NODE_BUILD_RE = re.compile(
@@ -61,13 +73,26 @@ DOCKER_COMMAND_PATTERNS = (
     ("docker pull", re.compile(r"\bdocker\s+pull\b", re.IGNORECASE)),
 )
 DOCKER_ERROR_PATTERNS = (
-    re.compile(r"^\s*(?:docker|docker-compose|compose).*\b(?:error|failed|denied|pull)\b.*$", re.IGNORECASE),
+    re.compile(
+        r"^\s*(?:docker|docker-compose|compose).*\b(?:error|failed|denied|pull)\b.*$", re.IGNORECASE
+    ),
     re.compile(r"^\s*failed to solve\b.*$", re.IGNORECASE),
     re.compile(r"^\s*error response from daemon:\s*.*$", re.IGNORECASE),
-    re.compile(r"\b(?:pull access denied|requested access to the resource is denied|manifest unknown|no such image)\b", re.IGNORECASE),
-    re.compile(r"\b(?:cannot connect to the docker daemon|is the docker daemon running)\b", re.IGNORECASE),
-    re.compile(r"\b(?:port is already allocated|bind: address already in use|network .+ not found)\b", re.IGNORECASE),
-    re.compile(r"\b(?:service .+ exited with code \d+|dependency failed to start|failed to create shim task)\b", re.IGNORECASE),
+    re.compile(
+        r"\b(?:pull access denied|requested access to the resource is denied|manifest unknown|no such image)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:cannot connect to the docker daemon|is the docker daemon running)\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:port is already allocated|bind: address already in use|network .+ not found)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:service .+ exited with code \d+|dependency failed to start|failed to create shim task)\b",
+        re.IGNORECASE,
+    ),
 )
 KUBECTL_COMMAND_PATTERNS = (
     ("kubectl apply", re.compile(r"\bkubectl\s+apply\b", re.IGNORECASE)),
@@ -80,10 +105,21 @@ KUBECTL_COMMAND_PATTERNS = (
 KUBECTL_ERROR_PATTERNS = (
     re.compile(r"^\s*Error from server.*$", re.IGNORECASE),
     re.compile(r"^\s*error:\s+.*$", re.IGNORECASE),
-    re.compile(r"\b(?:CrashLoopBackOff|ImagePullBackOff|ErrImagePull|CreateContainerConfigError|CreateContainerError|OOMKilled)\b", re.IGNORECASE),
-    re.compile(r"\b(?:no matches for kind|unable to recognize|resource mapping not found)\b", re.IGNORECASE),
-    re.compile(r"\b(?:forbidden|not found|already exists|timed out waiting for the condition|context deadline exceeded)\b", re.IGNORECASE),
-    re.compile(r"^\s*Warning\s+\w+\s+.*\b(?:Failed|BackOff|Unhealthy|FailedMount|FailedScheduling)\b.*$", re.IGNORECASE),
+    re.compile(
+        r"\b(?:CrashLoopBackOff|ImagePullBackOff|ErrImagePull|CreateContainerConfigError|CreateContainerError|OOMKilled)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:no matches for kind|unable to recognize|resource mapping not found)\b", re.IGNORECASE
+    ),
+    re.compile(
+        r"\b(?:forbidden|not found|already exists|timed out waiting for the condition|context deadline exceeded)\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"^\s*Warning\s+\w+\s+.*\b(?:Failed|BackOff|Unhealthy|FailedMount|FailedScheduling)\b.*$",
+        re.IGNORECASE,
+    ),
 )
 
 
@@ -129,7 +165,9 @@ def parse_python(text: str) -> DomainExtractionResult:
     ]
     packages = [match.group("package") for match in MODULE_RE.finditer(text)]
     symbols = [match.group(0) for match in PYTHON_EXCEPTION_RE.finditer(text)]
-    error_lines = _matching_lines(text, re.compile(r"\b(?:traceback|exception|error)\b", re.IGNORECASE))
+    error_lines = _matching_lines(
+        text, re.compile(r"\b(?:traceback|exception|error)\b", re.IGNORECASE)
+    )
     error_lines.extend(_python_exception_lines(text))
     error_lines.extend(_matching_lines(text, PYTHON_CAUSE_RE))
     matched = bool(frames or packages or symbols or "Traceback" in text or error_lines)
@@ -295,7 +333,9 @@ def parse_kubernetes(text: str) -> DomainExtractionResult:
 
 def parse_terraform(text: str) -> DomainExtractionResult:
     error_lines = [line.strip() for line in text.splitlines() if TERRAFORM_ERROR_RE.search(line)]
-    error_lines.extend([line.strip() for line in text.splitlines() if TERRAFORM_RESOURCE_RE.search(line)])
+    error_lines.extend(
+        [line.strip() for line in text.splitlines() if TERRAFORM_RESOURCE_RE.search(line)]
+    )
     lower_text = text.lower()
     terraform_context = bool(
         "terraform" in lower_text
@@ -324,7 +364,7 @@ def parse_terraform(text: str) -> DomainExtractionResult:
 
 def _compact_frame(path: str, line: str, func: str | None) -> str:
     if func:
-        return f'{path}:{line} in {func.strip()}'
+        return f"{path}:{line} in {func.strip()}"
     return f"{path}:{line}"
 
 
@@ -343,7 +383,9 @@ def _matching_pattern_lines(text: str, patterns: tuple[re.Pattern[str], ...]) ->
     return lines
 
 
-def _matched_commands(text: str, command_patterns: tuple[tuple[str, re.Pattern[str]], ...]) -> list[str]:
+def _matched_commands(
+    text: str, command_patterns: tuple[tuple[str, re.Pattern[str]], ...]
+) -> list[str]:
     return [command for command, pattern in command_patterns if pattern.search(text)]
 
 

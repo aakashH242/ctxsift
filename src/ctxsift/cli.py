@@ -19,7 +19,13 @@ from ctxsift.config import (
     set_config_value,
 )
 from ctxsift.git_metadata import capture_git_metadata
-from ctxsift.run_capture import capture_launch_failure, render_command, render_run_payload, run_command
+from ctxsift.recall import recall_records, render_recall_records
+from ctxsift.run_capture import (
+    capture_launch_failure,
+    render_command,
+    render_run_payload,
+    run_command,
+)
 from ctxsift.storage import initialize_database
 from ctxsift.types import CompressionRequest
 from ctxsift.workspace import detect_workspace_context
@@ -43,7 +49,9 @@ def _not_implemented(command_name: str) -> None:
 def init(
     write_ignore: Annotated[
         bool,
-        typer.Option("--write-ignore", help="Write ignore entries during workspace initialization."),
+        typer.Option(
+            "--write-ignore", help="Write ignore entries during workspace initialization."
+        ),
     ] = False,
 ) -> None:
     """Initialize the workspace database and local metadata."""
@@ -62,7 +70,9 @@ def init(
 
 @app.command()
 def compress(
-    instruction: Annotated[str, typer.Argument(help="Compression instruction for the provided input.")],
+    instruction: Annotated[
+        str, typer.Argument(help="Compression instruction for the provided input.")
+    ],
     max_output_tokens: Annotated[
         int | None,
         typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
@@ -86,7 +96,9 @@ def compress(
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run(
     ctx: typer.Context,
-    instruction: Annotated[str, typer.Argument(help="Compression instruction for the command output.")],
+    instruction: Annotated[
+        str, typer.Argument(help="Compression instruction for the command output.")
+    ],
     max_output_tokens: Annotated[
         int | None,
         typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
@@ -118,9 +130,14 @@ def recall(
     ] = None,
 ) -> None:
     """Recall previously stored compressed records."""
-    _ = query
-    _ = files
-    _not_implemented("recall")
+    results = asyncio.run(
+        recall_records(
+            query=query,
+            cwd=Path.cwd(),
+            file_filters=files,
+        )
+    )
+    typer.echo(render_recall_records(results))
 
 
 @config_app.command("show")

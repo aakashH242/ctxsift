@@ -70,7 +70,9 @@ def render_run_payload(
     return "\n".join(sections).strip()
 
 
-def capture_launch_failure(command: list[str], cwd: Path, error: FileNotFoundError) -> CommandCapture:
+def capture_launch_failure(
+    command: list[str], cwd: Path, error: FileNotFoundError
+) -> CommandCapture:
     """Build a synthetic capture when process launch fails before execution."""
     return CommandCapture(
         command=command,

@@ -8,7 +8,12 @@ import re
 
 from ctxsift import __version__
 from ctxsift.config import ConfigResolutionRequest, resolve_config
-from ctxsift.extraction import ExtractionContext, build_extracted_terms, extract_referenced_files, extract_signal
+from ctxsift.extraction import (
+    ExtractionContext,
+    build_extracted_terms,
+    extract_referenced_files,
+    extract_signal,
+)
 from ctxsift.models import create_local_backend
 from ctxsift.models.base import BackendUnavailableError, ModelCompressionInput
 from ctxsift.storage import find_cached_record, initialize_database, insert_record_bundle
@@ -142,7 +147,9 @@ def build_exact_cache_key(
     return sha256_text("\n".join(parts))
 
 
-def summarize_deterministically(raw_input: str, signal: ExtractedSignal, max_output_tokens: int) -> str:
+def summarize_deterministically(
+    raw_input: str, signal: ExtractedSignal, max_output_tokens: int
+) -> str:
     """Produce a stable fallback summary without a model backend."""
     summary_lines = _summary_lines(raw_input, signal)
     budget = max(max_output_tokens, 1) * CHARACTERS_PER_TOKEN

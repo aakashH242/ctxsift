@@ -65,7 +65,9 @@ class TransformersGemmaBackend(ModelBackend):
                 device=resolved_device.pipeline_device,
                 torch_dtype=torch_dtype,
             )
-        except Exception as error:  # pragma: no cover - exercised through mocks and fallback behavior
+        except (
+            Exception
+        ) as error:  # pragma: no cover - exercised through mocks and fallback behavior
             raise BackendUnavailableError(str(error)) from error
 
 

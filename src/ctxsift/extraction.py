@@ -4,15 +4,12 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
-import hashlib
 from pathlib import Path
 import re
 
 from ctxsift.extraction_domains import DomainExtractionResult, run_domain_parsers
+from ctxsift.file_fingerprint import sha256_if_reasonable
 from ctxsift.types import ExtractedSignal, ExtractedTermRecord, ReferencedFileRecord
-
-
-MAX_HASH_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
 TRACEBACK_FILE_RE = re.compile(r'File ["\'](?P<path>[^"\']+)["\'], line \d+')
 FILE_PATH_PATTERN = (
@@ -28,14 +25,18 @@ GENERIC_FILE_TOKEN_RE = re.compile(
     re.IGNORECASE,
 )
 PYTEST_TEST_RE = re.compile(r"(?P<test>[\w./\\-]+::[\w\[\].-]+)")
-SYMBOL_RE = re.compile(r"\b(?:[A-Z][A-Za-z0-9_]*Error|[A-Za-z_][A-Za-z0-9_]*Exception|[A-Za-z_][A-Za-z0-9_]*Warning)\b")
+SYMBOL_RE = re.compile(
+    r"\b(?:[A-Z][A-Za-z0-9_]*Error|[A-Za-z_][A-Za-z0-9_]*Exception|[A-Za-z_][A-Za-z0-9_]*Warning)\b"
+)
 MODULE_RE = re.compile(
     r"(?:No module named|Cannot find module|ModuleNotFoundError: No module named)\s+['\"](?P<package>[^'\"]+)['\"]"
 )
 EXIT_CODE_RE = re.compile(r"\b(?:exit(?:ed)? with code|exit code)\s+\d+\b", re.IGNORECASE)
 WARNING_RE = re.compile(r"\bwarning\b", re.IGNORECASE)
 ERROR_RE = re.compile(r"\b(error|failed|failure|traceback|exception)\b", re.IGNORECASE)
-COMMAND_RE = re.compile(r"\b(?:pytest|ruff|mypy|docker|docker-compose|compose|kubectl|npm|pnpm|yarn|git|python|uv)\b")
+COMMAND_RE = re.compile(
+    r"\b(?:pytest|ruff|mypy|docker|docker-compose|compose|kubectl|npm|pnpm|yarn|git|python|uv)\b"
+)
 
 
 @dataclass(frozen=True)
@@ -93,7 +94,7 @@ def extract_referenced_files(
             ReferencedFileRecord(
                 path=display_path,
                 abs_path=str(resolved) if resolved is not None else None,
-                sha256=_sha256_if_reasonable(resolved),
+                sha256=sha256_if_reasonable(resolved),
                 exists_at_capture=resolved is not None and resolved.exists(),
             )
         )
@@ -263,18 +264,6 @@ def _display_path(candidate: Path, resolved: Path | None, context: ExtractionCon
         return resolved.relative_to(context.workspace_root).as_posix()
     except ValueError:
         return str(resolved)
-
-
-def _sha256_if_reasonable(path: Path | None) -> str | None:
-    if path is None or not path.exists() or not path.is_file():
-        return None
-    if path.stat().st_size > MAX_HASH_FILE_SIZE_BYTES:
-        return None
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(8192), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _extract_tests(text: str) -> list[str]:

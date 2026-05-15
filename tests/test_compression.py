@@ -24,7 +24,9 @@ def test_compress_input_persists_deterministic_summary(
     (repo_path / "src").mkdir()
     (repo_path / "tests").mkdir()
     (repo_path / "src" / "auth.py").write_text("raise AuthError\n", encoding="utf-8")
-    (repo_path / "tests" / "test_auth.py").write_text("def test_login():\n    assert False\n", encoding="utf-8")
+    (repo_path / "tests" / "test_auth.py").write_text(
+        "def test_login():\n    assert False\n", encoding="utf-8"
+    )
 
     class FailingBackend:
         provider_name = "transformers"
