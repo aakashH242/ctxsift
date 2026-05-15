@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import asyncio
 from pathlib import Path
+import sys
 from typing import Annotated
 
 import typer
 from pydantic import ValidationError
 
+from ctxsift.compression import compress_input
 from ctxsift.config import (
     ConfigResolutionRequest,
     ConfigWriteRequest,
@@ -16,7 +18,11 @@ from ctxsift.config import (
     resolve_config,
     set_config_value,
 )
+from ctxsift.git_metadata import capture_git_metadata
+from ctxsift.run_capture import capture_launch_failure, render_command, render_run_payload, run_command
 from ctxsift.storage import initialize_database
+from ctxsift.types import CompressionRequest
+from ctxsift.workspace import detect_workspace_context
 
 app = typer.Typer(
     add_completion=False,
@@ -57,20 +63,50 @@ def init(
 @app.command()
 def compress(
     instruction: Annotated[str, typer.Argument(help="Compression instruction for the provided input.")],
+    max_output_tokens: Annotated[
+        int | None,
+        typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
+    ] = None,
 ) -> None:
     """Compress stdin using an instruction."""
-    _not_implemented("compress")
+    raw_input = sys.stdin.read()
+    result = asyncio.run(
+        compress_input(
+            CompressionRequest(
+                instruction=instruction,
+                raw_input=raw_input,
+                cwd=str(Path.cwd()),
+                max_output_tokens=max_output_tokens,
+            )
+        )
+    )
+    typer.echo(result.compressed_output)
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def run(
     ctx: typer.Context,
     instruction: Annotated[str, typer.Argument(help="Compression instruction for the command output.")],
+    max_output_tokens: Annotated[
+        int | None,
+        typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
+    ] = None,
 ) -> None:
     """Run a command, capture its output, and compress it."""
-    _ = ctx.args
-    _ = instruction
-    _not_implemented("run")
+    command = _command_args(ctx.args)
+    if not command:
+        typer.echo("`ctxsift run` requires a command after `--`.", err=True)
+        raise typer.Exit(code=2)
+    result, exit_code = asyncio.run(
+        _run_command_flow(
+            command=command,
+            instruction=instruction,
+            current_directory=Path.cwd(),
+            max_output_tokens=max_output_tokens,
+        )
+    )
+    typer.echo(result.compressed_output)
+    raise typer.Exit(code=exit_code)
 
 
 @app.command()
@@ -133,3 +169,57 @@ def config_set(
 def doctor() -> None:
     """Inspect runtime health and optional features."""
     _not_implemented("doctor")
+
+
+async def _run_capture(command: list[str], current_directory: Path):
+    try:
+        return await run_command(command, current_directory)
+    except FileNotFoundError as error:
+        return capture_launch_failure(command, current_directory, error)
+
+
+async def _run_command_flow(
+    command: list[str],
+    instruction: str,
+    current_directory: Path,
+    max_output_tokens: int | None,
+):
+    workspace = detect_workspace_context(current_directory)
+    capture = await _run_capture(command, current_directory)
+    git_metadata = await capture_git_metadata(workspace)
+    raw_input = render_run_payload(capture, workspace, git_metadata)
+    result = await compress_input(
+        CompressionRequest(
+            instruction=instruction,
+            raw_input=raw_input,
+            mode="run",
+            cwd=str(current_directory),
+            max_output_tokens=max_output_tokens,
+            command=render_command(capture.command),
+            command_args=capture.command,
+            command_exit_code=capture.exit_code,
+            command_duration_ms=capture.duration_ms,
+            stdout_hash=_hash_or_none(capture.stdout),
+            stderr_hash=_hash_or_none(capture.stderr),
+            git_head=git_metadata.git_head,
+            git_branch=git_metadata.git_branch,
+            git_dirty=git_metadata.git_dirty,
+        )
+    )
+    return result, capture.exit_code
+
+
+def _command_args(extra_args: list[str]) -> list[str]:
+    if not extra_args:
+        return []
+    if extra_args[0] == "--":
+        return extra_args[1:]
+    return extra_args
+
+
+def _hash_or_none(text: str) -> str | None:
+    if not text:
+        return None
+    from ctxsift.compression import sha256_text
+
+    return sha256_text(text)

@@ -113,9 +113,13 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_LLM_MODEL": "gpt-5-mini",
             "CTXSIFT_TIMEOUT_MS": "1234",
             "CTXSIFT_EMBEDDING_MODEL": "mini",
+            "CTXSIFT_LOCAL_MODEL": "google/gemma-4-E2B-it",
+            "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": "web_search_query",
         }
     )
 
     assert layer["remote"]["model_name"] == "gpt-5-mini"
     assert layer["timeout_ms"] == 1234
+    assert layer["local"]["model"] == "google/gemma-4-E2B-it"
     assert layer["embedding"]["model"] == "mini"
+    assert layer["embedding"]["query_prompt_name"] == "web_search_query"

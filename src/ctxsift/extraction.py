@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -14,8 +15,16 @@ from ctxsift.types import ExtractedSignal, ExtractedTermRecord, ReferencedFileRe
 MAX_HASH_FILE_SIZE_BYTES = 2 * 1024 * 1024
 
 TRACEBACK_FILE_RE = re.compile(r'File ["\'](?P<path>[^"\']+)["\'], line \d+')
+FILE_PATH_PATTERN = (
+    r"(?:[A-Za-z]:[\\/]|\.{0,2}[\\/]|)(?:[\w.\- ]+[\\/])*[\w.\- ]+"
+    r"\.(?:py|pyi|ts|tsx|js|jsx|json|ya?ml|toml|ini|cfg|md|txt|sql|sh|ps1|dockerfile)"
+)
 GENERIC_FILE_RE = re.compile(
-    r"(?P<path>(?:[A-Za-z]:[\\/]|\.{0,2}[\\/]|)(?:[\w.\- ]+[\\/])*[\w.\- ]+\.(?:py|pyi|ts|tsx|js|jsx|json|ya?ml|toml|ini|cfg|md|txt|sql|sh|ps1|dockerfile))(?::\d+(?::\d+)?)?(?:::[:\w.\-]+)?",
+    rf"(?P<path>{FILE_PATH_PATTERN})(?::\d+(?::\d+)?)?(?:::[:\w.\-]+)?",
+    re.IGNORECASE,
+)
+GENERIC_FILE_TOKEN_RE = re.compile(
+    rf"^(?P<path>{FILE_PATH_PATTERN})(?::\d+(?::\d+)?)?(?:::[:\w.\-]+)?$",
     re.IGNORECASE,
 )
 PYTEST_TEST_RE = re.compile(r"(?P<test>[\w./\\-]+::[\w\[\].-]+)")
@@ -37,11 +46,16 @@ class ExtractionContext:
     workspace_root: Path
 
 
-def extract_signal(text: str, context: ExtractionContext) -> ExtractedSignal:
+def extract_signal(
+    text: str,
+    context: ExtractionContext,
+    command_args: Sequence[str] | None = None,
+) -> ExtractedSignal:
     """Extract deterministic signal from command output."""
-    referenced_files = extract_referenced_files(text, context)
-    domain_results = run_domain_parsers(text)
-    generic_signal = _generic_signal(text)
+    signal_text = _signal_text(text, command_args)
+    referenced_files = extract_referenced_files(text, context, command_args=command_args)
+    domain_results = run_domain_parsers(signal_text)
+    generic_signal = _generic_signal(signal_text)
     merged_signal = _merge_domain_results(domain_results, generic_signal)
     return ExtractedSignal(
         matched_domains=merged_signal.matched_domains,
@@ -58,9 +72,14 @@ def extract_signal(text: str, context: ExtractionContext) -> ExtractedSignal:
     )
 
 
-def extract_referenced_files(text: str, context: ExtractionContext) -> list[ReferencedFileRecord]:
+def extract_referenced_files(
+    text: str,
+    context: ExtractionContext,
+    command_args: Sequence[str] | None = None,
+) -> list[ReferencedFileRecord]:
     """Extract normalized file references and capture lightweight file metadata."""
     candidates = _extract_file_candidates(text)
+    candidates.extend(_extract_command_file_candidates(command_args or []))
     records: list[ReferencedFileRecord] = []
     seen_paths: set[str] = set()
     for candidate in candidates:
@@ -171,6 +190,33 @@ def _extract_file_candidates(text: str) -> list[str]:
     return candidates
 
 
+def _extract_command_file_candidates(command_args: Sequence[str]) -> list[str]:
+    candidates: list[str] = []
+    for argument in command_args:
+        candidate = _extract_command_file_candidate(argument)
+        if candidate is None:
+            continue
+        candidates.append(candidate)
+    return candidates
+
+
+def _extract_command_file_candidate(argument: str) -> str | None:
+    token = argument.strip().strip("\"'")
+    if not token:
+        return None
+    if token.startswith("-"):
+        if "=" not in token:
+            return None
+        _, _, token = token.partition("=")
+        token = token.strip().strip("\"'")
+        if not token:
+            return None
+    match = GENERIC_FILE_TOKEN_RE.fullmatch(token)
+    if match is None:
+        return None
+    return _strip_position_suffix(match.group("path"))
+
+
 def _strip_position_suffix(candidate: str) -> str:
     without_test = candidate.split("::", 1)[0]
     path_part, separator, tail = without_test.rpartition(":")
@@ -186,6 +232,15 @@ def _strip_position_suffix(candidate: str) -> str:
 
 def _normalize_candidate_path(candidate: str) -> Path:
     return Path(candidate.replace("\\", "/"))
+
+
+def _signal_text(text: str, command_args: Sequence[str] | None) -> str:
+    if not command_args:
+        return text
+    command_text = " ".join(argument for argument in command_args if argument)
+    if not command_text:
+        return text
+    return f"{text}\n{command_text}" if text else command_text
 
 
 def _resolve_candidate_path(candidate: Path, context: ExtractionContext) -> Path | None:

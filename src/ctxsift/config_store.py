@@ -112,7 +112,16 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_MAX_OUTPUT_TOKENS": ("max_output_tokens",),
     "CTXSIFT_TIMEOUT_MS": ("timeout_ms",),
     "CTXSIFT_RETRIES": ("retries",),
+    "CTXSIFT_LOCAL_BACKEND": ("local", "backend"),
+    "CTXSIFT_LOCAL_MODEL": ("local", "model"),
+    "CTXSIFT_LOCAL_DEVICE": ("local", "device"),
+    "CTXSIFT_LOCAL_DTYPE": ("local", "dtype"),
     "CTXSIFT_EMBEDDING_MODEL": ("embedding", "model"),
+    "CTXSIFT_EMBEDDING_DEVICE": ("embedding", "device"),
+    "CTXSIFT_EMBEDDING_DTYPE": ("embedding", "dtype"),
+    "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": ("embedding", "query_prompt_name"),
+    "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": ("embedding", "document_prompt_name"),
+    "CTXSIFT_EMBEDDING_MAX_LENGTH": ("embedding", "max_length"),
     "CTXSIFT_DB_PATH": ("db_path",),
 }
 
@@ -126,7 +135,16 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_MAX_OUTPUT_TOKENS": TypeAdapter(int),
     "CTXSIFT_TIMEOUT_MS": TypeAdapter(int),
     "CTXSIFT_RETRIES": TypeAdapter(int),
+    "CTXSIFT_LOCAL_BACKEND": TypeAdapter(str),
+    "CTXSIFT_LOCAL_MODEL": TypeAdapter(str),
+    "CTXSIFT_LOCAL_DEVICE": TypeAdapter(str),
+    "CTXSIFT_LOCAL_DTYPE": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_MODEL": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_DEVICE": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_DTYPE": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_MAX_LENGTH": TypeAdapter(int),
     "CTXSIFT_DB_PATH": TypeAdapter(str),
 }
 

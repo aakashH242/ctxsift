@@ -54,9 +54,19 @@ class CompressionRequest(StrictModel):
     """Compression input carried through the pipeline."""
 
     instruction: str
-    raw_input: str | None = None
+    raw_input: str = ""
     mode: str = "pipe"
     cwd: str | None = None
+    max_output_tokens: int | None = None
+    command: str | None = None
+    command_args: list[str] = Field(default_factory=list)
+    command_exit_code: int | None = None
+    command_duration_ms: int | None = None
+    stdout_hash: str | None = None
+    stderr_hash: str | None = None
+    git_head: str | None = None
+    git_branch: str | None = None
+    git_dirty: bool | None = None
 
 
 class CompressionResult(StrictModel):
@@ -68,6 +78,7 @@ class CompressionResult(StrictModel):
     used_cache: bool = False
     model_provider: str | None = None
     model_name: str | None = None
+    record_id: int | None = None
 
 
 class ExtractedSignal(StrictModel):
@@ -94,6 +105,7 @@ class StoredRecord(StrictModel):
     compressed_output: str
     raw_input_hash: str
     mode: str
+    exact_cache_key: str | None = None
     id: int | None = None
     created_at: datetime | None = None
     workspace_root: str | None = None

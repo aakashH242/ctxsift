@@ -10,7 +10,7 @@ import aiosqlite
 from ctxsift.types import ExtractedTermRecord, ReferencedFileRecord, StoredRecord
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 
 
 @dataclass(frozen=True)
@@ -19,6 +19,16 @@ class StorageInitResult:
 
     db_path: Path
     schema_version: str
+
+
+@dataclass(frozen=True)
+class CacheLookupResult:
+    """Stored exact-cache hit details."""
+
+    record_id: int
+    compressed_output: str
+    model_provider: str | None
+    model_name: str | None
 
 
 SCHEMA_STATEMENTS = (
@@ -45,6 +55,7 @@ SCHEMA_STATEMENTS = (
         normalized_instruction TEXT NOT NULL,
         compressed_output TEXT NOT NULL,
         raw_input_hash TEXT NOT NULL,
+        exact_cache_key TEXT,
         stdout_hash TEXT,
         stderr_hash TEXT,
         model_provider TEXT,
@@ -115,6 +126,33 @@ async def insert_record_bundle(
     return record_id
 
 
+async def find_cached_record(
+    db_path: Path,
+    exact_cache_key: str,
+) -> CacheLookupResult | None:
+    """Find one previously stored exact-cache hit."""
+    async with aiosqlite.connect(db_path) as connection:
+        cursor = await connection.execute(
+            """
+            SELECT id, compressed_output, model_provider, model_name
+            FROM records
+            WHERE exact_cache_key = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (exact_cache_key,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return CacheLookupResult(
+        record_id=int(row[0]),
+        compressed_output=str(row[1]),
+        model_provider=str(row[2]) if row[2] is not None else None,
+        model_name=str(row[3]) if row[3] is not None else None,
+    )
+
+
 async def read_schema_version(db_path: Path) -> str | None:
     """Read the stored schema version."""
     async with aiosqlite.connect(db_path) as connection:
@@ -130,6 +168,8 @@ async def read_schema_version(db_path: Path) -> str | None:
 async def _apply_schema(connection: aiosqlite.Connection) -> None:
     for statement in SCHEMA_STATEMENTS:
         await connection.execute(statement)
+    await _ensure_record_columns(connection)
+    await _ensure_indexes(connection)
 
 
 async def _store_schema_version(connection: aiosqlite.Connection) -> None:
@@ -160,6 +200,7 @@ async def _insert_record(connection: aiosqlite.Connection, record: StoredRecord)
             normalized_instruction,
             compressed_output,
             raw_input_hash,
+            exact_cache_key,
             stdout_hash,
             stderr_hash,
             model_provider,
@@ -167,7 +208,7 @@ async def _insert_record(connection: aiosqlite.Connection, record: StoredRecord)
             max_output_tokens,
             prompt_version,
             ctxsift_version
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             record.workspace_root,
@@ -183,6 +224,7 @@ async def _insert_record(connection: aiosqlite.Connection, record: StoredRecord)
             record.normalized_instruction,
             record.compressed_output,
             record.raw_input_hash,
+            record.exact_cache_key,
             record.stdout_hash,
             record.stderr_hash,
             record.model_provider,
@@ -274,3 +316,24 @@ def _int_or_none(value: bool | None) -> int | None:
     if value is None:
         return None
     return int(value)
+
+
+async def _ensure_record_columns(connection: aiosqlite.Connection) -> None:
+    existing_columns = await _record_columns(connection)
+    if "exact_cache_key" not in existing_columns:
+        await connection.execute("ALTER TABLE records ADD COLUMN exact_cache_key TEXT")
+
+
+async def _record_columns(connection: aiosqlite.Connection) -> set[str]:
+    cursor = await connection.execute("PRAGMA table_info(records)")
+    rows = await cursor.fetchall()
+    return {str(row[1]) for row in rows}
+
+
+async def _ensure_indexes(connection: aiosqlite.Connection) -> None:
+    await connection.execute(
+        """
+        CREATE INDEX IF NOT EXISTS idx_records_exact_cache_key
+        ON records(exact_cache_key)
+        """
+    )

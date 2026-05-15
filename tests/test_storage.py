@@ -32,7 +32,7 @@ def test_initialize_database_creates_schema_and_version(tmp_path: Path) -> None:
     result = asyncio.run(initialize_database(db_path))
 
     assert result.db_path == db_path
-    assert asyncio.run(read_schema_version(db_path)) == "1"
+    assert asyncio.run(read_schema_version(db_path)) == "2"
     with sqlite3.connect(db_path) as connection:
         tables = {
             row[0]
