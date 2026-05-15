@@ -32,7 +32,11 @@ def test_configure_writes_workspace_scope_by_default(
     repo_path = tmp_path / "repo"
     (repo_path / ".git").mkdir(parents=True)
     monkeypatch.chdir(repo_path)
-    result = runner.invoke(app, ["configure"], input=_configure_input(remote_enabled=False))
+    result = runner.invoke(
+        app,
+        ["configure"],
+        input=_configure_input(remote_enabled=False, local_quantization="quanto-int4"),
+    )
 
     assert result.exit_code == 0
     workspace_config = repo_path / ".git" / "ctxsift" / "config.toml"
@@ -40,6 +44,7 @@ def test_configure_writes_workspace_scope_by_default(
     assert "Updated workspace config" in result.stdout
     text = workspace_config.read_text(encoding="utf-8")
     assert 'model = "google/gemma-4-E2B-it"' in text
+    assert 'quantization = "quanto-int4"' in text
     assert 'model = "microsoft/harrier-oss-v1-0.6b"' in text
 
 
@@ -78,6 +83,7 @@ def test_configure_rejects_invalid_final_config(
 def _configure_input(
     remote_enabled: bool,
     recall_default_limit: str = "10",
+    local_quantization: str = "none",
 ) -> str:
     values = [
         "512",
@@ -88,6 +94,7 @@ def _configure_input(
         "cpu",
         "auto",
         "auto",
+        local_quantization,
         "y" if remote_enabled else "n",
     ]
     if remote_enabled:
@@ -115,6 +122,7 @@ def _configure_input(
             recall_default_limit,
             "50",
             "50",
+            "0.75",
             "",
         ]
     )

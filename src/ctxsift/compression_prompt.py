@@ -28,6 +28,15 @@ def build_messages(request: ModelCompressionInput) -> list[dict[str, object]]:
     ]
 
 
+def build_text_messages(request: ModelCompressionInput) -> list[dict[str, str]]:
+    """Build a plain-text chat history for text-only local generation."""
+    prompt = "\n".join(_prompt_sections(request))
+    return [
+        {"role": "system", "content": SYSTEM_PROMPT.strip()},
+        {"role": "user", "content": prompt},
+    ]
+
+
 def _prompt_sections(request: ModelCompressionInput) -> list[str]:
     sections = [
         f"Instruction:\n{request.instruction}",

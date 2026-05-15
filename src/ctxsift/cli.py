@@ -22,13 +22,16 @@ from ctxsift.config import (
 )
 from ctxsift.configure_flow import prompt_for_config
 from ctxsift.doctor import collect_doctor_report, render_doctor_report
+from ctxsift.execution import (
+    CommandExecutionRequest,
+    CommandValidationError,
+    capture_launch_failure,
+    execute_command,
+)
 from ctxsift.git_metadata import capture_git_metadata
 from ctxsift.recall import recall_records, render_recall_records
 from ctxsift.run_capture import (
-    capture_launch_failure,
-    render_command,
     render_run_payload,
-    run_command,
 )
 from ctxsift.storage import initialize_database
 from ctxsift.types import CompressionRequest
@@ -110,17 +113,36 @@ def configure(
     typer.echo(f"Updated {saved.scope.value} config at {saved.write_path}")
 
 
-@app.command()
+@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def compress(
+    ctx: typer.Context,
     instruction: Annotated[
         str, typer.Argument(help="Compression instruction for the provided input.")
     ],
+    shell: Annotated[
+        bool,
+        typer.Option(
+            "--shell",
+            help="Execute one explicit shell command string instead of reading stdin.",
+        ),
+    ] = False,
     max_output_tokens: Annotated[
         int | None,
         typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
     ] = None,
 ) -> None:
-    """Compress stdin using an instruction."""
+    """Compress stdin or command output using an instruction."""
+    command = tuple(_command_args(ctx.args))
+    if command or shell:
+        result, exit_code = _invoke_command_compression(
+            ctx=ctx,
+            instruction=instruction,
+            current_directory=Path.cwd(),
+            max_output_tokens=max_output_tokens,
+            shell=shell,
+        )
+        typer.echo(result.compressed_output)
+        raise typer.Exit(code=exit_code)
     raw_input = sys.stdin.read()
     result = asyncio.run(
         compress_input(
@@ -141,23 +163,25 @@ def run(
     instruction: Annotated[
         str, typer.Argument(help="Compression instruction for the command output.")
     ],
+    shell: Annotated[
+        bool,
+        typer.Option(
+            "--shell",
+            help="Execute one explicit shell command string instead of safe argv mode.",
+        ),
+    ] = False,
     max_output_tokens: Annotated[
         int | None,
         typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
     ] = None,
 ) -> None:
     """Run a command, capture its output, and compress it."""
-    command = _command_args(ctx.args)
-    if not command:
-        typer.echo("`ctxsift run` requires a command after `--`.", err=True)
-        raise typer.Exit(code=2)
-    result, exit_code = asyncio.run(
-        _run_command_flow(
-            command=command,
-            instruction=instruction,
-            current_directory=Path.cwd(),
-            max_output_tokens=max_output_tokens,
-        )
+    result, exit_code = _invoke_command_compression(
+        ctx=ctx,
+        instruction=instruction,
+        current_directory=Path.cwd(),
+        max_output_tokens=max_output_tokens,
+        shell=shell,
     )
     typer.echo(result.compressed_output)
     raise typer.Exit(code=exit_code)
@@ -236,21 +260,21 @@ def doctor() -> None:
     typer.echo(render_doctor_report(report))
 
 
-async def _run_capture(command: list[str], current_directory: Path):
+async def _run_capture(request: CommandExecutionRequest):
     try:
-        return await run_command(command, current_directory)
+        return await execute_command(request)
     except FileNotFoundError as error:
-        return capture_launch_failure(command, current_directory, error)
+        return capture_launch_failure(request, error)
 
 
 async def _run_command_flow(
-    command: list[str],
+    request: CommandExecutionRequest,
     instruction: str,
     current_directory: Path,
     max_output_tokens: int | None,
 ):
     workspace = detect_workspace_context(current_directory)
-    capture = await _run_capture(command, current_directory)
+    capture = await _run_capture(request)
     git_metadata = await capture_git_metadata(workspace)
     raw_input = render_run_payload(capture, workspace, git_metadata)
     result = await compress_input(
@@ -260,8 +284,8 @@ async def _run_command_flow(
             mode="run",
             cwd=str(current_directory),
             max_output_tokens=max_output_tokens,
-            command=render_command(capture.command),
-            command_args=capture.command,
+            command=capture.command_display,
+            command_args=list(capture.argv),
             command_exit_code=capture.exit_code,
             command_duration_ms=capture.duration_ms,
             stdout_hash=_hash_or_none(capture.stdout),
@@ -272,6 +296,44 @@ async def _run_command_flow(
         )
     )
     return result, capture.exit_code
+
+
+def _invoke_command_compression(
+    ctx: typer.Context,
+    instruction: str,
+    current_directory: Path,
+    max_output_tokens: int | None,
+    shell: bool,
+):
+    command = tuple(_command_args(ctx.args))
+    if not command:
+        command_name = ctx.info_name or "ctxsift"
+        typer.echo(
+            f"`ctxsift {command_name}` requires a command after `--`.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        request = CommandExecutionRequest(
+            argv=command,
+            shell=shell,
+            cwd=current_directory,
+        )
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+    try:
+        return asyncio.run(
+            _run_command_flow(
+                request=request,
+                instruction=instruction,
+                current_directory=current_directory,
+                max_output_tokens=max_output_tokens,
+            )
+        )
+    except CommandValidationError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
 
 
 def _command_args(extra_args: list[str]) -> list[str]:

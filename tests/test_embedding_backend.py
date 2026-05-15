@@ -119,6 +119,7 @@ def test_embedding_backend_prefers_onnx_for_harrier_on_cpu_when_available(
     assert model is not None
     assert captured["kwargs"]["backend"] == "onnx"
     assert captured["kwargs"]["model_kwargs"]["provider"] == "CPUExecutionProvider"
+    assert "local_files_only" not in captured["kwargs"]
 
 
 def test_embedding_backend_falls_back_to_torch_when_onnx_load_fails(
@@ -183,3 +184,4 @@ def test_embedding_backend_enables_flash_attention_on_gpu_torch_path(
     assert model is not None
     assert captured["kwargs"]["backend"] == "torch"
     assert captured["kwargs"]["model_kwargs"]["attn_implementation"] == "flash_attention_2"
+    assert "local_files_only" not in captured["kwargs"]

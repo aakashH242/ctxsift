@@ -12,13 +12,13 @@ from ctxsift.doctor_probes import (
     fts5_probe,
     git_probe,
     optional_package_probe,
+    optional_package_probe_any,
     remote_config_probe,
     sqlite_core_probe,
 )
-from ctxsift.embeddings import create_embedding_backend
-from ctxsift.embeddings.base import EmbeddingBackendUnavailableError
 from ctxsift.storage import StorageInitResult, initialize_database
-from ctxsift.vector_store import vector_store_status
+from ctxsift.types import AppConfig, LocalQuantizationMode
+from ctxsift.vector_store import probe_vector_store
 from ctxsift.workspace import detect_workspace_context
 
 
@@ -53,7 +53,7 @@ async def collect_doctor_report(cwd: Path) -> DoctorReport:
     db_check, init_result = await _database_check(db_path)
     checks.insert(0, db_check)
     if init_result is not None:
-        checks.append(await _sqlite_vec_check(db_path, resolved_config.config.embedding))
+        checks.append(await _sqlite_vec_check(db_path, resolved_config.config.embedding.model))
     else:
         checks.append(
             DoctorCheck(
@@ -63,7 +63,7 @@ async def collect_doctor_report(cwd: Path) -> DoctorReport:
                 detail="Skipped sqlite-vec probe because the database could not be initialized.",
             )
         )
-    checks.extend(_optional_runtime_checks())
+    checks.extend(_optional_runtime_checks(resolved_config.config))
     return DoctorReport(checks=checks)
 
 
@@ -99,35 +99,39 @@ async def _database_check(db_path: Path) -> tuple[DoctorCheck, StorageInitResult
     )
 
 
-async def _sqlite_vec_check(db_path: Path, config) -> DoctorCheck:
-    try:
-        backend = create_embedding_backend(config)
-        dimension = await backend.embedding_dimension()
-    except EmbeddingBackendUnavailableError as error:
+async def _sqlite_vec_check(db_path: Path, configured_model_name: str) -> DoctorCheck:
+    status = await probe_vector_store(db_path)
+    if not status.available:
         return DoctorCheck(
             "sqlite_vec",
             "warning",
             False,
-            f"Embedding backend unavailable; recall will use FTS5 only. {error}",
+            status.warning or "sqlite-vec is unavailable; recall will use FTS5 only.",
         )
-    status = await vector_store_status(db_path, backend.model_name, dimension)
-    if status.available:
+    if status.model_name and status.model_name != configured_model_name:
         return DoctorCheck(
             "sqlite_vec",
             "warning",
-            True,
-            f"sqlite-vec is available (vec_version={status.sqlite_vec_version}, dim={dimension}).",
+            False,
+            (
+                "sqlite-vec index model mismatch; recall will fall back to FTS5 only. "
+                f"DB model={status.model_name}, configured model={configured_model_name}."
+            ),
         )
+    detail = f"sqlite-vec is available (vec_version={status.sqlite_vec_version}"
+    if status.dimension is not None:
+        detail += f", dim={status.dimension}"
+    detail += ")."
     return DoctorCheck(
         "sqlite_vec",
         "warning",
-        False,
-        status.warning or "sqlite-vec is unavailable; recall will use FTS5 only.",
+        True,
+        detail,
     )
 
 
-def _optional_runtime_checks() -> list[DoctorCheck]:
-    return [
+def _optional_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+    checks = [
         _probe_check("cuda", "optional", cuda_probe()),
         _probe_check(
             "onnxruntime",
@@ -140,6 +144,41 @@ def _optional_runtime_checks() -> list[DoctorCheck]:
             flash_attention_probe(),
         ),
     ]
+    checks.extend(_quantization_runtime_checks(config))
+    return checks
+
+
+def _quantization_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+    mode = config.local.quantization
+    if mode is LocalQuantizationMode.NONE:
+        return []
+    checks = [
+        _probe_check(
+            "accelerate",
+            "warning",
+            optional_package_probe("accelerate", "Accelerate"),
+        )
+    ]
+    if mode.value.startswith("bnb-"):
+        checks.append(
+            _probe_check(
+                "bitsandbytes",
+                "warning",
+                optional_package_probe("bitsandbytes", "bitsandbytes"),
+            )
+        )
+        return checks
+    checks.append(
+        _probe_check(
+            "optimum_quanto",
+            "warning",
+            optional_package_probe_any(
+                ("optimum.quanto", "optimum_quanto"),
+                "Optimum Quanto",
+            ),
+        )
+    )
+    return checks
 
 
 def _probe_check(name: str, severity: str, probe: tuple[bool, str]) -> DoctorCheck:

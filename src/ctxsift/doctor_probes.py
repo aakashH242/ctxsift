@@ -71,6 +71,19 @@ def optional_package_probe(module_name: str, label: str) -> tuple[bool, str]:
     return True, f"{label} is available."
 
 
+def optional_package_probe_any(module_names: tuple[str, ...], label: str) -> tuple[bool, str]:
+    """Probe whether any supported import path for one optional package is usable."""
+    for module_name in module_names:
+        try:
+            importlib.import_module(module_name)
+        except ImportError:
+            continue
+        except Exception as error:
+            return False, f"{label} could not be imported: {error}"
+        return True, f"{label} is available."
+    return False, f"{label} is not installed."
+
+
 def flash_attention_probe() -> tuple[bool, str]:
     """Probe whether any supported Flash Attention provider is installed."""
     if importlib.util.find_spec("flash_attn") is not None:

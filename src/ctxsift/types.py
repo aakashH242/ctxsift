@@ -34,6 +34,19 @@ class FreshnessStatus(str, Enum):
     UNKNOWN = "unknown"
 
 
+class LocalQuantizationMode(str, Enum):
+    """Supported Transformers quantization modes for local compression."""
+
+    NONE = "none"
+    BNB_8BIT = "bnb-8bit"
+    BNB_4BIT_FP4 = "bnb-4bit-fp4"
+    BNB_4BIT_NF4 = "bnb-4bit-nf4"
+    QUANTO_INT8 = "quanto-int8"
+    QUANTO_INT4 = "quanto-int4"
+    QUANTO_INT2 = "quanto-int2"
+    QUANTO_FLOAT8 = "quanto-float8"
+
+
 class StrictModel(BaseModel):
     """Base model with strict field handling."""
 
@@ -207,6 +220,7 @@ class LocalModelConfig(StrictModel):
     device: str = "cpu"
     dtype: str = "auto"
     attn_implementation: str = "auto"
+    quantization: LocalQuantizationMode = LocalQuantizationMode.NONE
 
 
 class EmbeddingConfig(StrictModel):
@@ -246,6 +260,7 @@ class RecallConfig(StrictModel):
     default_limit: int = Field(default=10, ge=1)
     lexical_candidate_limit: int = Field(default=50, ge=1)
     vector_candidate_limit: int = Field(default=50, ge=1)
+    max_vector_distance: float = Field(default=0.75, ge=0.0)
 
 
 class AppConfig(StrictModel):

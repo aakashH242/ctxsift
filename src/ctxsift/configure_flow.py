@@ -5,7 +5,13 @@ from __future__ import annotations
 from pydantic import TypeAdapter
 import typer
 
-from ctxsift.types import AppConfig, ReasoningMode, RemoteModelConfig, RunMode
+from ctxsift.types import (
+    AppConfig,
+    LocalQuantizationMode,
+    ReasoningMode,
+    RemoteModelConfig,
+    RunMode,
+)
 
 
 def prompt_for_config(current: AppConfig) -> AppConfig:
@@ -44,6 +50,11 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
     local_attention = typer.prompt(
         "Local attention backend",
         default=current.local.attn_implementation,
+    )
+    local_quantization = _prompt_enum(
+        "Local quantization",
+        current.local.quantization,
+        TypeAdapter(LocalQuantizationMode),
     )
     remote_enabled = typer.confirm(
         "Enable remote LiteLLM backend?",
@@ -105,6 +116,11 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
         default=current.recall.vector_candidate_limit,
         type=int,
     )
+    max_vector_distance = typer.prompt(
+        "Recall max vector distance",
+        default=current.recall.max_vector_distance,
+        type=float,
+    )
     db_path = typer.prompt(
         "Database path override",
         default=current.db_path or "",
@@ -125,6 +141,7 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
                 "device": local_device,
                 "dtype": local_dtype,
                 "attn_implementation": local_attention,
+                "quantization": local_quantization,
             },
             "embedding": {
                 "model": embedding_model,
@@ -141,6 +158,7 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
                 "default_limit": recall_default_limit,
                 "lexical_candidate_limit": lexical_candidate_limit,
                 "vector_candidate_limit": vector_candidate_limit,
+                "max_vector_distance": max_vector_distance,
             },
         }
     )

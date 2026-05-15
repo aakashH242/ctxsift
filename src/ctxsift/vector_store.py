@@ -26,7 +26,7 @@ async def ensure_vector_store(
         if not status.available:
             return status
         metadata = await _vector_metadata(connection)
-        mismatch_status = _dimension_mismatch_status(metadata, model_name, dimension, status)
+        mismatch_status = _metadata_mismatch_status(metadata, model_name, dimension, status)
         if mismatch_status is not None:
             return mismatch_status
         await _create_vector_table_if_needed(connection, dimension)
@@ -108,10 +108,25 @@ async def vector_store_status(
     return await ensure_vector_store(db_path, model_name, dimension)
 
 
+async def probe_vector_store(db_path: Path) -> VectorStoreStatus:
+    """Probe sqlite-vec availability and stored metadata without loading models."""
+    async with aiosqlite.connect(db_path) as connection:
+        status = await _load_sqlite_vec(connection, "", None)
+        if not status.available:
+            return status
+        metadata = await _vector_metadata(connection)
+    return VectorStoreStatus(
+        available=True,
+        model_name=metadata.get(METADATA_MODEL_KEY),
+        dimension=_metadata_dimension(metadata),
+        sqlite_vec_version=status.sqlite_vec_version,
+    )
+
+
 async def _load_sqlite_vec(
     connection: aiosqlite.Connection,
     model_name: str,
-    dimension: int,
+    dimension: int | None,
 ) -> VectorStoreStatus:
     try:
         import sqlite_vec
@@ -168,12 +183,24 @@ async def _vector_metadata(connection: aiosqlite.Connection) -> dict[str, str]:
     return {str(row[0]): str(row[1]) for row in rows}
 
 
-def _dimension_mismatch_status(
+def _metadata_mismatch_status(
     metadata: dict[str, str],
     model_name: str,
     dimension: int,
     status: VectorStoreStatus,
 ) -> VectorStoreStatus | None:
+    existing_model_name = metadata.get(METADATA_MODEL_KEY)
+    if existing_model_name and existing_model_name != model_name:
+        return VectorStoreStatus(
+            available=False,
+            warning=(
+                "sqlite-vec index model mismatch; recall will fall back to FTS5 only. "
+                f"DB model={existing_model_name}, configured model={model_name}."
+            ),
+            model_name=model_name,
+            dimension=dimension,
+            sqlite_vec_version=status.sqlite_vec_version,
+        )
     existing_dimension = metadata.get(METADATA_DIMENSION_KEY)
     if existing_dimension is None:
         return None
@@ -189,6 +216,13 @@ def _dimension_mismatch_status(
         dimension=dimension,
         sqlite_vec_version=status.sqlite_vec_version,
     )
+
+
+def _metadata_dimension(metadata: dict[str, str]) -> int | None:
+    raw_value = metadata.get(METADATA_DIMENSION_KEY)
+    if raw_value is None:
+        return None
+    return int(raw_value)
 
 
 async def _store_vector_metadata(

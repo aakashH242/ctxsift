@@ -3,21 +3,35 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
+import logging
+import os
+import re
 from dataclasses import dataclass
 from typing import Any
 
 from ctxsift.acceleration import gemma_attention_choice
-from ctxsift.compression_prompt import build_messages
+from ctxsift.compression_prompt import build_text_messages
 from ctxsift.models.base import BackendUnavailableError, ModelBackend, ModelCompressionInput
+from ctxsift.models.transformers_quantization import build_transformers_load_options
 from ctxsift.types import LocalModelConfig
 
 
 @dataclass(frozen=True)
 class ResolvedDevice:
-    """Resolved pipeline device settings."""
+    """Resolved model device settings."""
 
-    pipeline_device: int | str
+    torch_device: str
     label: str
+
+
+@dataclass(frozen=True)
+class GemmaTextRuntime:
+    """Loaded text-only Gemma runtime."""
+
+    model: Any
+    tokenizer: Any
+    input_device: str
 
 
 class TransformersGemmaBackend(ModelBackend):
@@ -28,34 +42,28 @@ class TransformersGemmaBackend(ModelBackend):
     def __init__(self, config: LocalModelConfig) -> None:
         self._config = config
         self.model_name = config.model
-        self._pipeline: Any | None = None
+        self._runtime: GemmaTextRuntime | None = None
 
     @property
     def cache_model_id(self) -> str:
-        return self.model_name
+        if self._config.quantization.value == "none":
+            return self.model_name
+        return f"{self.model_name}[{self._config.quantization.value}]"
 
     async def compress(self, request: ModelCompressionInput) -> str:
-        pipe = await self._get_pipeline()
-        messages = build_messages(request)
-        generate_kwargs = {"max_new_tokens": request.max_output_tokens}
-        result = await asyncio.to_thread(
-            pipe,
-            messages,
-            return_full_text=False,
-            generate_kwargs=generate_kwargs,
-        )
-        text = _generated_text(result)
+        runtime = await self._get_runtime()
+        text = await asyncio.to_thread(self._generate_text, runtime, request)
         if not text:
             raise BackendUnavailableError("Transformers backend returned empty output.")
         return text
 
-    async def _get_pipeline(self) -> Any:
-        if self._pipeline is None:
-            self._pipeline = await asyncio.to_thread(self._build_pipeline)
-        return self._pipeline
+    async def _get_runtime(self) -> GemmaTextRuntime:
+        if self._runtime is None:
+            self._runtime = await asyncio.to_thread(self._build_runtime)
+        return self._runtime
 
-    def _build_pipeline(self) -> Any:
-        pipeline = _load_transformers_pipeline()
+    def _build_runtime(self) -> GemmaTextRuntime:
+        auto_model, auto_tokenizer = _load_transformers_components()
         torch_module = _load_torch_module()
         resolved_device = _resolve_device(self._config.device, torch_module)
         torch_dtype = _resolve_torch_dtype(self._config.dtype, torch_module)
@@ -63,53 +71,61 @@ class TransformersGemmaBackend(ModelBackend):
             resolved_device.label,
             self._config.attn_implementation,
         )
-        model_kwargs = _model_kwargs(attention_backend)
         try:
-            return _create_pipeline(
-                pipeline=pipeline,
+            return _create_text_runtime(
+                auto_model=auto_model,
+                auto_tokenizer=auto_tokenizer,
+                config=self._config,
                 model_name=self.model_name,
                 resolved_device=resolved_device,
                 torch_dtype=torch_dtype,
-                model_kwargs=model_kwargs,
+                attention_backend=attention_backend,
             )
+        except BackendUnavailableError:
+            raise
         except Exception as error:
             if not attention_backend:
                 raise BackendUnavailableError(str(error)) from error
             try:
-                return _create_pipeline(
-                    pipeline=pipeline,
+                return _create_text_runtime(
+                    auto_model=auto_model,
+                    auto_tokenizer=auto_tokenizer,
+                    config=self._config,
                     model_name=self.model_name,
                     resolved_device=resolved_device,
                     torch_dtype=torch_dtype,
-                    model_kwargs={},
+                    attention_backend=None,
                 )
             except Exception as fallback_error:  # pragma: no cover - exercised through fallback behavior
                 raise BackendUnavailableError(str(fallback_error)) from fallback_error
 
-
-def _pipeline_task(model_name: str) -> str:
-    if "gemma-4" in model_name.casefold():
-        return "any-to-any"
-    return "text-generation"
+    def _generate_text(self, runtime: GemmaTextRuntime, request: ModelCompressionInput) -> str:
+        messages = build_text_messages(request)
+        prompt_text = _apply_text_chat_template(runtime.tokenizer, messages)
+        inputs = runtime.tokenizer(prompt_text, return_tensors="pt").to(runtime.input_device)
+        input_len = _input_length(inputs["input_ids"])
+        outputs = runtime.model.generate(**inputs, max_new_tokens=request.max_output_tokens)
+        decoded = runtime.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=False)
+        return _normalize_generated_text(decoded)
 
 
 def _resolve_device(device_name: str, torch_module: Any) -> ResolvedDevice:
     normalized = device_name.strip().casefold()
     cuda_available = bool(torch_module.cuda.is_available())
     if normalized == "cpu":
-        return ResolvedDevice(pipeline_device=-1, label="cpu")
+        return ResolvedDevice(torch_device="cpu", label="cpu")
     if normalized in {"auto", "cuda"}:
         if cuda_available:
-            return ResolvedDevice(pipeline_device=0, label="cuda:0")
-        return ResolvedDevice(pipeline_device=-1, label="cpu")
+            return ResolvedDevice(torch_device="cuda:0", label="cuda:0")
+        return ResolvedDevice(torch_device="cpu", label="cpu")
     if normalized.startswith("cuda:"):
         if cuda_available:
             suffix = normalized.split(":", 1)[1]
             if suffix.isdigit():
-                return ResolvedDevice(pipeline_device=int(suffix), label=f"cuda:{suffix}")
-            return ResolvedDevice(pipeline_device=device_name, label=device_name)
-        return ResolvedDevice(pipeline_device=-1, label="cpu")
-    return ResolvedDevice(pipeline_device=-1, label="cpu")
+                return ResolvedDevice(torch_device=f"cuda:{suffix}", label=f"cuda:{suffix}")
+            return ResolvedDevice(torch_device=device_name, label=device_name)
+        return ResolvedDevice(torch_device="cpu", label="cpu")
+    return ResolvedDevice(torch_device="cpu", label="cpu")
 
 
 def _resolve_torch_dtype(dtype_name: str, torch_module: Any) -> Any:
@@ -123,24 +139,21 @@ def _resolve_torch_dtype(dtype_name: str, torch_module: Any) -> Any:
     return torch_dtype
 
 
-def _generated_text(result: Any) -> str:
-    if isinstance(result, list) and result:
-        first_item = result[0]
-        if isinstance(first_item, dict):
-            generated_text = first_item.get("generated_text")
-            if isinstance(generated_text, str):
-                return generated_text.strip()
-    if isinstance(result, str):
-        return result.strip()
-    return ""
-
-
-def _load_transformers_pipeline() -> Any:
+def _load_transformers_components() -> tuple[Any, Any]:
     try:
-        from transformers import pipeline
+        from huggingface_hub.utils import disable_progress_bars
+        from transformers import AutoModelForCausalLM, AutoTokenizer
+        from transformers.utils import logging as transformers_logging
     except ImportError as error:  # pragma: no cover - depends on local environment
         raise BackendUnavailableError("Transformers is not installed.") from error
-    return pipeline
+    os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
+    os.environ.setdefault("TRANSFORMERS_NO_ADVISORY_WARNINGS", "1")
+    disable_progress_bars()
+    transformers_logging.set_verbosity_error()
+    transformers_logging.disable_progress_bar()
+    logging.getLogger("huggingface_hub").setLevel(logging.ERROR)
+    logging.getLogger("transformers").setLevel(logging.ERROR)
+    return AutoModelForCausalLM, AutoTokenizer
 
 
 def _load_torch_module() -> Any:
@@ -151,25 +164,103 @@ def _load_torch_module() -> Any:
     return torch
 
 
-def _model_kwargs(attention_backend: str | None) -> dict[str, Any]:
-    if not attention_backend:
-        return {}
-    return {"attn_implementation": attention_backend}
-
-
-def _create_pipeline(
-    pipeline: Any,
+def _create_text_runtime(
+    auto_model: Any,
+    auto_tokenizer: Any,
+    config: LocalModelConfig,
     model_name: str,
     resolved_device: ResolvedDevice,
     torch_dtype: Any,
-    model_kwargs: dict[str, Any],
-) -> Any:
-    kwargs = {
-        "task": _pipeline_task(model_name),
-        "model": model_name,
-        "device": resolved_device.pipeline_device,
-        "torch_dtype": torch_dtype,
-    }
-    if model_kwargs:
-        kwargs["model_kwargs"] = model_kwargs
-    return pipeline(**kwargs)
+    attention_backend: str | None,
+) -> GemmaTextRuntime:
+    load_options = build_transformers_load_options(
+        config=config,
+        resolved_torch_device=resolved_device.torch_device,
+        torch_dtype=torch_dtype,
+        attention_backend=attention_backend,
+    )
+    model = auto_model.from_pretrained(model_name, **load_options.model_kwargs)
+    if load_options.move_to_device:
+        model.to(resolved_device.torch_device)
+    model.eval()
+    tokenizer = auto_tokenizer.from_pretrained(model_name, padding_side="left")
+    input_device = _runtime_input_device(model, resolved_device.torch_device)
+    return GemmaTextRuntime(model=model, tokenizer=tokenizer, input_device=input_device)
+
+
+def _runtime_input_device(model: Any, fallback_device: str) -> str:
+    embedding_device = _input_embedding_device(model)
+    if embedding_device not in {None, "meta"}:
+        return embedding_device
+    hf_device_map = getattr(model, "hf_device_map", None)
+    if isinstance(hf_device_map, dict):
+        for device in hf_device_map.values():
+            normalized_device = _normalize_runtime_device(device)
+            if normalized_device not in {None, "disk", "meta"}:
+                return normalized_device
+    model_device = _normalize_runtime_device(getattr(model, "device", None))
+    if model_device not in {None, "meta"}:
+        return model_device
+    return fallback_device
+
+
+def _input_embedding_device(model: Any) -> str | None:
+    get_input_embeddings = getattr(model, "get_input_embeddings", None)
+    if not callable(get_input_embeddings):
+        return None
+    try:
+        embeddings = get_input_embeddings()
+    except Exception:
+        return None
+    weight = getattr(embeddings, "weight", None)
+    return _normalize_runtime_device(getattr(weight, "device", None))
+
+
+def _normalize_runtime_device(device: Any) -> str | None:
+    if device is None:
+        return None
+    if isinstance(device, int):
+        return f"cuda:{device}"
+    if isinstance(device, str):
+        return device
+    device_type = getattr(device, "type", None)
+    if isinstance(device_type, str):
+        device_index = getattr(device, "index", None)
+        if device_index is None:
+            return device_type
+        return f"{device_type}:{device_index}"
+    return str(device)
+
+
+def _apply_text_chat_template(tokenizer: Any, messages: list[dict[str, str]]) -> str:
+    kwargs = {"tokenize": False, "add_generation_prompt": True}
+    signature = inspect.signature(tokenizer.apply_chat_template)
+    if "enable_thinking" in signature.parameters:
+        kwargs["enable_thinking"] = False
+    return tokenizer.apply_chat_template(messages, **kwargs)
+
+
+def _input_length(input_ids: Any) -> int:
+    shape = getattr(input_ids, "shape", None)
+    if shape is not None:
+        return int(shape[-1])
+    if isinstance(input_ids, list) and input_ids:
+        first_item = input_ids[0]
+        if isinstance(first_item, list):
+            return len(first_item)
+    return len(input_ids)
+
+
+def _normalize_generated_text(text: str) -> str:
+    cleaned = text.strip()
+    while True:
+        updated = _strip_edge_tag(cleaned)
+        if updated == cleaned:
+            return cleaned
+        cleaned = updated
+
+
+def _strip_edge_tag(text: str) -> str:
+    leading = re.sub(r"^\s*<[^>\n]{1,16}>\s*", "", text, count=1)
+    trailing = re.sub(r"\s*<[^>\n]{1,16}>\s*$", "", leading, count=1)
+    return trailing.strip()

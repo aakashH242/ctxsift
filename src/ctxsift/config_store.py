@@ -13,7 +13,7 @@ from typing import Any, Mapping
 from platformdirs import user_config_path
 from pydantic import TypeAdapter
 
-from ctxsift.types import AppConfig, ReasoningMode, RunMode
+from ctxsift.types import AppConfig, LocalQuantizationMode, ReasoningMode, RunMode
 from ctxsift.workspace import detect_workspace_context
 
 
@@ -103,6 +103,10 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
         ("local", "attn_implementation"),
         TypeAdapter(str),
     ),
+    "local.quantization": ConfigKeySpec(
+        ("local", "quantization"),
+        TypeAdapter(LocalQuantizationMode),
+    ),
     "embedding.model": ConfigKeySpec(("embedding", "model"), TypeAdapter(str)),
     "embedding.backend": ConfigKeySpec(("embedding", "backend"), TypeAdapter(str)),
     "embedding.device": ConfigKeySpec(("embedding", "device"), TypeAdapter(str)),
@@ -133,6 +137,10 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
         ("recall", "vector_candidate_limit"),
         TypeAdapter(int),
     ),
+    "recall.max_vector_distance": ConfigKeySpec(
+        ("recall", "max_vector_distance"),
+        TypeAdapter(float),
+    ),
 }
 
 
@@ -150,6 +158,7 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_LOCAL_DEVICE": ("local", "device"),
     "CTXSIFT_LOCAL_DTYPE": ("local", "dtype"),
     "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": ("local", "attn_implementation"),
+    "CTXSIFT_LOCAL_QUANTIZATION": ("local", "quantization"),
     "CTXSIFT_EMBEDDING_MODEL": ("embedding", "model"),
     "CTXSIFT_EMBEDDING_BACKEND": ("embedding", "backend"),
     "CTXSIFT_EMBEDDING_DEVICE": ("embedding", "device"),
@@ -162,6 +171,7 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_RECALL_DEFAULT_LIMIT": ("recall", "default_limit"),
     "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": ("recall", "lexical_candidate_limit"),
     "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": ("recall", "vector_candidate_limit"),
+    "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": ("recall", "max_vector_distance"),
     "CTXSIFT_DB_PATH": ("db_path",),
 }
 
@@ -180,6 +190,7 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_LOCAL_DEVICE": TypeAdapter(str),
     "CTXSIFT_LOCAL_DTYPE": TypeAdapter(str),
     "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": TypeAdapter(str),
+    "CTXSIFT_LOCAL_QUANTIZATION": TypeAdapter(LocalQuantizationMode),
     "CTXSIFT_EMBEDDING_MODEL": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_BACKEND": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DEVICE": TypeAdapter(str),
@@ -192,6 +203,7 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_RECALL_DEFAULT_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": TypeAdapter(int),
+    "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": TypeAdapter(float),
     "CTXSIFT_DB_PATH": TypeAdapter(str),
 }
 

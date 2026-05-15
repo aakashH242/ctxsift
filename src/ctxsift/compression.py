@@ -35,8 +35,6 @@ DETERMINISTIC_MODEL_ID = "deterministic"
 DETERMINISTIC_PROVIDER = "deterministic"
 MODEL_PROMPT_VERSION = "gemma-transformers-v1"
 DETERMINISTIC_PROMPT_VERSION = "deterministic-v1"
-LINE_LIMIT = 3
-CHARACTERS_PER_TOKEN = 4
 WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -67,9 +65,19 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
     )
     extracted_terms = build_extracted_terms(signal)
     remote_active = _remote_backend_enabled(resolved_config.config.remote.base_url)
+    attempted_provider = (
+        "litellm" if remote_active else resolved_config.config.local.backend
+    )
+    attempted_model_name = (
+        resolved_config.config.remote.model_name
+        if remote_active
+        else resolved_config.config.local.model
+    )
 
     try:
         backend = create_compression_backend(resolved_config.config)
+        attempted_provider = backend.provider_name
+        attempted_model_name = backend.model_name
         model_cache_key = build_exact_cache_key(
             workspace_root=workspace.workspace_root,
             raw_input_hash=raw_input_hash,
@@ -85,7 +93,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
         compressed_output = await backend.compress(
             ModelCompressionInput(
                 instruction=request.instruction,
-                raw_input=request.raw_input,
+                raw_input=_model_input_text(request),
                 extracted_signal=signal,
                 max_output_tokens=resolved_config.config.max_output_tokens,
             )
@@ -109,24 +117,23 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
         )
     except BackendUnavailableError as error:
         if remote_active:
-            return _remote_failure_result(
+            return _backend_failure_result(
                 request=request,
                 signal=signal,
                 extracted_terms=extracted_terms,
-                model_name=resolved_config.config.remote.model_name,
+                model_provider=attempted_provider,
+                model_name=attempted_model_name,
+                label="Remote",
                 error=error,
             )
-        return await _deterministic_fallback(
-            db_path=db_path,
+        return _backend_failure_result(
             request=request,
-            workspace=workspace,
             signal=signal,
-            referenced_files=referenced_files,
             extracted_terms=extracted_terms,
-            normalized_instruction=normalized_instruction,
-            raw_input_hash=raw_input_hash,
-            max_output_tokens=resolved_config.config.max_output_tokens,
-            embedding_config=resolved_config.config.embedding,
+            model_provider=attempted_provider,
+            model_name=attempted_model_name,
+            label="Local",
+            error=error,
         )
 
 
@@ -159,16 +166,10 @@ def build_exact_cache_key(
     return sha256_text("\n".join(parts))
 
 
-def summarize_deterministically(
-    raw_input: str, signal: ExtractedSignal, max_output_tokens: int
-) -> str:
+def summarize_deterministically(raw_input: str, signal: ExtractedSignal) -> str:
     """Produce a stable fallback summary without a model backend."""
     summary_lines = _summary_lines(raw_input, signal)
-    budget = max(max_output_tokens, 1) * CHARACTERS_PER_TOKEN
-    joined = "\n".join(summary_lines)
-    if len(joined) <= budget:
-        return joined
-    return _trim_to_budget(summary_lines, budget)
+    return "\n".join(summary_lines)
 
 
 def sha256_text(value: str) -> str:
@@ -213,7 +214,7 @@ async def _deterministic_fallback(
     cached_result = await _cached_compression_result(db_path, fallback_cache_key)
     if cached_result is not None:
         return cached_result
-    compressed_output = summarize_deterministically(request.raw_input, signal, max_output_tokens)
+    compressed_output = summarize_deterministically(_fallback_source_text(request), signal)
     return await _store_new_result(
         db_path=db_path,
         request=request,
@@ -319,16 +320,18 @@ def _remote_backend_enabled(base_url: str) -> bool:
     return bool(base_url.strip())
 
 
-def _remote_failure_result(
+def _backend_failure_result(
     request: CompressionRequest,
     signal: ExtractedSignal,
     extracted_terms: list[ExtractedTermRecord],
+    model_provider: str,
     model_name: str,
+    label: str,
     error: BackendUnavailableError,
 ) -> CompressionResult:
-    passthrough_output = _passthrough_output(request)
+    passthrough_output = _fallback_source_text(request)
     warning_line = (
-        f"[ctxsift warning] Remote compression failed: {error}. "
+        f"[ctxsift warning] {label} compression failed: {error}. "
         "Returning uncompressed output and skipping storage."
     )
     body = passthrough_output.strip()
@@ -338,21 +341,31 @@ def _remote_failure_result(
         referenced_files=signal.referenced_files,
         extracted_terms=[item.term for item in extracted_terms],
         used_cache=False,
-        model_provider="litellm",
-        model_name=model_name or "remote",
+        model_provider=model_provider,
+        model_name=model_name or label.casefold(),
         record_id=None,
     )
 
 
-def _passthrough_output(request: CompressionRequest) -> str:
-    if request.mode == "run":
-        output_text = _run_payload_output_text(request.raw_input)
-        if output_text is not None:
-            return output_text
+def _extraction_text(request: CompressionRequest) -> str:
+    if request.mode != "run":
+        return request.raw_input
+    output_text = _run_payload_output_text(request.raw_input)
+    if output_text is not None:
+        return output_text
     return request.raw_input
 
 
-def _extraction_text(request: CompressionRequest) -> str:
+def _model_input_text(request: CompressionRequest) -> str:
+    if request.mode != "run":
+        return request.raw_input
+    output_text = _run_payload_output_text(request.raw_input)
+    if output_text is not None:
+        return output_text
+    return request.raw_input
+
+
+def _fallback_source_text(request: CompressionRequest) -> str:
     if request.mode != "run":
         return request.raw_input
     output_text = _run_payload_output_text(request.raw_input)
@@ -400,6 +413,28 @@ def _read_run_output_block(lines: list[str], start_index: int) -> tuple[list[str
     return block_lines, index
 
 
+def _run_payload_metadata_text(raw_input: str) -> str:
+    lines = raw_input.splitlines()
+    metadata_lines: list[str] = []
+    index = 0
+    while index < len(lines):
+        line = lines[index]
+        if line in {"Stdout:", "Stderr:"}:
+            index += 1
+            _, index = _read_run_output_block(lines, index)
+            continue
+        if line.startswith("```"):
+            index += 1
+            continue
+        if line.startswith("Command:") or line.startswith("Shell mode:"):
+            index += 1
+            continue
+        if line.strip():
+            metadata_lines.append(line)
+        index += 1
+    return "\n".join(metadata_lines).strip()
+
+
 def _summary_lines(raw_input: str, signal: ExtractedSignal) -> list[str]:
     if not raw_input.strip():
         return ["Summary:", "(no input)"]
@@ -426,37 +461,16 @@ def _summary_lines(raw_input: str, signal: ExtractedSignal) -> list[str]:
 def _append_joined(lines: list[str], label: str, values: list[str]) -> None:
     if not values:
         return
-    lines.append(f"{label}: {', '.join(values[:LINE_LIMIT])}")
+    lines.append(f"{label}: {', '.join(values)}")
 
 
 def _append_labeled_lines(lines: list[str], label: str, values: list[str]) -> None:
     if not values:
         return
     lines.append(f"{label}:")
-    lines.extend(f"- {value}" for value in values[:LINE_LIMIT])
+    lines.extend(f"- {value}" for value in values)
 
 
 def _fallback_lines(raw_input: str) -> list[str]:
     non_empty_lines = [line.strip() for line in raw_input.splitlines() if line.strip()]
-    return [f"- {line}" for line in non_empty_lines[:LINE_LIMIT]]
-
-
-def _trim_to_budget(summary_lines: list[str], budget: int) -> str:
-    trimmed_lines: list[str] = []
-    used = 0
-    for line in summary_lines:
-        line_cost = len(line) if not trimmed_lines else len(line) + 1
-        if used + line_cost <= budget:
-            trimmed_lines.append(line)
-            used += line_cost
-            continue
-        remaining = budget - used
-        if remaining <= 4:
-            break
-        if trimmed_lines:
-            remaining -= 1
-        trimmed_lines.append(f"{line[:remaining - 3].rstrip()}...")
-        break
-    if not trimmed_lines:
-        return "..."
-    return "\n".join(trimmed_lines)
+    return [f"- {line}" for line in non_empty_lines]

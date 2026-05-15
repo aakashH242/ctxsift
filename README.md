@@ -1,3 +1,2 @@
-# CtxSift
+# CtxSift - Save tokens and extend sessions
 
-The biggest source of token usage is when agents run commands and 

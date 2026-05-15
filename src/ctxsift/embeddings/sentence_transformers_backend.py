@@ -90,7 +90,6 @@ class SentenceTransformersBackend(EmbeddingBackend):
                 self.model_name,
                 backend=backend,
                 device=device,
-                local_files_only=True,
                 model_kwargs=model_kwargs,
             )
         except Exception:
@@ -99,7 +98,6 @@ class SentenceTransformersBackend(EmbeddingBackend):
                     self.model_name,
                     backend="torch",
                     device=device,
-                    local_files_only=True,
                     model_kwargs=self._torch_model_kwargs(device, None),
                 )
             attention_backend = model_kwargs.get("attn_implementation")
@@ -109,7 +107,6 @@ class SentenceTransformersBackend(EmbeddingBackend):
                 self.model_name,
                 backend="torch",
                 device=device,
-                local_files_only=True,
                 model_kwargs=self._torch_model_kwargs(device, None),
             )
 

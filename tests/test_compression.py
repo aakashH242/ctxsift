@@ -1,4 +1,4 @@
-"""Tests for deterministic compression and exact-cache behavior."""
+"""Tests for compression behavior, backend selection, and fallback handling."""
 
 import asyncio
 from dataclasses import dataclass
@@ -8,7 +8,7 @@ import sqlite3
 import pytest
 
 from ctxsift import compression
-from ctxsift.compression import compress_input
+from ctxsift.compression import compress_input, summarize_deterministically
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
 from ctxsift.run_capture import CommandCapture, render_run_payload
@@ -16,7 +16,7 @@ from ctxsift.types import AppConfig, CompressionRequest
 from ctxsift.types import WorkspaceContext
 
 
-def test_compress_input_persists_deterministic_summary(
+def test_compress_input_returns_local_passthrough_without_storing_when_backend_is_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -54,25 +54,18 @@ def test_compress_input_persists_deterministic_summary(
     result = asyncio.run(compress_input(request))
 
     assert result.used_cache is False
-    assert result.model_provider == "deterministic"
-    assert result.model_name == "deterministic"
-    assert "Domains: python, pytest" in result.compressed_output
-    assert "Files: src/auth.py, tests/test_auth.py" in result.compressed_output
+    assert result.model_provider == "transformers"
+    assert result.model_name == "google/gemma-test"
+    assert "[ctxsift warning] Local compression failed:" in result.compressed_output
+    assert "AuthError: login failed" in result.compressed_output
     db_path = repo_path / ".git" / "ctxsift" / "ctxsift.db"
     with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            """
-            SELECT exact_cache_key, model_provider, model_name, prompt_version, ctxsift_version
-            FROM records
-            """
-        ).fetchone()
+        count = connection.execute("SELECT COUNT(*) FROM records").fetchone()[0]
 
-    assert row is not None
-    assert row[0]
-    assert row[1:] == ("deterministic", "deterministic", "deterministic-v1", "0.1.0")
+    assert count == 0
 
 
-def test_compress_input_uses_exact_cache_without_duplicate_record(
+def test_compress_input_does_not_cache_local_passthrough_when_backend_is_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -106,14 +99,14 @@ def test_compress_input_uses_exact_cache_without_duplicate_record(
     second_result = asyncio.run(compress_input(second_request))
 
     assert first_result.used_cache is False
-    assert second_result.used_cache is True
-    assert second_result.record_id == first_result.record_id
+    assert second_result.used_cache is False
+    assert second_result.record_id is None
     assert second_result.compressed_output == first_result.compressed_output
     db_path = repo_path / ".git" / "ctxsift" / "ctxsift.db"
     with sqlite3.connect(db_path) as connection:
         count = connection.execute("SELECT COUNT(*) FROM records").fetchone()[0]
 
-    assert count == 1
+    assert count == 0
 
 
 def test_compress_input_uses_model_backend_when_available(
@@ -153,6 +146,61 @@ def test_compress_input_uses_model_backend_when_available(
         ).fetchone()
 
     assert stored == ("transformers", "google/gemma-test", "gemma-transformers-v1")
+
+
+def test_compress_input_run_mode_sends_only_output_text_to_model_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    seen: dict[str, object] = {}
+
+    class FakeBackend:
+        provider_name = "transformers"
+        model_name = "google/gemma-test"
+        cache_model_id = "google/gemma-test"
+
+        async def compress(self, request) -> str:
+            seen["raw_input"] = request.raw_input
+            return "Model summary"
+
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
+    capture = CommandCapture(
+        command=["python", "-c", "print('hello')"],
+        cwd=str(repo_path),
+        stdout="hello\n",
+        stderr="oops\n",
+        exit_code=1,
+        duration_ms=7,
+    )
+    workspace = WorkspaceContext(
+        cwd=str(repo_path),
+        workspace_root=str(repo_path),
+        is_git_repo=True,
+        git_dir=str(repo_path / ".git"),
+        workspace_config_path=str(repo_path / ".git" / "ctxsift" / "config.toml"),
+        db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
+    )
+    request = CompressionRequest(
+        instruction="Summarize the failure",
+        raw_input=render_run_payload(
+            capture,
+            workspace,
+            GitMetadata(git_head="abc123", git_branch="main", git_dirty=False),
+        ),
+        mode="run",
+        cwd=str(repo_path),
+        command="python -c print('hello')",
+        command_args=capture.command,
+        command_exit_code=capture.exit_code,
+        command_duration_ms=capture.duration_ms,
+    )
+
+    result = asyncio.run(compress_input(request))
+
+    assert result.compressed_output == "Model summary"
+    assert seen["raw_input"] == "hello\n\noops"
 
 
 def test_compress_input_uses_remote_backend_when_base_url_is_configured(
@@ -244,9 +292,10 @@ def test_compress_input_falls_back_when_model_backend_is_unavailable(
 
     result = asyncio.run(compress_input(request))
 
-    assert result.model_provider == "deterministic"
-    assert result.model_name == "deterministic"
-    assert "Errors:" in result.compressed_output
+    assert result.model_provider == "transformers"
+    assert result.model_name == "google/gemma-test"
+    assert "[ctxsift warning] Local compression failed:" in result.compressed_output
+    assert "AuthError: login failed" in result.compressed_output
 
 
 def test_compress_input_falls_back_when_backend_factory_is_unavailable(
@@ -368,7 +417,9 @@ def test_compress_input_remote_failure_passthrough_uses_run_output_body(
     assert result.model_provider == "litellm"
     assert "hello" in result.compressed_output
     assert "oops" in result.compressed_output
+    assert "[ctxsift metadata]" not in result.compressed_output
     assert "Command:" not in result.compressed_output
+    assert "Exit code: 1" not in result.compressed_output
 
 
 def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_files(
@@ -424,7 +475,6 @@ def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_fil
     result = asyncio.run(compress_input(request))
 
     assert result.referenced_files == ["src/real.py"]
-    assert "Files: src/real.py" in result.compressed_output
     assert "src/generated.py" not in result.compressed_output
 
 
@@ -479,3 +529,13 @@ def test_compress_input_run_mode_with_empty_output_does_not_promote_inline_comma
 
     assert result.referenced_files == []
     assert "src/generated.py" not in result.compressed_output
+
+
+def test_summarize_deterministically_does_not_truncate_values() -> None:
+    raw_input = "\n".join(f"line {index}" for index in range(1, 8))
+
+    output = summarize_deterministically(raw_input, compression.ExtractedSignal())
+
+    assert "line 1" in output
+    assert "line 7" in output
+    assert "..." not in output

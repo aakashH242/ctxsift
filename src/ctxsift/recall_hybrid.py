@@ -45,13 +45,20 @@ class HybridRecallRequest:
     limit: int
     normalized_query: str
     search_terms: list[str]
+    max_vector_distance: float
 
 
 def build_hybrid_records(request: HybridRecallRequest) -> list[RecallRecord]:
     """Fuse lexical and vector recall results with weighted RRF."""
     record_map = {record.record_id: record for record in request.all_records}
     lexical_ranks = _rank_positions([record.record_id for record in request.lexical_records])
-    vector_ranks = _rank_positions([hit.record_id for hit in request.vector_hits])
+    vector_ranks = _rank_positions(
+        [
+            hit.record_id
+            for hit in request.vector_hits
+            if _vector_hit_allowed(hit, lexical_ranks, request.max_vector_distance)
+        ]
+    )
     candidate_ids = _candidate_ids(lexical_ranks, vector_ranks)
     recall_records = [_build_recall_record(record_map[record_id], request, lexical_ranks, vector_ranks) for record_id in candidate_ids]
     filtered_records = _post_filter_file_matches(recall_records, request.file_filters)
@@ -67,6 +74,16 @@ def _candidate_ids(
     vector_ranks: dict[int, int],
 ) -> list[int]:
     return list({*lexical_ranks, *vector_ranks})
+
+
+def _vector_hit_allowed(
+    hit: VectorSearchHit,
+    lexical_ranks: dict[int, int],
+    max_vector_distance: float,
+) -> bool:
+    if hit.record_id in lexical_ranks:
+        return True
+    return hit.distance <= max_vector_distance
 
 
 def _build_recall_record(

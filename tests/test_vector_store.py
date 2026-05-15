@@ -31,8 +31,20 @@ def test_vector_store_dimension_mismatch_falls_back(tmp_path: Path) -> None:
     asyncio.run(initialize_database(db_path))
     asyncio.run(ensure_vector_store(db_path, "model-a", 4))
 
-    mismatch = asyncio.run(ensure_vector_store(db_path, "model-b", 8))
+    mismatch = asyncio.run(ensure_vector_store(db_path, "model-a", 8))
 
     assert mismatch.available is False
     assert mismatch.warning is not None
     assert "dimension mismatch" in mismatch.warning
+
+
+def test_vector_store_model_mismatch_falls_back(tmp_path: Path) -> None:
+    db_path = tmp_path / ".ctxsift" / "ctxsift.db"
+    asyncio.run(initialize_database(db_path))
+    asyncio.run(ensure_vector_store(db_path, "model-a", 4))
+
+    mismatch = asyncio.run(ensure_vector_store(db_path, "model-b", 4))
+
+    assert mismatch.available is False
+    assert mismatch.warning is not None
+    assert "model mismatch" in mismatch.warning

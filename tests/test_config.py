@@ -6,7 +6,7 @@ import pytest
 
 from ctxsift import config_store
 from ctxsift.config import ConfigResolutionRequest, resolve_config
-from ctxsift.types import AppConfig, ReasoningMode
+from ctxsift.types import AppConfig, LocalQuantizationMode, ReasoningMode
 from ctxsift.workspace import detect_workspace_context
 
 
@@ -18,6 +18,7 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.retries == 1
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
     assert config.local.attn_implementation == "auto"
+    assert config.local.quantization is LocalQuantizationMode.NONE
     assert config.embedding.backend == "auto"
     assert config.embedding.attn_implementation == "auto"
     assert config.embedding.query_prompt_name == ""
@@ -25,6 +26,7 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.recall.default_limit == 10
     assert config.recall.lexical_candidate_limit == 50
     assert config.recall.vector_candidate_limit == 50
+    assert config.recall.max_vector_distance == 0.75
 
 
 def test_reasoning_mode_rejects_invalid_values() -> None:
@@ -127,6 +129,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_EMBEDDING_MODEL": "mini",
             "CTXSIFT_LOCAL_MODEL": "google/gemma-4-E2B-it",
             "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": "flash_attention_2",
+            "CTXSIFT_LOCAL_QUANTIZATION": "quanto-int8",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": "web_search_query",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT": "Instruct: custom\nQuery: ",
             "CTXSIFT_EMBEDDING_BACKEND": "onnx",
@@ -134,6 +137,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_RECALL_DEFAULT_LIMIT": "12",
             "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": "44",
             "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": "33",
+            "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": "0.61",
         }
     )
 
@@ -141,6 +145,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["timeout_ms"] == 1234
     assert layer["local"]["model"] == "google/gemma-4-E2B-it"
     assert layer["local"]["attn_implementation"] == "flash_attention_2"
+    assert layer["local"]["quantization"] is LocalQuantizationMode.QUANTO_INT8
     assert layer["embedding"]["model"] == "mini"
     assert layer["embedding"]["backend"] == "onnx"
     assert layer["embedding"]["attn_implementation"] == "sdpa"
@@ -149,3 +154,4 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["recall"]["default_limit"] == 12
     assert layer["recall"]["lexical_candidate_limit"] == 44
     assert layer["recall"]["vector_candidate_limit"] == 33
+    assert layer["recall"]["max_vector_distance"] == 0.61

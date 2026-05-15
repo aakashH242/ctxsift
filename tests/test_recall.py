@@ -259,6 +259,54 @@ def test_recall_records_include_vector_only_candidates(
     assert "vector" in results[0].matched_fields
 
 
+def test_recall_records_drop_weak_vector_only_candidates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ctxsift.recall as recall_module
+
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    db_path = git_dir / "ctxsift" / "ctxsift.db"
+    target_file = repo_path / "src" / "vector_only.py"
+    target_file.parent.mkdir(parents=True)
+    target_file.write_text("raise VectorError\n", encoding="utf-8")
+    asyncio.run(initialize_database(db_path))
+    asyncio.run(
+        insert_record_bundle(
+            db_path,
+            StoredRecord(
+                instruction="investigate vector recall issue",
+                normalized_instruction="investigate vector recall issue",
+                compressed_output="VectorError in src/vector_only.py",
+                raw_input_hash="hash-vector",
+                mode="pipe",
+                workspace_root=str(repo_path),
+                cwd=str(repo_path),
+            ),
+            referenced_files=[
+                ReferencedFileRecord(
+                    path="src/vector_only.py",
+                    abs_path=str(target_file),
+                    sha256=sha256_if_reasonable(target_file),
+                    exists_at_capture=True,
+                )
+            ],
+            extracted_terms=[ExtractedTermRecord(term="VectorError", kind="symbol")],
+        )
+    )
+
+    async def fake_vector_hits(*args, **kwargs):
+        return [VectorSearchHit(record_id=1, distance=1.2)]
+
+    monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
+
+    results = asyncio.run(recall_records("semantic-only query", repo_path))
+
+    assert results == []
+
+
 def test_recall_records_apply_file_filters_after_retrieval(
     tmp_path: Path,
     monkeypatch,
@@ -381,6 +429,7 @@ def test_hybrid_recall_boosts_exact_symbol_test_and_file_hits(tmp_path: Path) ->
             limit=10,
             normalized_query="autherror",
             search_terms=["autherror", "tests/test_auth.py::test_login"],
+            max_vector_distance=0.75,
         )
     )
 

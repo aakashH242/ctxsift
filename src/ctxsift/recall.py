@@ -64,6 +64,7 @@ async def recall_records(
             limit=resolved_limit,
             normalized_query=normalized_query,
             search_terms=search_terms,
+            max_vector_distance=recall_config.max_vector_distance,
         )
     )
 

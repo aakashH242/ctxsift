@@ -137,3 +137,20 @@ def test_config_set_supports_recall_limit_keys(
 
     assert set_result.exit_code == 0
     assert "default_limit = 15" in show_result.stdout
+
+
+def test_config_set_supports_local_quantization_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "local.quantization", "quanto-int4", "--global"],
+    )
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert "quantization = \"quanto-int4\"" in show_result.stdout

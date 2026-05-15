@@ -7,8 +7,7 @@ from pathlib import Path
 import pytest
 
 import ctxsift.doctor as doctor
-from ctxsift.embeddings.base import EmbeddingBackendUnavailableError
-from ctxsift.types import AppConfig
+from ctxsift.types import AppConfig, VectorStoreStatus
 
 
 @dataclass(frozen=True)
@@ -16,17 +15,20 @@ class FakeResolvedConfig:
     config: AppConfig
 
 
-def test_doctor_reports_classified_warning_when_embedding_backend_unavailable(
+def test_doctor_reports_classified_warning_when_sqlite_vec_probe_fails(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     repo_path = tmp_path / "repo"
     (repo_path / ".git").mkdir(parents=True)
 
-    def fail_backend(config):
-        raise EmbeddingBackendUnavailableError("local embedding model is not cached")
+    async def failing_probe(db_path: Path) -> VectorStoreStatus:
+        return VectorStoreStatus(
+            available=False,
+            warning="sqlite-vec is not installed; recall will use FTS5 only.",
+        )
 
-    monkeypatch.setattr(doctor, "create_embedding_backend", fail_backend)
+    monkeypatch.setattr(doctor, "probe_vector_store", failing_probe)
 
     report = asyncio.run(doctor.collect_doctor_report(repo_path))
     rendered = doctor.render_doctor_report(report)
@@ -52,11 +54,6 @@ def test_doctor_reports_remote_config_warning_when_remote_is_incomplete(
         ),
     )
 
-    def fail_backend(config):
-        raise EmbeddingBackendUnavailableError("local embedding model is not cached")
-
-    monkeypatch.setattr(doctor, "create_embedding_backend", fail_backend)
-
     report = asyncio.run(doctor.collect_doctor_report(workspace_path))
     rendered = doctor.render_doctor_report(report)
 
@@ -79,14 +76,65 @@ def test_doctor_reports_optional_runtime_checks(
         lambda module_name, label: (False, f"{label} is not installed."),
     )
 
-    def fail_backend(config):
-        raise EmbeddingBackendUnavailableError("local embedding model is not cached")
-
-    monkeypatch.setattr(doctor, "create_embedding_backend", fail_backend)
-
     report = asyncio.run(doctor.collect_doctor_report(repo_path))
     rendered = doctor.render_doctor_report(report)
 
     assert "[optional] cuda: optional" in rendered
     assert "[optional] onnxruntime: optional" in rendered
     assert "[optional] flashattention: optional" in rendered
+
+
+def test_doctor_reports_model_mismatch_without_loading_embedding_backend(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+
+    async def mismatched_probe(db_path: Path) -> VectorStoreStatus:
+        return VectorStoreStatus(
+            available=True,
+            model_name="different-model",
+            dimension=1024,
+            sqlite_vec_version="v0.1.9",
+        )
+
+    monkeypatch.setattr(doctor, "probe_vector_store", mismatched_probe)
+
+    report = asyncio.run(doctor.collect_doctor_report(repo_path))
+    rendered = doctor.render_doctor_report(report)
+
+    assert "[warning] sqlite_vec: warning" in rendered
+    assert "model mismatch" in rendered
+
+
+def test_doctor_reports_quantization_package_warnings_when_quanto_is_selected(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        doctor,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(
+            config=AppConfig.model_validate({"local": {"quantization": "quanto-int4"}})
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "optional_package_probe",
+        lambda module_name, label: (False, f"{label} is not installed."),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "optional_package_probe_any",
+        lambda module_names, label: (False, f"{label} is not installed."),
+    )
+
+    report = asyncio.run(doctor.collect_doctor_report(repo_path))
+    rendered = doctor.render_doctor_report(report)
+
+    assert "[warning] accelerate: warning" in rendered
+    assert "[warning] optimum_quanto: warning" in rendered
