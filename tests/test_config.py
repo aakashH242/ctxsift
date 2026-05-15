@@ -17,6 +17,9 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.timeout_ms == 90000
     assert config.retries == 1
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
+    assert config.local.attn_implementation == "auto"
+    assert config.embedding.backend == "auto"
+    assert config.embedding.attn_implementation == "auto"
     assert config.embedding.query_prompt_name == ""
     assert config.embedding.query_prompt == ""
     assert config.recall.default_limit == 10
@@ -123,8 +126,11 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_TIMEOUT_MS": "1234",
             "CTXSIFT_EMBEDDING_MODEL": "mini",
             "CTXSIFT_LOCAL_MODEL": "google/gemma-4-E2B-it",
+            "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": "flash_attention_2",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": "web_search_query",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT": "Instruct: custom\nQuery: ",
+            "CTXSIFT_EMBEDDING_BACKEND": "onnx",
+            "CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION": "sdpa",
             "CTXSIFT_RECALL_DEFAULT_LIMIT": "12",
             "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": "44",
             "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": "33",
@@ -134,7 +140,10 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["remote"]["model_name"] == "gpt-5-mini"
     assert layer["timeout_ms"] == 1234
     assert layer["local"]["model"] == "google/gemma-4-E2B-it"
+    assert layer["local"]["attn_implementation"] == "flash_attention_2"
     assert layer["embedding"]["model"] == "mini"
+    assert layer["embedding"]["backend"] == "onnx"
+    assert layer["embedding"]["attn_implementation"] == "sdpa"
     assert layer["embedding"]["query_prompt_name"] == "web_search_query"
     assert layer["embedding"]["query_prompt"] == "Instruct: custom\nQuery: "
     assert layer["recall"]["default_limit"] == 12

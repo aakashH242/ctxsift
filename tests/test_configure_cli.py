@@ -87,6 +87,7 @@ def _configure_input(
         "google/gemma-4-E2B-it",
         "cpu",
         "auto",
+        "auto",
         "y" if remote_enabled else "n",
     ]
     if remote_enabled:
@@ -103,7 +104,9 @@ def _configure_input(
     values.extend(
         [
             "microsoft/harrier-oss-v1-0.6b",
+            "auto",
             "cpu",
+            "auto",
             "auto",
             "",
             "",

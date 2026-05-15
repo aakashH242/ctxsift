@@ -41,6 +41,10 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
         "Local dtype",
         default=current.local.dtype,
     )
+    local_attention = typer.prompt(
+        "Local attention backend",
+        default=current.local.attn_implementation,
+    )
     remote_enabled = typer.confirm(
         "Enable remote LiteLLM backend?",
         default=bool(current.remote.base_url.strip()),
@@ -57,6 +61,14 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
     embedding_dtype = typer.prompt(
         "Embedding dtype",
         default=current.embedding.dtype,
+    )
+    embedding_backend = typer.prompt(
+        "Embedding backend",
+        default=current.embedding.backend,
+    )
+    embedding_attention = typer.prompt(
+        "Embedding attention backend",
+        default=current.embedding.attn_implementation,
     )
     query_prompt_name = typer.prompt(
         "Embedding query prompt name",
@@ -112,11 +124,14 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
                 "model": local_model,
                 "device": local_device,
                 "dtype": local_dtype,
+                "attn_implementation": local_attention,
             },
             "embedding": {
                 "model": embedding_model,
+                "backend": embedding_backend,
                 "device": embedding_device,
                 "dtype": embedding_dtype,
+                "attn_implementation": embedding_attention,
                 "query_prompt_name": query_prompt_name,
                 "query_prompt": query_prompt,
                 "document_prompt_name": document_prompt_name,

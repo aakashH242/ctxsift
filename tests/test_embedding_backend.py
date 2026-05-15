@@ -90,3 +90,96 @@ def test_embedding_backend_forces_cpu_when_cuda_unavailable(
     )
 
     assert backend._resolved_device() == "cpu"
+
+
+def test_embedding_backend_prefers_onnx_for_harrier_on_cpu_when_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name, **kwargs):
+            captured["model_name"] = model_name
+            captured["kwargs"] = kwargs
+            self.max_seq_length = 0
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 3
+
+    backend = SentenceTransformersBackend(
+        EmbeddingConfig(model="microsoft/harrier-oss-v1-0.6b", device="cpu")
+    )
+    monkeypatch.setattr(
+        "ctxsift.embeddings.sentence_transformers_backend.embedding_backend_choice",
+        lambda device, configured_value, model_name: "onnx",
+    )
+
+    model = backend._load_sentence_transformer(FakeSentenceTransformer)  # type: ignore[arg-type]
+
+    assert model is not None
+    assert captured["kwargs"]["backend"] == "onnx"
+    assert captured["kwargs"]["model_kwargs"]["provider"] == "CPUExecutionProvider"
+
+
+def test_embedding_backend_falls_back_to_torch_when_onnx_load_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempts: list[dict[str, object]] = []
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name, **kwargs):
+            attempts.append(kwargs)
+            if kwargs["backend"] == "onnx":
+                raise RuntimeError("onnx export unavailable")
+            self.max_seq_length = 0
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 3
+
+    backend = SentenceTransformersBackend(
+        EmbeddingConfig(model="microsoft/harrier-oss-v1-0.6b", device="cpu")
+    )
+    monkeypatch.setattr(
+        "ctxsift.embeddings.sentence_transformers_backend.embedding_backend_choice",
+        lambda device, configured_value, model_name: "onnx",
+    )
+
+    model = backend._load_sentence_transformer(FakeSentenceTransformer)  # type: ignore[arg-type]
+
+    assert model is not None
+    assert attempts[0]["backend"] == "onnx"
+    assert attempts[1]["backend"] == "torch"
+
+
+def test_embedding_backend_enables_flash_attention_on_gpu_torch_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name, **kwargs):
+            captured["kwargs"] = kwargs
+            self.max_seq_length = 0
+
+        def get_sentence_embedding_dimension(self) -> int:
+            return 3
+
+    monkeypatch.setattr("ctxsift.embeddings.sentence_transformers_backend.torch", SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        float32="float32",
+        float16="float16",
+        bfloat16="bfloat16",
+    ))
+    monkeypatch.setattr(
+        "ctxsift.embeddings.sentence_transformers_backend.embedding_attention_choice",
+        lambda device, configured_value: "flash_attention_2",
+    )
+    backend = SentenceTransformersBackend(
+        EmbeddingConfig(model="microsoft/harrier-oss-v1-0.6b", device="cuda")
+    )
+
+    model = backend._load_sentence_transformer(FakeSentenceTransformer)  # type: ignore[arg-type]
+
+    assert model is not None
+    assert captured["kwargs"]["backend"] == "torch"
+    assert captured["kwargs"]["model_kwargs"]["attn_implementation"] == "flash_attention_2"

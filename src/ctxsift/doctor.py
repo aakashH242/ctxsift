@@ -8,6 +8,7 @@ from pathlib import Path
 from ctxsift.config import ConfigResolutionRequest, resolve_config
 from ctxsift.doctor_probes import (
     cuda_probe,
+    flash_attention_probe,
     fts5_probe,
     git_probe,
     optional_package_probe,
@@ -136,7 +137,7 @@ def _optional_runtime_checks() -> list[DoctorCheck]:
         _probe_check(
             "flashattention",
             "optional",
-            optional_package_probe("flash_attn", "FlashAttention"),
+            flash_attention_probe(),
         ),
     ]
 

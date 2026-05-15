@@ -6,6 +6,7 @@ import asyncio
 from dataclasses import dataclass
 from typing import Any
 
+from ctxsift.acceleration import gemma_attention_choice
 from ctxsift.compression_prompt import build_messages
 from ctxsift.models.base import BackendUnavailableError, ModelBackend, ModelCompressionInput
 from ctxsift.types import LocalModelConfig
@@ -58,17 +59,32 @@ class TransformersGemmaBackend(ModelBackend):
         torch_module = _load_torch_module()
         resolved_device = _resolve_device(self._config.device, torch_module)
         torch_dtype = _resolve_torch_dtype(self._config.dtype, torch_module)
+        attention_backend = gemma_attention_choice(
+            resolved_device.label,
+            self._config.attn_implementation,
+        )
+        model_kwargs = _model_kwargs(attention_backend)
         try:
-            return pipeline(
-                task=_pipeline_task(self.model_name),
-                model=self.model_name,
-                device=resolved_device.pipeline_device,
+            return _create_pipeline(
+                pipeline=pipeline,
+                model_name=self.model_name,
+                resolved_device=resolved_device,
                 torch_dtype=torch_dtype,
+                model_kwargs=model_kwargs,
             )
-        except (
-            Exception
-        ) as error:  # pragma: no cover - exercised through mocks and fallback behavior
-            raise BackendUnavailableError(str(error)) from error
+        except Exception as error:
+            if not attention_backend:
+                raise BackendUnavailableError(str(error)) from error
+            try:
+                return _create_pipeline(
+                    pipeline=pipeline,
+                    model_name=self.model_name,
+                    resolved_device=resolved_device,
+                    torch_dtype=torch_dtype,
+                    model_kwargs={},
+                )
+            except Exception as fallback_error:  # pragma: no cover - exercised through fallback behavior
+                raise BackendUnavailableError(str(fallback_error)) from fallback_error
 
 
 def _pipeline_task(model_name: str) -> str:
@@ -133,3 +149,27 @@ def _load_torch_module() -> Any:
     except ImportError as error:  # pragma: no cover - depends on local environment
         raise BackendUnavailableError("PyTorch is not installed.") from error
     return torch
+
+
+def _model_kwargs(attention_backend: str | None) -> dict[str, Any]:
+    if not attention_backend:
+        return {}
+    return {"attn_implementation": attention_backend}
+
+
+def _create_pipeline(
+    pipeline: Any,
+    model_name: str,
+    resolved_device: ResolvedDevice,
+    torch_dtype: Any,
+    model_kwargs: dict[str, Any],
+) -> Any:
+    kwargs = {
+        "task": _pipeline_task(model_name),
+        "model": model_name,
+        "device": resolved_device.pipeline_device,
+        "torch_dtype": torch_dtype,
+    }
+    if model_kwargs:
+        kwargs["model_kwargs"] = model_kwargs
+    return pipeline(**kwargs)

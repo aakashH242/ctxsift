@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import importlib
+import importlib.util
 import sqlite3
 
 from ctxsift.types import AppConfig, WorkspaceContext
@@ -68,3 +69,12 @@ def optional_package_probe(module_name: str, label: str) -> tuple[bool, str]:
     except Exception as error:
         return False, f"{label} could not be imported: {error}"
     return True, f"{label} is available."
+
+
+def flash_attention_probe() -> tuple[bool, str]:
+    """Probe whether any supported Flash Attention provider is installed."""
+    if importlib.util.find_spec("flash_attn") is not None:
+        return True, "FlashAttention is available via flash_attn."
+    if importlib.util.find_spec("kernels") is not None:
+        return True, "FlashAttention kernels are available via the kernels package."
+    return False, "FlashAttention is not installed."

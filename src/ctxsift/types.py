@@ -206,14 +206,17 @@ class LocalModelConfig(StrictModel):
     model: str = "google/gemma-4-E2B-it"
     device: str = "cpu"
     dtype: str = "auto"
+    attn_implementation: str = "auto"
 
 
 class EmbeddingConfig(StrictModel):
     """Embedding model configuration."""
 
     model: str = "microsoft/harrier-oss-v1-0.6b"
+    backend: str = "auto"
     device: str = "cpu"
     dtype: str = "auto"
+    attn_implementation: str = "auto"
     query_prompt_name: str = ""
     query_prompt: str = ""
     document_prompt_name: str = ""

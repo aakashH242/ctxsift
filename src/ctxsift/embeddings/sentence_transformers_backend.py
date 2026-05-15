@@ -9,6 +9,10 @@ from typing import Any
 import numpy as np
 import torch
 
+from ctxsift.acceleration import (
+    embedding_attention_choice,
+    embedding_backend_choice,
+)
 from ctxsift.embeddings.base import (
     DEFAULT_RECALL_QUERY_PROMPT,
     DocumentEmbeddingRequest,
@@ -68,13 +72,7 @@ class SentenceTransformersBackend(EmbeddingBackend):
                     "sentence-transformers is not installed."
                 ) from error
             try:
-                model = await asyncio.to_thread(
-                    SentenceTransformer,
-                    self.model_name,
-                    device=self._resolved_device(),
-                    local_files_only=True,
-                    model_kwargs=self._model_kwargs(),
-                )
+                model = await asyncio.to_thread(self._load_sentence_transformer, SentenceTransformer)
             except Exception as error:  # pragma: no cover - backend-specific failures
                 raise EmbeddingBackendUnavailableError(
                     f"Could not load embedding model '{self.model_name}': {error}"
@@ -82,6 +80,38 @@ class SentenceTransformersBackend(EmbeddingBackend):
             model.max_seq_length = self.config.max_length
             self._model = model
             return self._model
+
+    def _load_sentence_transformer(self, sentence_transformer_class):
+        device = self._resolved_device()
+        backend = embedding_backend_choice(device, self.config.backend, self.model_name)
+        model_kwargs = self._model_kwargs(device)
+        try:
+            return sentence_transformer_class(
+                self.model_name,
+                backend=backend,
+                device=device,
+                local_files_only=True,
+                model_kwargs=model_kwargs,
+            )
+        except Exception:
+            if backend == "onnx":
+                return sentence_transformer_class(
+                    self.model_name,
+                    backend="torch",
+                    device=device,
+                    local_files_only=True,
+                    model_kwargs=self._torch_model_kwargs(device, None),
+                )
+            attention_backend = model_kwargs.get("attn_implementation")
+            if attention_backend is None:
+                raise
+            return sentence_transformer_class(
+                self.model_name,
+                backend="torch",
+                device=device,
+                local_files_only=True,
+                model_kwargs=self._torch_model_kwargs(device, None),
+            )
 
     def _encode_query_sync(self, model, request: QueryEmbeddingRequest) -> list[float]:
         kwargs = self._common_encode_kwargs()
@@ -138,12 +168,28 @@ class SentenceTransformersBackend(EmbeddingBackend):
     def _is_harrier_model(self) -> bool:
         return self.model_name.casefold().startswith("microsoft/harrier-oss")
 
-    def _model_kwargs(self) -> dict[str, Any]:
+    def _model_kwargs(self, device: str) -> dict[str, Any]:
+        backend = embedding_backend_choice(device, self.config.backend, self.model_name)
+        if backend == "onnx":
+            provider = _onnx_provider(device)
+            kwargs = {"provider": provider}
+            if self.model_name.casefold().startswith("microsoft/harrier-oss"):
+                kwargs["export"] = True
+            return kwargs
+        return self._torch_model_kwargs(
+            device,
+            embedding_attention_choice(device, self.config.attn_implementation),
+        )
+
+    def _torch_model_kwargs(self, device: str, attention_backend: str | None) -> dict[str, Any]:
         dtype = self.config.dtype
         supported = {"auto", "float32", "float16", "bfloat16"}
         if dtype not in supported:
             raise EmbeddingBackendUnavailableError(f"Unsupported embedding dtype '{dtype}'.")
-        return {"dtype": dtype}
+        kwargs: dict[str, Any] = {"dtype": dtype}
+        if attention_backend:
+            kwargs["attn_implementation"] = attention_backend
+        return kwargs
 
     def _resolved_device(self) -> str:
         configured = self.config.device.casefold()
@@ -176,3 +222,9 @@ def _model_embedding_dimension(model) -> int | None:
     if hasattr(model, "get_embedding_dimension"):
         return model.get_embedding_dimension()
     return model.get_sentence_embedding_dimension()
+
+
+def _onnx_provider(device: str) -> str:
+    if device.startswith("cuda"):
+        return "CUDAExecutionProvider"
+    return "CPUExecutionProvider"
