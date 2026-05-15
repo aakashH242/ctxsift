@@ -50,7 +50,7 @@ def test_doctor_reports_remote_config_warning_when_remote_is_incomplete(
         doctor,
         "resolve_config",
         lambda request: FakeResolvedConfig(
-            config=AppConfig.model_validate({"run_mode": "remote"})
+            config=AppConfig.model_validate({"remote": {"base_url": "http://localhost:4000"}})
         ),
     )
 
@@ -58,7 +58,7 @@ def test_doctor_reports_remote_config_warning_when_remote_is_incomplete(
     rendered = doctor.render_doctor_report(report)
 
     assert "[warning] remote_config: warning" in rendered
-    assert "remote.base_url is missing" in rendered
+    assert "remote.model_name is missing" in rendered
     assert "[warning] git_workspace: warning" in rendered
 
 

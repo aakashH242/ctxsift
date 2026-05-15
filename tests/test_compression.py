@@ -422,6 +422,60 @@ def test_compress_input_remote_failure_passthrough_uses_run_output_body(
     assert "Exit code: 1" not in result.compressed_output
 
 
+def test_compress_input_remote_litellm_missing_returns_raw_output_with_warning(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    db_path = repo_path / ".git" / "ctxsift" / "ctxsift.db"
+
+    @dataclass(frozen=True)
+    class FakeResolvedConfig:
+        config: object
+
+    monkeypatch.setattr(
+        compression,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(
+            config=AppConfig.model_validate(
+                {
+                    "remote": {
+                        "base_url": "http://localhost:4000",
+                        "model_name": "gpt-5-mini",
+                    }
+                }
+            )
+        ),
+    )
+
+    from ctxsift.models import litellm_remote
+
+    monkeypatch.setattr(
+        litellm_remote,
+        "_load_litellm_acompletion",
+        lambda: (_ for _ in ()).throw(BackendUnavailableError("LiteLLM is not installed.")),
+    )
+
+    request = CompressionRequest(
+        instruction="Summarize auth failures",
+        raw_input="AuthError: login failed\npytest exited with code 1\n",
+        cwd=str(repo_path),
+    )
+
+    result = asyncio.run(compress_input(request))
+
+    assert result.model_provider == "litellm"
+    assert result.model_name == "gpt-5-mini"
+    assert "[ctxsift warning] Remote compression failed: LiteLLM is not installed." in result.compressed_output
+    assert result.compressed_output.endswith("AuthError: login failed\npytest exited with code 1")
+    assert result.record_id is None
+    with sqlite3.connect(db_path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+
+    assert count == 0
+
+
 def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_files(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

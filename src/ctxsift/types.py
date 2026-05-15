@@ -9,13 +9,6 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class RunMode(str, Enum):
-    """Supported top-level execution backends."""
-
-    LOCAL = "local"
-    REMOTE = "remote"
-
-
 class ReasoningMode(str, Enum):
     """Supported remote reasoning controls."""
 
@@ -215,7 +208,6 @@ class RemoteModelConfig(StrictModel):
 class LocalModelConfig(StrictModel):
     """Local model configuration."""
 
-    backend: str = "transformers"
     model: str = "google/gemma-4-E2B-it"
     device: str = "cpu"
     dtype: str = "auto"
@@ -266,7 +258,6 @@ class RecallConfig(StrictModel):
 class AppConfig(StrictModel):
     """Top-level resolved ctxsift configuration."""
 
-    run_mode: RunMode = RunMode.LOCAL
     timeout_ms: int = 90000
     retries: int = 1
     max_output_tokens: int = 512

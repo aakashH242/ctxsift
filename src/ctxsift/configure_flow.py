@@ -10,7 +10,6 @@ from ctxsift.types import (
     LocalQuantizationMode,
     ReasoningMode,
     RemoteModelConfig,
-    RunMode,
 )
 
 
@@ -126,10 +125,8 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
         default=current.db_path or "",
         show_default=bool(current.db_path),
     )
-    run_mode = _prompt_run_mode(remote_enabled, current.run_mode)
     return AppConfig.model_validate(
         {
-            "run_mode": run_mode,
             "timeout_ms": timeout_ms,
             "retries": retries,
             "max_output_tokens": max_output_tokens,
@@ -200,18 +197,6 @@ def _prompt_remote_config(current: RemoteModelConfig, remote_enabled: bool) -> R
             "reasoning_mode": reasoning_mode,
         }
     )
-
-
-def _prompt_run_mode(remote_enabled: bool, current: RunMode) -> RunMode:
-    if not remote_enabled:
-        return RunMode.LOCAL
-    return _prompt_enum(
-        "Run mode",
-        current,
-        TypeAdapter(RunMode),
-    )
-
-
 def _prompt_enum(prompt: str, current, adapter: TypeAdapter) -> str:
     default_value = current.value
     while True:

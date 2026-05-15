@@ -105,7 +105,6 @@ def _configure_input(
                 "sk-test",
                 "2025-01-01",
                 "auto",
-                "remote",
             ]
         )
     values.extend(

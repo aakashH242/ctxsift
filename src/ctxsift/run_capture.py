@@ -1,4 +1,4 @@
-"""Structured rendering for `ctxsift run` execution results."""
+"""Structured rendering for command execution results."""
 
 from __future__ import annotations
 

@@ -83,9 +83,9 @@ def build_shell_syntax_error(argv: tuple[str, ...]) -> CommandValidationError:
     command_text = " ".join(argv)
     message = (
         f"This command appears to contain shell syntax: {token_list}\n\n"
-        "ctxsift run uses safe argv mode by default.\n\n"
+        "ctxsift compress uses safe argv mode by default.\n\n"
         "Use explicit shell mode:\n\n"
-        f'ctxsift run --shell "show failures" -- "{command_text}"'
+        f'ctxsift compress --shell "show failures" -- "{command_text}"'
     )
     return CommandValidationError(message)
 
@@ -109,7 +109,7 @@ def capture_launch_failure(
 
 def _validate_request(request: CommandExecutionRequest) -> None:
     if not request.argv:
-        raise CommandValidationError("`ctxsift run` requires a command after `--`.")
+        raise CommandValidationError("`ctxsift compress` requires a command after `--`.")
     if request.shell:
         _validate_shell_command(request.argv)
         return

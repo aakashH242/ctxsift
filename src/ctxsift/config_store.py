@@ -13,7 +13,7 @@ from typing import Any, Mapping
 from platformdirs import user_config_path
 from pydantic import TypeAdapter
 
-from ctxsift.types import AppConfig, LocalQuantizationMode, ReasoningMode, RunMode
+from ctxsift.types import AppConfig, LocalQuantizationMode, ReasoningMode
 from ctxsift.workspace import detect_workspace_context
 
 
@@ -83,7 +83,6 @@ class ResolvedConfig:
 
 
 CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
-    "run_mode": ConfigKeySpec(("run_mode",), TypeAdapter(RunMode)),
     "timeout_ms": ConfigKeySpec(("timeout_ms",), TypeAdapter(int)),
     "retries": ConfigKeySpec(("retries",), TypeAdapter(int)),
     "max_output_tokens": ConfigKeySpec(("max_output_tokens",), TypeAdapter(int)),

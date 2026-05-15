@@ -39,13 +39,10 @@ def git_probe(workspace: WorkspaceContext) -> tuple[bool, str]:
 
 def remote_config_probe(config: AppConfig) -> tuple[bool, str]:
     """Probe whether remote config is complete when remote mode is intended."""
-    remote_selected = config.run_mode.value == "remote" or bool(config.remote.base_url.strip())
-    if not remote_selected:
-        return True, "Remote backend is disabled; local-only mode is active."
     if not config.remote.base_url.strip():
-        return False, "Remote backend selected but remote.base_url is missing."
+        return True, "Remote backend is disabled; local-only mode is active."
     if not config.remote.model_name.strip():
-        return False, "Remote backend selected but remote.model_name is missing."
+        return False, "Remote backend is enabled by remote.base_url but remote.model_name is missing."
     return True, "Remote backend configuration is complete."
 
 
