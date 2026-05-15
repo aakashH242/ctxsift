@@ -8,6 +8,7 @@ import re
 
 from ctxsift import __version__
 from ctxsift.config import ConfigResolutionRequest, resolve_config
+from ctxsift.embedding_indexer import index_record_embedding
 from ctxsift.extraction import (
     ExtractionContext,
     build_extracted_terms,
@@ -20,6 +21,7 @@ from ctxsift.storage import find_cached_record, initialize_database, insert_reco
 from ctxsift.types import (
     CompressionRequest,
     CompressionResult,
+    EmbeddingConfig,
     ExtractedSignal,
     ExtractedTermRecord,
     ReferencedFileRecord,
@@ -103,6 +105,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             model_name=backend.model_name,
             prompt_version=MODEL_PROMPT_VERSION,
             max_output_tokens=resolved_config.config.max_output_tokens,
+            embedding_config=resolved_config.config.embedding,
         )
     except BackendUnavailableError:
         return await _deterministic_fallback(
@@ -115,6 +118,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             normalized_instruction=normalized_instruction,
             raw_input_hash=raw_input_hash,
             max_output_tokens=resolved_config.config.max_output_tokens,
+            embedding_config=resolved_config.config.embedding,
         )
 
 
@@ -187,6 +191,7 @@ async def _deterministic_fallback(
     normalized_instruction: str,
     raw_input_hash: str,
     max_output_tokens: int,
+    embedding_config: EmbeddingConfig,
 ) -> CompressionResult:
     fallback_cache_key = build_exact_cache_key(
         workspace_root=workspace.workspace_root,
@@ -216,6 +221,7 @@ async def _deterministic_fallback(
         model_name=DETERMINISTIC_MODEL_ID,
         prompt_version=DETERMINISTIC_PROMPT_VERSION,
         max_output_tokens=max_output_tokens,
+        embedding_config=embedding_config,
     )
 
 
@@ -234,6 +240,7 @@ async def _store_new_result(
     model_name: str,
     prompt_version: str,
     max_output_tokens: int,
+    embedding_config: EmbeddingConfig,
 ) -> CompressionResult:
     record = StoredRecord(
         instruction=request.instruction,
@@ -264,6 +271,17 @@ async def _store_new_result(
         referenced_files=referenced_files,
         extracted_terms=extracted_terms,
     )
+    try:
+        await index_record_embedding(
+            db_path=db_path,
+            record_id=record_id,
+            record=record,
+            referenced_files=referenced_files,
+            extracted_terms=extracted_terms,
+            config=embedding_config,
+        )
+    except Exception:
+        pass
     return CompressionResult(
         compressed_output=compressed_output,
         referenced_files=signal.referenced_files,

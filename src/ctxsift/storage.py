@@ -18,7 +18,7 @@ from ctxsift.types import (
 )
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 
 
 SEARCH_TERM_RE = re.compile(r"[\w./:\\-]+")
@@ -85,6 +85,12 @@ SCHEMA_STATEMENTS = (
         term TEXT NOT NULL,
         kind TEXT,
         FOREIGN KEY(record_id) REFERENCES records(id)
+    )
+    """,
+    """
+    CREATE TABLE IF NOT EXISTS vector_index_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
     )
     """,
 )

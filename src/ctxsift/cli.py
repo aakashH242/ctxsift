@@ -18,6 +18,7 @@ from ctxsift.config import (
     resolve_config,
     set_config_value,
 )
+from ctxsift.doctor import collect_doctor_report, render_doctor_report
 from ctxsift.git_metadata import capture_git_metadata
 from ctxsift.recall import recall_records, render_recall_records
 from ctxsift.run_capture import (
@@ -185,7 +186,8 @@ def config_set(
 @app.command()
 def doctor() -> None:
     """Inspect runtime health and optional features."""
-    _not_implemented("doctor")
+    report = asyncio.run(collect_doctor_report(Path.cwd()))
+    typer.echo(render_doctor_report(report))
 
 
 async def _run_capture(command: list[str], current_directory: Path):

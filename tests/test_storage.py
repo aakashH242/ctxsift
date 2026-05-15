@@ -32,7 +32,7 @@ def test_initialize_database_creates_schema_and_version(tmp_path: Path) -> None:
     result = asyncio.run(initialize_database(db_path))
 
     assert result.db_path == db_path
-    assert asyncio.run(read_schema_version(db_path)) == "2"
+    assert asyncio.run(read_schema_version(db_path)) == "3"
     with sqlite3.connect(db_path) as connection:
         tables = {
             row[0]
@@ -45,6 +45,7 @@ def test_initialize_database_creates_schema_and_version(tmp_path: Path) -> None:
     assert "records_fts" in tables
     assert "referenced_files" in tables
     assert "extracted_terms" in tables
+    assert "vector_index_metadata" in tables
 
 
 def test_insert_record_bundle_persists_record_and_search_rows(tmp_path: Path) -> None:

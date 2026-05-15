@@ -214,9 +214,27 @@ class EmbeddingConfig(StrictModel):
     model: str = "microsoft/harrier-oss-v1-0.6b"
     device: str = "cpu"
     dtype: str = "auto"
-    query_prompt_name: str = "web_search_query"
+    query_prompt_name: str = ""
+    query_prompt: str = ""
     document_prompt_name: str = ""
     max_length: int = 32768
+
+
+class VectorStoreStatus(StrictModel):
+    """Availability status for sqlite-vec backed indexing."""
+
+    available: bool
+    warning: str | None = None
+    dimension: int | None = None
+    model_name: str | None = None
+    sqlite_vec_version: str | None = None
+
+
+class VectorSearchHit(StrictModel):
+    """One vector-search hit from sqlite-vec."""
+
+    record_id: int
+    distance: float
 
 
 class AppConfig(StrictModel):

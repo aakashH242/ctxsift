@@ -97,6 +97,10 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
         ("embedding", "query_prompt_name"),
         TypeAdapter(str),
     ),
+    "embedding.query_prompt": ConfigKeySpec(
+        ("embedding", "query_prompt"),
+        TypeAdapter(str),
+    ),
     "embedding.document_prompt_name": ConfigKeySpec(
         ("embedding", "document_prompt_name"),
         TypeAdapter(str),
@@ -122,6 +126,7 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_EMBEDDING_DEVICE": ("embedding", "device"),
     "CTXSIFT_EMBEDDING_DTYPE": ("embedding", "dtype"),
     "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": ("embedding", "query_prompt_name"),
+    "CTXSIFT_EMBEDDING_QUERY_PROMPT": ("embedding", "query_prompt"),
     "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": ("embedding", "document_prompt_name"),
     "CTXSIFT_EMBEDDING_MAX_LENGTH": ("embedding", "max_length"),
     "CTXSIFT_DB_PATH": ("db_path",),
@@ -145,6 +150,7 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_EMBEDDING_DEVICE": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DTYPE": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_QUERY_PROMPT": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_MAX_LENGTH": TypeAdapter(int),
     "CTXSIFT_DB_PATH": TypeAdapter(str),

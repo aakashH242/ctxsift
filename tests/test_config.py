@@ -17,6 +17,8 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.timeout_ms == 90000
     assert config.retries == 1
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
+    assert config.embedding.query_prompt_name == ""
+    assert config.embedding.query_prompt == ""
 
 
 def test_reasoning_mode_rejects_invalid_values() -> None:
@@ -119,6 +121,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_EMBEDDING_MODEL": "mini",
             "CTXSIFT_LOCAL_MODEL": "google/gemma-4-E2B-it",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": "web_search_query",
+            "CTXSIFT_EMBEDDING_QUERY_PROMPT": "Instruct: custom\nQuery: ",
         }
     )
 
@@ -127,3 +130,4 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["local"]["model"] == "google/gemma-4-E2B-it"
     assert layer["embedding"]["model"] == "mini"
     assert layer["embedding"]["query_prompt_name"] == "web_search_query"
+    assert layer["embedding"]["query_prompt"] == "Instruct: custom\nQuery: "
