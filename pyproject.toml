@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "ctxsift"
+version = "0.1.0"
+description = "Local-first command output compression and recall for coding agents."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "typer>=0.16,<1.0",
+]
+
+[project.scripts]
+ctxsift = "ctxsift.cli:app"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.4,<9.0",
+    "ruff>=0.12,<0.13",
+]
+
+[tool.uv]
+default-groups = ["dev"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/ctxsift"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
