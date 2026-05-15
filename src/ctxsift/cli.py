@@ -129,6 +129,10 @@ def recall(
         list[str] | None,
         typer.Option("--files", help="File paths used to filter or boost recall results."),
     ] = None,
+    limit: Annotated[
+        int | None,
+        typer.Option("--limit", min=1, help="Maximum number of recall results to display."),
+    ] = None,
 ) -> None:
     """Recall previously stored compressed records."""
     results = asyncio.run(
@@ -136,6 +140,7 @@ def recall(
             query=query,
             cwd=Path.cwd(),
             file_filters=files,
+            limit=limit,
         )
     )
     typer.echo(render_recall_records(results))

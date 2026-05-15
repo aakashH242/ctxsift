@@ -106,6 +106,15 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
         TypeAdapter(str),
     ),
     "embedding.max_length": ConfigKeySpec(("embedding", "max_length"), TypeAdapter(int)),
+    "recall.default_limit": ConfigKeySpec(("recall", "default_limit"), TypeAdapter(int)),
+    "recall.lexical_candidate_limit": ConfigKeySpec(
+        ("recall", "lexical_candidate_limit"),
+        TypeAdapter(int),
+    ),
+    "recall.vector_candidate_limit": ConfigKeySpec(
+        ("recall", "vector_candidate_limit"),
+        TypeAdapter(int),
+    ),
 }
 
 
@@ -129,6 +138,9 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_EMBEDDING_QUERY_PROMPT": ("embedding", "query_prompt"),
     "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": ("embedding", "document_prompt_name"),
     "CTXSIFT_EMBEDDING_MAX_LENGTH": ("embedding", "max_length"),
+    "CTXSIFT_RECALL_DEFAULT_LIMIT": ("recall", "default_limit"),
+    "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": ("recall", "lexical_candidate_limit"),
+    "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": ("recall", "vector_candidate_limit"),
     "CTXSIFT_DB_PATH": ("db_path",),
 }
 
@@ -153,6 +165,9 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_EMBEDDING_QUERY_PROMPT": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_MAX_LENGTH": TypeAdapter(int),
+    "CTXSIFT_RECALL_DEFAULT_LIMIT": TypeAdapter(int),
+    "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": TypeAdapter(int),
+    "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": TypeAdapter(int),
     "CTXSIFT_DB_PATH": TypeAdapter(str),
 }
 

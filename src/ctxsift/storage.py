@@ -202,6 +202,25 @@ async def search_records(
     return ranked_candidates[:limit]
 
 
+async def read_recall_records_by_ids(
+    db_path: Path,
+    record_ids: list[int],
+) -> list[RecallStorageRecord]:
+    """Load stored recall records for explicit record ids."""
+    if not record_ids:
+        return []
+    candidate_ids = set(record_ids)
+    async with aiosqlite.connect(db_path) as connection:
+        record_rows = await _record_rows(connection, candidate_ids)
+        file_rows = await _referenced_file_rows(connection, candidate_ids)
+        term_rows = await _extracted_term_rows(connection, candidate_ids)
+    return _candidate_records(
+        record_rows=record_rows,
+        referenced_file_rows=file_rows,
+        extracted_term_rows=term_rows,
+    )
+
+
 async def _apply_schema(connection: aiosqlite.Connection) -> None:
     for statement in SCHEMA_STATEMENTS:
         await connection.execute(statement)

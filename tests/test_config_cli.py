@@ -97,6 +97,19 @@ def test_config_set_rejects_invalid_values(
     assert "Input should be" in result.output
 
 
+def test_config_set_rejects_non_positive_recall_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    result = runner.invoke(app, ["config", "set", "recall.default_limit", "0", "--global"])
+
+    assert result.exit_code != 0
+    assert "greater than or equal to 1" in result.output
+
+
 def test_config_show_global_override_skips_workspace_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -110,3 +123,17 @@ def test_config_show_global_override_skips_workspace_scope(
 
     assert result.exit_code == 0
     assert "Scope: global" in result.stdout
+
+
+def test_config_set_supports_recall_limit_keys(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(app, ["config", "set", "recall.default_limit", "15", "--global"])
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert "default_limit = 15" in show_result.stdout

@@ -65,6 +65,34 @@ def test_recall_command_filters_with_files_option(tmp_path: Path, monkeypatch) -
     assert "src/billing.py" not in result.stdout
 
 
+def test_recall_command_limit_restricts_output(tmp_path: Path, monkeypatch) -> None:
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    first_file = repo_path / "src" / "auth.py"
+    second_file = repo_path / "src" / "billing.py"
+    first_file.parent.mkdir(parents=True)
+    first_file.write_text("raise AuthError\n", encoding="utf-8")
+    second_file.write_text("raise BillingError\n", encoding="utf-8")
+    db_path = git_dir / "ctxsift" / "ctxsift.db"
+    _insert_recall_record(
+        db_path=db_path,
+        repo_path=repo_path,
+        source_file=first_file,
+    )
+    _insert_billing_record(
+        db_path=db_path,
+        repo_path=repo_path,
+        source_file=second_file,
+    )
+    monkeypatch.chdir(repo_path)
+
+    result = runner.invoke(app, ["recall", "error", "--limit", "1"])
+
+    assert result.exit_code == 0
+    assert result.stdout.count("Instruction:") == 1
+
+
 def _insert_recall_record(db_path: Path, repo_path: Path, source_file: Path) -> None:
     _ensure_db(db_path)
     _insert_record(

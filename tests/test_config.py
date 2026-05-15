@@ -19,6 +19,9 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
     assert config.embedding.query_prompt_name == ""
     assert config.embedding.query_prompt == ""
+    assert config.recall.default_limit == 10
+    assert config.recall.lexical_candidate_limit == 50
+    assert config.recall.vector_candidate_limit == 50
 
 
 def test_reasoning_mode_rejects_invalid_values() -> None:
@@ -122,6 +125,9 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_LOCAL_MODEL": "google/gemma-4-E2B-it",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": "web_search_query",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT": "Instruct: custom\nQuery: ",
+            "CTXSIFT_RECALL_DEFAULT_LIMIT": "12",
+            "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": "44",
+            "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": "33",
         }
     )
 
@@ -131,3 +137,6 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["embedding"]["model"] == "mini"
     assert layer["embedding"]["query_prompt_name"] == "web_search_query"
     assert layer["embedding"]["query_prompt"] == "Instruct: custom\nQuery: "
+    assert layer["recall"]["default_limit"] == 12
+    assert layer["recall"]["lexical_candidate_limit"] == 44
+    assert layer["recall"]["vector_candidate_limit"] == 33

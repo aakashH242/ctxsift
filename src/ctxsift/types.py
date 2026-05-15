@@ -237,6 +237,14 @@ class VectorSearchHit(StrictModel):
     distance: float
 
 
+class RecallConfig(StrictModel):
+    """Recall retrieval configuration."""
+
+    default_limit: int = Field(default=10, ge=1)
+    lexical_candidate_limit: int = Field(default=50, ge=1)
+    vector_candidate_limit: int = Field(default=50, ge=1)
+
+
 class AppConfig(StrictModel):
     """Top-level resolved ctxsift configuration."""
 
@@ -248,3 +256,4 @@ class AppConfig(StrictModel):
     remote: RemoteModelConfig = Field(default_factory=RemoteModelConfig)
     local: LocalModelConfig = Field(default_factory=LocalModelConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
+    recall: RecallConfig = Field(default_factory=RecallConfig)

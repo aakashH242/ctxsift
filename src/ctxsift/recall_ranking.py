@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from datetime import timezone
 
+from ctxsift.recall_matches import file_filters_match, file_values, path_match_strength
 from ctxsift.types import RecallStorageRecord
 
 
@@ -197,18 +198,9 @@ def _filtered_records(
         return records
     filtered: list[RecallStorageRecord] = []
     for record in records:
-        if _file_filters_match(record, file_filters):
+        if file_filters_match(record, file_filters):
             filtered.append(record)
     return filtered
-
-
-def _file_filters_match(record: RecallStorageRecord, file_filters: list[str]) -> bool:
-    if not file_filters:
-        return True
-    values = _file_values(record)
-    return any(
-        _path_matches(value, file_filter) for value in values for file_filter in file_filters
-    )
 
 
 def _text_match_strength(normalized_query: str, search_terms: list[str], value: str) -> int:
@@ -231,8 +223,8 @@ def _file_match_strength(
     search_terms: list[str],
     record: RecallStorageRecord,
 ) -> int:
-    values = _file_values(record)
-    strengths = [_path_match_strength(value, normalized_query, search_terms) for value in values]
+    values = file_values(record)
+    strengths = [path_match_strength(value, normalized_query, search_terms) for value in values]
     return max(strengths, default=0)
 
 
@@ -253,41 +245,6 @@ def _term_match_strength(
         if term in values:
             strength += 3
     return strength
-
-
-def _file_values(record: RecallStorageRecord) -> list[str]:
-    values = [item.path.casefold().replace("\\", "/") for item in record.referenced_files]
-    values.extend(
-        item.abs_path.casefold().replace("\\", "/")
-        for item in record.referenced_files
-        if item.abs_path
-    )
-    return values
-
-
-def _path_match_strength(value: str, normalized_query: str, search_terms: list[str]) -> int:
-    strength = 0
-    if normalized_query:
-        if value == normalized_query:
-            strength += 12
-        elif value.endswith(f"/{normalized_query}"):
-            strength += 10
-        elif normalized_query in value:
-            strength += 6
-    for term in search_terms:
-        if term == normalized_query:
-            continue
-        if value == term:
-            strength += 6
-        elif value.endswith(f"/{term}"):
-            strength += 5
-        elif term in value:
-            strength += 2
-    return strength
-
-
-def _path_matches(value: str, query: str) -> bool:
-    return _path_match_strength(value, query, [query]) > 0
 
 
 def _created_at_timestamp(created_at: str) -> float:

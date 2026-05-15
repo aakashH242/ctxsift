@@ -7,6 +7,7 @@ from datetime import timezone
 from pathlib import Path
 
 from ctxsift.file_fingerprint import sha256_if_reasonable
+from ctxsift.recall_hybrid import HybridRecallRequest, build_hybrid_records
 from ctxsift.recall import recall_records
 from ctxsift.recall_freshness import assess_record_freshness
 from ctxsift.storage import initialize_database, insert_record_bundle
@@ -16,6 +17,7 @@ from ctxsift.types import (
     RecallStorageRecord,
     ReferencedFileRecord,
     StoredRecord,
+    VectorSearchHit,
 )
 
 
@@ -204,6 +206,186 @@ def test_recall_records_prioritize_multi_signal_matches(tmp_path: Path) -> None:
     assert "command" in results[0].matched_fields
     assert "file_paths" in results[0].matched_fields
     assert "extracted_terms" in results[0].matched_fields
+    assert results[0].score > results[1].score
+
+
+def test_recall_records_include_vector_only_candidates(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ctxsift.recall as recall_module
+
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    db_path = git_dir / "ctxsift" / "ctxsift.db"
+    target_file = repo_path / "src" / "vector_only.py"
+    target_file.parent.mkdir(parents=True)
+    target_file.write_text("raise VectorError\n", encoding="utf-8")
+    asyncio.run(initialize_database(db_path))
+    asyncio.run(
+        insert_record_bundle(
+            db_path,
+            StoredRecord(
+                instruction="investigate vector recall issue",
+                normalized_instruction="investigate vector recall issue",
+                compressed_output="VectorError in src/vector_only.py",
+                raw_input_hash="hash-vector",
+                mode="pipe",
+                workspace_root=str(repo_path),
+                cwd=str(repo_path),
+            ),
+            referenced_files=[
+                ReferencedFileRecord(
+                    path="src/vector_only.py",
+                    abs_path=str(target_file),
+                    sha256=sha256_if_reasonable(target_file),
+                    exists_at_capture=True,
+                )
+            ],
+            extracted_terms=[ExtractedTermRecord(term="VectorError", kind="symbol")],
+        )
+    )
+
+    async def fake_vector_hits(*args, **kwargs):
+        return [VectorSearchHit(record_id=1, distance=0.01)]
+
+    monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
+
+    results = asyncio.run(recall_records("semantic-only query", repo_path))
+
+    assert len(results) == 1
+    assert results[0].record_id == 1
+    assert "vector" in results[0].matched_fields
+
+
+def test_recall_records_apply_file_filters_after_retrieval(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ctxsift.recall as recall_module
+
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    db_path = git_dir / "ctxsift" / "ctxsift.db"
+    auth_file = repo_path / "src" / "auth.py"
+    billing_file = repo_path / "src" / "billing.py"
+    auth_file.parent.mkdir(parents=True)
+    auth_file.write_text("raise AuthError\n", encoding="utf-8")
+    billing_file.write_text("raise BillingError\n", encoding="utf-8")
+    asyncio.run(initialize_database(db_path))
+    for instruction, summary, source_file, raw_hash in [
+        ("auth issue", "AuthError in src/auth.py", auth_file, "hash-auth"),
+        ("billing issue", "BillingError in src/billing.py", billing_file, "hash-billing"),
+    ]:
+        asyncio.run(
+            insert_record_bundle(
+                db_path,
+                StoredRecord(
+                    instruction=instruction,
+                    normalized_instruction=instruction,
+                    compressed_output=summary,
+                    raw_input_hash=raw_hash,
+                    mode="pipe",
+                    workspace_root=str(repo_path),
+                    cwd=str(repo_path),
+                ),
+                referenced_files=[
+                    ReferencedFileRecord(
+                        path=source_file.relative_to(repo_path).as_posix(),
+                        abs_path=str(source_file),
+                        sha256=sha256_if_reasonable(source_file),
+                        exists_at_capture=True,
+                    )
+                ],
+            )
+        )
+
+    async def fake_vector_hits(*args, **kwargs):
+        return [
+            VectorSearchHit(record_id=1, distance=0.02),
+            VectorSearchHit(record_id=2, distance=0.01),
+        ]
+
+    monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
+
+    results = asyncio.run(recall_records("broad issue", repo_path, file_filters=["src/auth.py"]))
+
+    assert len(results) == 1
+    assert results[0].record_id == 1
+
+
+def test_hybrid_recall_boosts_exact_symbol_test_and_file_hits(tmp_path: Path) -> None:
+    first_file = tmp_path / "tests" / "test_auth.py"
+    second_file = tmp_path / "notes" / "auth.txt"
+    first_file.parent.mkdir(parents=True)
+    second_file.parent.mkdir(parents=True)
+    first_file.write_text("def test_login(): pass\n", encoding="utf-8")
+    second_file.write_text("auth notes\n", encoding="utf-8")
+
+    primary = RecallStorageRecord(
+        record_id=1,
+        created_at="2026-05-15 00:00:00",
+        workspace_root=str(tmp_path),
+        instruction="fix tests/test_auth.py::test_login AuthError",
+        compressed_output="AuthError in tests/test_auth.py::test_login",
+        command=None,
+        command_exit_code=None,
+        referenced_files=[
+            ReferencedFileRecord(
+                path="tests/test_auth.py",
+                abs_path=str(first_file),
+                sha256=sha256_if_reasonable(first_file),
+                exists_at_capture=True,
+            )
+        ],
+        extracted_terms=[
+            ExtractedTermRecord(term="AuthError", kind="symbol"),
+            ExtractedTermRecord(term="tests/test_auth.py::test_login", kind="test"),
+        ],
+        matched_fields=["instruction", "compressed_output", "extracted_terms"],
+        score=100,
+    )
+    secondary = RecallStorageRecord(
+        record_id=2,
+        created_at="2026-05-15 00:00:01",
+        workspace_root=str(tmp_path),
+        instruction="auth notes",
+        compressed_output="general auth context",
+        command=None,
+        command_exit_code=None,
+        referenced_files=[
+            ReferencedFileRecord(
+                path="notes/auth.txt",
+                abs_path=str(second_file),
+                sha256=sha256_if_reasonable(second_file),
+                exists_at_capture=True,
+            )
+        ],
+        extracted_terms=[ExtractedTermRecord(term="auth", kind="symbol")],
+        matched_fields=["instruction", "compressed_output"],
+        score=101,
+    )
+
+    results = build_hybrid_records(
+        HybridRecallRequest(
+            lexical_records=[primary, secondary],
+            all_records=[primary, secondary],
+            vector_hits=[],
+            freshness_by_record_id={
+                1: FreshnessStatus.FRESH,
+                2: FreshnessStatus.FRESH,
+            },
+            file_filters=[],
+            limit=10,
+            normalized_query="autherror",
+            search_terms=["autherror", "tests/test_auth.py::test_login"],
+        )
+    )
+
+    assert len(results) == 2
+    assert results[0].record_id == 1
     assert results[0].score > results[1].score
 
 
