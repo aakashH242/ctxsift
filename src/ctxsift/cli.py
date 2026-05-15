@@ -13,11 +13,14 @@ from pydantic import ValidationError
 from ctxsift.compression import compress_input
 from ctxsift.config import (
     ConfigResolutionRequest,
+    ConfigSaveRequest,
     ConfigWriteRequest,
     render_resolved_config,
     resolve_config,
+    save_config,
     set_config_value,
 )
+from ctxsift.configure_flow import prompt_for_config
 from ctxsift.doctor import collect_doctor_report, render_doctor_report
 from ctxsift.git_metadata import capture_git_metadata
 from ctxsift.recall import recall_records, render_recall_records
@@ -29,6 +32,7 @@ from ctxsift.run_capture import (
 )
 from ctxsift.storage import initialize_database
 from ctxsift.types import CompressionRequest
+from ctxsift.workspace_ignore import ensure_workspace_ignore_entry
 from ctxsift.workspace import detect_workspace_context
 
 app = typer.Typer(
@@ -56,6 +60,7 @@ def init(
     ] = False,
 ) -> None:
     """Initialize the workspace database and local metadata."""
+    workspace = detect_workspace_context(Path.cwd())
     result = resolve_config(
         ConfigResolutionRequest(
             cwd=Path.cwd(),
@@ -64,9 +69,45 @@ def init(
     db_path = Path(result.config.db_path or "").expanduser() if result.config.db_path else None
     target_path = db_path or Path(result.write_path).with_name("ctxsift.db")
     init_result = asyncio.run(initialize_database(target_path))
-    typer.echo(f"Initialized workspace database at {init_result.db_path}")
+    typer.echo(
+        f"Initialized workspace database at {init_result.db_path} "
+        f"(schema {init_result.schema_version})"
+    )
     if write_ignore:
-        typer.echo("Ignore file updates are not implemented yet; no ignore files were changed.")
+        ignore_result = ensure_workspace_ignore_entry(workspace, Path(init_result.db_path))
+        typer.echo(ignore_result.detail)
+    doctor_report = asyncio.run(collect_doctor_report(Path.cwd()))
+    typer.echo("")
+    typer.echo(render_doctor_report(doctor_report))
+
+
+@app.command()
+def configure(
+    global_scope: Annotated[
+        bool,
+        typer.Option("--global", help="Force the global config file instead of workspace config."),
+    ] = False,
+) -> None:
+    """Interactively configure ctxsift settings."""
+    resolved = resolve_config(
+        ConfigResolutionRequest(
+            cwd=Path.cwd(),
+            force_global=global_scope,
+        )
+    )
+    try:
+        updated_config = prompt_for_config(resolved.config)
+        saved = save_config(
+            ConfigSaveRequest(
+                config=updated_config,
+                cwd=Path.cwd(),
+                force_global=global_scope,
+            )
+        )
+    except (ValueError, ValidationError) as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+    typer.echo(f"Updated {saved.scope.value} config at {saved.write_path}")
 
 
 @app.command()

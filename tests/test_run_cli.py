@@ -30,7 +30,7 @@ def test_run_command_preserves_child_exit_code_and_stores_metadata(
             seen["raw_input"] = request.raw_input
             return "Run summary"
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FakeBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
     result = runner.invoke(
         app,
         [
@@ -87,7 +87,7 @@ def test_run_command_returns_127_for_missing_executable(tmp_path: Path, monkeypa
             assert "does-not-exist-ctxsift" in request.raw_input
             return "Launch failure summary"
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FakeBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
     result = runner.invoke(
         app,
         ["run", "summarize failing command", "--", "does-not-exist-ctxsift"],

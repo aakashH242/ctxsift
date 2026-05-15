@@ -15,7 +15,7 @@ from ctxsift.extraction import (
     extract_referenced_files,
     extract_signal,
 )
-from ctxsift.models import create_local_backend
+from ctxsift.models import create_compression_backend
 from ctxsift.models.base import BackendUnavailableError, ModelCompressionInput
 from ctxsift.storage import find_cached_record, initialize_database, insert_record_bundle
 from ctxsift.types import (
@@ -66,22 +66,22 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
         command_args=request.command_args,
     )
     extracted_terms = build_extracted_terms(signal)
-
-    backend = create_local_backend(resolved_config.config.local)
-    model_cache_key = build_exact_cache_key(
-        workspace_root=workspace.workspace_root,
-        raw_input_hash=raw_input_hash,
-        normalized_instruction=normalized_instruction,
-        model_id=backend.cache_model_id,
-        max_output_tokens=resolved_config.config.max_output_tokens,
-        ctxsift_version=__version__,
-        prompt_version=MODEL_PROMPT_VERSION,
-    )
-    cached_result = await _cached_compression_result(db_path, model_cache_key)
-    if cached_result is not None:
-        return cached_result
+    remote_active = _remote_backend_enabled(resolved_config.config.remote.base_url)
 
     try:
+        backend = create_compression_backend(resolved_config.config)
+        model_cache_key = build_exact_cache_key(
+            workspace_root=workspace.workspace_root,
+            raw_input_hash=raw_input_hash,
+            normalized_instruction=normalized_instruction,
+            model_id=backend.cache_model_id,
+            max_output_tokens=resolved_config.config.max_output_tokens,
+            ctxsift_version=__version__,
+            prompt_version=MODEL_PROMPT_VERSION,
+        )
+        cached_result = await _cached_compression_result(db_path, model_cache_key)
+        if cached_result is not None:
+            return cached_result
         compressed_output = await backend.compress(
             ModelCompressionInput(
                 instruction=request.instruction,
@@ -107,7 +107,15 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             max_output_tokens=resolved_config.config.max_output_tokens,
             embedding_config=resolved_config.config.embedding,
         )
-    except BackendUnavailableError:
+    except BackendUnavailableError as error:
+        if remote_active:
+            return _remote_failure_result(
+                request=request,
+                signal=signal,
+                extracted_terms=extracted_terms,
+                model_name=resolved_config.config.remote.model_name,
+                error=error,
+            )
         return await _deterministic_fallback(
             db_path=db_path,
             request=request,
@@ -305,6 +313,43 @@ def _resolved_db_path(workspace_db_path: str | None, config_db_path: str | None)
     if not selected:
         raise ValueError("Could not resolve a ctxsift database path.")
     return Path(selected).expanduser()
+
+
+def _remote_backend_enabled(base_url: str) -> bool:
+    return bool(base_url.strip())
+
+
+def _remote_failure_result(
+    request: CompressionRequest,
+    signal: ExtractedSignal,
+    extracted_terms: list[ExtractedTermRecord],
+    model_name: str,
+    error: BackendUnavailableError,
+) -> CompressionResult:
+    passthrough_output = _passthrough_output(request)
+    warning_line = (
+        f"[ctxsift warning] Remote compression failed: {error}. "
+        "Returning uncompressed output and skipping storage."
+    )
+    body = passthrough_output.strip()
+    combined_output = warning_line if not body else f"{warning_line}\n\n{body}"
+    return CompressionResult(
+        compressed_output=combined_output,
+        referenced_files=signal.referenced_files,
+        extracted_terms=[item.term for item in extracted_terms],
+        used_cache=False,
+        model_provider="litellm",
+        model_name=model_name or "remote",
+        record_id=None,
+    )
+
+
+def _passthrough_output(request: CompressionRequest) -> str:
+    if request.mode == "run":
+        output_text = _run_payload_output_text(request.raw_input)
+        if output_text is not None:
+            return output_text
+    return request.raw_input
 
 
 def _extraction_text(request: CompressionRequest) -> str:

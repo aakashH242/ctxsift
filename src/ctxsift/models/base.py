@@ -23,6 +23,19 @@ class ModelCompressionInput:
     max_output_tokens: int
 
 
+@dataclass(frozen=True)
+class RemoteBackendOptions:
+    """Configuration needed for the LiteLLM remote backend."""
+
+    base_url: str
+    api_key: str
+    api_version: str
+    model_name: str
+    reasoning_mode: str
+    timeout_ms: int
+    retries: int
+
+
 class ModelBackend(ABC):
     """Async compression backend interface."""
 

@@ -12,8 +12,6 @@ Do not invent facts or fixes.
 Return concise plain text only.
 """
 
-LINE_LIMIT = 8
-
 
 def build_messages(request: ModelCompressionInput) -> list[dict[str, object]]:
     """Build one chat message list for the local Gemma backend."""
@@ -63,4 +61,4 @@ def _append_signal(lines: list[str], label: str, values: list[str]) -> None:
     if not values:
         return
     lines.append(f"- {label}:")
-    lines.extend(f"  - {value}" for value in values[:LINE_LIMIT])
+    lines.extend(f"  - {value}" for value in values)

@@ -1,6 +1,7 @@
 """Tests for deterministic compression and exact-cache behavior."""
 
 import asyncio
+from dataclasses import dataclass
 from pathlib import Path
 import sqlite3
 
@@ -11,7 +12,7 @@ from ctxsift.compression import compress_input
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
 from ctxsift.run_capture import CommandCapture, render_run_payload
-from ctxsift.types import CompressionRequest
+from ctxsift.types import AppConfig, CompressionRequest
 from ctxsift.types import WorkspaceContext
 
 
@@ -36,7 +37,7 @@ def test_compress_input_persists_deterministic_summary(
         async def compress(self, request) -> str:
             raise BackendUnavailableError("model unavailable")
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FailingBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     request = CompressionRequest(
         instruction="Summarize auth failures for me",
         raw_input="\n".join(
@@ -86,7 +87,7 @@ def test_compress_input_uses_exact_cache_without_duplicate_record(
         async def compress(self, request) -> str:
             raise BackendUnavailableError("model unavailable")
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FailingBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     request = CompressionRequest(
         instruction=" Summarize   auth failures ",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
@@ -132,7 +133,7 @@ def test_compress_input_uses_model_backend_when_available(
             assert "AuthError" in request.extracted_signal.symbols
             return "Model summary with AuthError"
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FakeBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
     request = CompressionRequest(
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
@@ -154,6 +155,71 @@ def test_compress_input_uses_model_backend_when_available(
     assert stored == ("transformers", "google/gemma-test", "gemma-transformers-v1")
 
 
+def test_compress_input_uses_remote_backend_when_base_url_is_configured(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    captured = {"factory_calls": 0, "local_calls": 0}
+
+    class FakeRemoteBackend:
+        provider_name = "litellm"
+        model_name = "gpt-5-mini"
+        cache_model_id = "litellm:gpt-5-mini@http://localhost:4000"
+
+        async def compress(self, request) -> str:
+            return "Remote compressed output"
+
+    def fake_create_compression_backend(config):
+        captured["factory_calls"] += 1
+        assert config.remote.base_url == "http://localhost:4000"
+        return FakeRemoteBackend()
+
+    def fail_create_local_backend(config):
+        captured["local_calls"] += 1
+        raise AssertionError("Local backend should not be constructed when LiteLLM is enabled.")
+
+    monkeypatch.setattr(compression, "create_compression_backend", fake_create_compression_backend)
+    monkeypatch.setattr(
+        "ctxsift.models.factory.create_local_backend",
+        fail_create_local_backend,
+    )
+    @dataclass(frozen=True)
+    class FakeResolvedConfig:
+        config: object
+
+    monkeypatch.setattr(
+        compression,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(
+            config=AppConfig.model_validate(
+                {
+                    "remote": {
+                        "base_url": "http://localhost:4000",
+                        "model_name": "gpt-5-mini",
+                    }
+                }
+            )
+        ),
+    )
+    request = CompressionRequest(
+        instruction="Summarize auth failures",
+        raw_input="AuthError: login failed\npytest exited with code 1\n",
+        cwd=str(repo_path),
+    )
+
+    result = asyncio.run(
+        compress_input(request)
+    )
+
+    assert result.model_provider == "litellm"
+    assert result.model_name == "gpt-5-mini"
+    assert result.compressed_output == "Remote compressed output"
+    assert captured["factory_calls"] == 1
+    assert captured["local_calls"] == 0
+
+
 def test_compress_input_falls_back_when_model_backend_is_unavailable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -169,7 +235,7 @@ def test_compress_input_falls_back_when_model_backend_is_unavailable(
         async def compress(self, request) -> str:
             raise BackendUnavailableError("model unavailable")
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FailingBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     request = CompressionRequest(
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
@@ -181,6 +247,128 @@ def test_compress_input_falls_back_when_model_backend_is_unavailable(
     assert result.model_provider == "deterministic"
     assert result.model_name == "deterministic"
     assert "Errors:" in result.compressed_output
+
+
+def test_compress_input_falls_back_when_backend_factory_is_unavailable(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    db_path = repo_path / ".git" / "ctxsift" / "ctxsift.db"
+
+    def fail_backend_factory(config):
+        raise BackendUnavailableError("remote misconfigured")
+
+    monkeypatch.setattr(compression, "create_compression_backend", fail_backend_factory)
+    @dataclass(frozen=True)
+    class FakeResolvedConfig:
+        config: object
+
+    monkeypatch.setattr(
+        compression,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(
+            config=AppConfig.model_validate(
+                {
+                    "remote": {
+                        "base_url": "http://localhost:4000",
+                        "model_name": "gpt-5-mini",
+                    }
+                }
+            )
+        ),
+    )
+    request = CompressionRequest(
+        instruction="Summarize auth failures",
+        raw_input="AuthError: login failed\npytest exited with code 1\n",
+        cwd=str(repo_path),
+    )
+
+    result = asyncio.run(compress_input(request))
+
+    assert result.model_provider == "litellm"
+    assert result.model_name == "gpt-5-mini"
+    assert "[ctxsift warning] Remote compression failed:" in result.compressed_output
+    assert "AuthError: login failed" in result.compressed_output
+    assert result.record_id is None
+    with sqlite3.connect(db_path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+
+    assert count == 0
+
+
+def test_compress_input_remote_failure_passthrough_uses_run_output_body(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+
+    class FailingRemoteBackend:
+        provider_name = "litellm"
+        model_name = "gpt-5-mini"
+        cache_model_id = "litellm:gpt-5-mini@http://localhost:4000"
+
+        async def compress(self, request) -> str:
+            raise BackendUnavailableError("proxy unavailable")
+
+    @dataclass(frozen=True)
+    class FakeResolvedConfig:
+        config: object
+
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingRemoteBackend())
+    monkeypatch.setattr(
+        compression,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(
+            config=AppConfig.model_validate(
+                {
+                    "remote": {
+                        "base_url": "http://localhost:4000",
+                        "model_name": "gpt-5-mini",
+                    }
+                }
+            )
+        ),
+    )
+    capture = CommandCapture(
+        command=["python", "-c", "print('hello')"],
+        cwd=str(repo_path),
+        stdout="hello\n",
+        stderr="oops\n",
+        exit_code=1,
+        duration_ms=7,
+    )
+    workspace = WorkspaceContext(
+        cwd=str(repo_path),
+        workspace_root=str(repo_path),
+        is_git_repo=True,
+        git_dir=str(repo_path / ".git"),
+        workspace_config_path=str(repo_path / ".git" / "ctxsift" / "config.toml"),
+        db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
+    )
+    request = CompressionRequest(
+        instruction="Summarize the failure",
+        raw_input=render_run_payload(
+            capture,
+            workspace,
+            GitMetadata(git_head="abc123", git_branch="main", git_dirty=False),
+        ),
+        mode="run",
+        cwd=str(repo_path),
+        command="python -c print('hello')",
+        command_args=capture.command,
+        command_exit_code=capture.exit_code,
+        command_duration_ms=capture.duration_ms,
+    )
+
+    result = asyncio.run(compress_input(request))
+
+    assert result.model_provider == "litellm"
+    assert "hello" in result.compressed_output
+    assert "oops" in result.compressed_output
+    assert "Command:" not in result.compressed_output
 
 
 def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_files(
@@ -201,7 +389,7 @@ def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_fil
         async def compress(self, request) -> str:
             raise BackendUnavailableError("model unavailable")
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FailingBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     capture = CommandCapture(
         command=["python", "-c", "print('src/generated.py')"],
         cwd=str(repo_path),
@@ -255,7 +443,7 @@ def test_compress_input_run_mode_with_empty_output_does_not_promote_inline_comma
         async def compress(self, request) -> str:
             raise BackendUnavailableError("model unavailable")
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FailingBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     capture = CommandCapture(
         command=["python", "-c", "print('src/generated.py')"],
         cwd=str(repo_path),

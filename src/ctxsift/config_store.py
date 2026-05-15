@@ -63,6 +63,15 @@ class ConfigWriteRequest:
 
 
 @dataclass(frozen=True)
+class ConfigSaveRequest:
+    """Inputs used to persist one full config document."""
+
+    config: AppConfig
+    cwd: Path | None = None
+    force_global: bool = False
+
+
+@dataclass(frozen=True)
 class ResolvedConfig:
     """Resolved config plus display metadata."""
 
@@ -211,6 +220,22 @@ def set_config_value(request: ConfigWriteRequest) -> ResolvedConfig:
             cwd=request.cwd,
             force_global=request.force_global,
             env=request.env,
+        )
+    )
+
+
+def save_config(request: ConfigSaveRequest) -> ResolvedConfig:
+    """Persist one full config document at the selected scope."""
+    AppConfig.model_validate(request.config.model_dump(mode="json"))
+    scope = _selected_scope(request.force_global)
+    paths = discover_global_config_paths()
+    workspace = detect_workspace_context(request.cwd)
+    write_path = _write_path_for_scope(scope, paths, workspace)
+    save_toml_file(write_path, request.config.model_dump(mode="json"))
+    return resolve_config(
+        ConfigResolutionRequest(
+            cwd=request.cwd,
+            force_global=request.force_global,
         )
     )
 

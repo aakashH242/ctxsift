@@ -24,7 +24,7 @@ def test_compress_command_reads_stdin_and_uses_exact_cache(tmp_path: Path, monke
         async def compress(self, request) -> str:
             return "Model output for AuthError"
 
-    monkeypatch.setattr(compression, "create_local_backend", lambda config: FakeBackend())
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
 
     first_result = runner.invoke(
         app,
