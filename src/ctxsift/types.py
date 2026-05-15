@@ -73,11 +73,14 @@ class CompressionResult(StrictModel):
 class ExtractedSignal(StrictModel):
     """Deterministic signal extracted before model usage."""
 
+    matched_domains: list[str] = Field(default_factory=list)
     referenced_files: list[str] = Field(default_factory=list)
+    traceback_frames: list[str] = Field(default_factory=list)
     symbols: list[str] = Field(default_factory=list)
     tests: list[str] = Field(default_factory=list)
     packages: list[str] = Field(default_factory=list)
     command_terms: list[str] = Field(default_factory=list)
+    eslint_rules: list[str] = Field(default_factory=list)
     exit_code_lines: list[str] = Field(default_factory=list)
     warning_lines: list[str] = Field(default_factory=list)
     error_lines: list[str] = Field(default_factory=list)

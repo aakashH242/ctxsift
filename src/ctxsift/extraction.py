@@ -7,6 +7,7 @@ import hashlib
 from pathlib import Path
 import re
 
+from ctxsift.extraction_domains import DomainExtractionResult, run_domain_parsers
 from ctxsift.types import ExtractedSignal, ExtractedTermRecord, ReferencedFileRecord
 
 
@@ -39,23 +40,21 @@ class ExtractionContext:
 def extract_signal(text: str, context: ExtractionContext) -> ExtractedSignal:
     """Extract deterministic signal from command output."""
     referenced_files = extract_referenced_files(text, context)
-    lines = text.splitlines()
-    tests = _dedupe(_extract_tests(text))
-    packages = _dedupe(_extract_packages(text))
-    symbols = _dedupe(_extract_symbols(text))
-    command_terms = _dedupe(_extract_command_terms(text))
-    warning_lines = _matching_lines(lines, WARNING_RE)
-    error_lines = _matching_lines(lines, ERROR_RE)
-    exit_code_lines = _matching_lines(lines, EXIT_CODE_RE)
+    domain_results = run_domain_parsers(text)
+    generic_signal = _generic_signal(text)
+    merged_signal = _merge_domain_results(domain_results, generic_signal)
     return ExtractedSignal(
+        matched_domains=merged_signal.matched_domains,
         referenced_files=[item.path for item in referenced_files],
-        symbols=symbols,
-        tests=tests,
-        packages=packages,
-        command_terms=command_terms,
-        exit_code_lines=exit_code_lines,
-        warning_lines=warning_lines,
-        error_lines=error_lines,
+        traceback_frames=merged_signal.traceback_frames,
+        symbols=merged_signal.symbols,
+        tests=merged_signal.tests,
+        packages=merged_signal.packages,
+        command_terms=merged_signal.command_terms,
+        eslint_rules=merged_signal.eslint_rules,
+        exit_code_lines=merged_signal.exit_code_lines,
+        warning_lines=merged_signal.warning_lines,
+        error_lines=merged_signal.error_lines,
     )
 
 
@@ -86,11 +85,81 @@ def build_extracted_terms(signal: ExtractedSignal) -> list[ExtractedTermRecord]:
     """Convert extracted signal into searchable term rows."""
     terms: list[ExtractedTermRecord] = []
     terms.extend(_term_rows(signal.referenced_files, "file"))
+    terms.extend(_term_rows(signal.traceback_frames, "traceback_frame"))
     terms.extend(_term_rows(signal.symbols, "symbol"))
     terms.extend(_term_rows(signal.tests, "test"))
     terms.extend(_term_rows(signal.packages, "package"))
     terms.extend(_term_rows(signal.command_terms, "command"))
+    terms.extend(_term_rows(signal.eslint_rules, "eslint_rule"))
     return terms
+
+
+def _generic_signal(text: str) -> ExtractedSignal:
+    lines = text.splitlines()
+    return ExtractedSignal(
+        matched_domains=["generic"],
+        traceback_frames=[],
+        symbols=_dedupe(_extract_symbols(text)),
+        tests=_dedupe(_extract_tests(text)),
+        packages=_dedupe(_extract_packages(text)),
+        command_terms=_dedupe(_extract_command_terms(text)),
+        eslint_rules=[],
+        exit_code_lines=_matching_lines(lines, EXIT_CODE_RE),
+        warning_lines=_matching_lines(lines, WARNING_RE),
+        error_lines=_matching_lines(lines, ERROR_RE),
+    )
+
+
+def _merge_domain_results(
+    domain_results: list[DomainExtractionResult],
+    generic_signal: ExtractedSignal,
+) -> ExtractedSignal:
+    matched_domains = [result.domain for result in domain_results if result.matched]
+    if not matched_domains:
+        return generic_signal
+    traceback_frames: list[str] = []
+    symbols: list[str] = []
+    tests: list[str] = []
+    packages: list[str] = []
+    command_terms: list[str] = []
+    eslint_rules: list[str] = []
+    warning_lines: list[str] = []
+    error_lines: list[str] = []
+    exit_code_lines: list[str] = []
+    for result in domain_results:
+        if not result.matched:
+            continue
+        traceback_frames.extend(result.traceback_frames)
+        symbols.extend(result.symbols)
+        tests.extend(result.tests)
+        packages.extend(result.packages)
+        command_terms.extend(result.command_terms)
+        eslint_rules.extend(result.eslint_rules)
+        warning_lines.extend(result.warning_lines)
+        error_lines.extend(result.error_lines)
+        exit_code_lines.extend(result.exit_code_lines)
+    traceback_frames.extend(generic_signal.traceback_frames)
+    symbols.extend(generic_signal.symbols)
+    tests.extend(generic_signal.tests)
+    packages.extend(generic_signal.packages)
+    command_terms.extend(generic_signal.command_terms)
+    eslint_rules.extend(generic_signal.eslint_rules)
+    warning_lines.extend(generic_signal.warning_lines)
+    error_lines.extend(generic_signal.error_lines)
+    exit_code_lines.extend(generic_signal.exit_code_lines)
+    return ExtractedSignal(
+        matched_domains=_dedupe(matched_domains),
+        referenced_files=[],
+        traceback_frames=_dedupe(traceback_frames),
+        symbols=_dedupe(symbols),
+        tests=_dedupe(tests),
+        packages=_dedupe(packages),
+        command_terms=_dedupe(command_terms),
+        eslint_rules=_dedupe(eslint_rules),
+        exit_code_lines=_dedupe(exit_code_lines),
+        warning_lines=_dedupe(warning_lines),
+        error_lines=_dedupe(error_lines),
+    )
 
 
 def _extract_file_candidates(text: str) -> list[str]:
