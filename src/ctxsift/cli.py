@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
 from typing import Annotated
 
@@ -15,6 +16,7 @@ from ctxsift.config import (
     resolve_config,
     set_config_value,
 )
+from ctxsift.storage import initialize_database
 
 app = typer.Typer(
     add_completion=False,
@@ -39,8 +41,17 @@ def init(
     ] = False,
 ) -> None:
     """Initialize the workspace database and local metadata."""
-    _ = write_ignore
-    _not_implemented("init")
+    result = resolve_config(
+        ConfigResolutionRequest(
+            cwd=Path.cwd(),
+        )
+    )
+    db_path = Path(result.config.db_path or "").expanduser() if result.config.db_path else None
+    target_path = db_path or Path(result.write_path).with_name("ctxsift.db")
+    init_result = asyncio.run(initialize_database(target_path))
+    typer.echo(f"Initialized workspace database at {init_result.db_path}")
+    if write_ignore:
+        typer.echo("Ignore file updates are not implemented yet; no ignore files were changed.")
 
 
 @app.command()

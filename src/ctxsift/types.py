@@ -77,6 +77,8 @@ class ExtractedSignal(StrictModel):
     symbols: list[str] = Field(default_factory=list)
     tests: list[str] = Field(default_factory=list)
     packages: list[str] = Field(default_factory=list)
+    command_terms: list[str] = Field(default_factory=list)
+    exit_code_lines: list[str] = Field(default_factory=list)
     warning_lines: list[str] = Field(default_factory=list)
     error_lines: list[str] = Field(default_factory=list)
 
@@ -106,6 +108,22 @@ class StoredRecord(StrictModel):
     max_output_tokens: int | None = None
     prompt_version: str | None = None
     ctxsift_version: str | None = None
+
+
+class ReferencedFileRecord(StrictModel):
+    """Referenced file metadata captured with one record."""
+
+    path: str
+    abs_path: str | None = None
+    sha256: str | None = None
+    exists_at_capture: bool
+
+
+class ExtractedTermRecord(StrictModel):
+    """One extracted search term captured with one record."""
+
+    term: str
+    kind: str | None = None
 
 
 class RemoteModelConfig(StrictModel):

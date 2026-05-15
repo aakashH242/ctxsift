@@ -14,21 +14,25 @@ def detect_workspace_context(cwd: Path | None = None) -> WorkspaceContext:
     if git_root is None:
         workspace_root = current_directory
         config_path = workspace_root / ".ctxsift" / "config.toml"
+        db_path = workspace_root / ".ctxsift" / "ctxsift.db"
         return WorkspaceContext(
             cwd=str(current_directory),
             workspace_root=str(workspace_root),
             is_git_repo=False,
             workspace_config_path=str(config_path),
+            db_path=str(db_path),
         )
 
     git_directory = _resolve_git_directory(git_root)
     config_path = git_directory / "ctxsift" / "config.toml"
+    db_path = git_directory / "ctxsift" / "ctxsift.db"
     return WorkspaceContext(
         cwd=str(current_directory),
         workspace_root=str(git_root),
         is_git_repo=True,
         git_dir=str(git_directory),
         workspace_config_path=str(config_path),
+        db_path=str(db_path),
     )
 
 
