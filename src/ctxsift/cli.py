@@ -157,36 +157,6 @@ def compress(
     typer.echo(result.compressed_output)
 
 
-@app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
-def run(
-    ctx: typer.Context,
-    instruction: Annotated[
-        str, typer.Argument(help="Compression instruction for the command output.")
-    ],
-    shell: Annotated[
-        bool,
-        typer.Option(
-            "--shell",
-            help="Execute one explicit shell command string instead of safe argv mode.",
-        ),
-    ] = False,
-    max_output_tokens: Annotated[
-        int | None,
-        typer.Option("--max-output-tokens", help="Override the maximum output token budget."),
-    ] = None,
-) -> None:
-    """Run a command, capture its output, and compress it."""
-    result, exit_code = _invoke_command_compression(
-        ctx=ctx,
-        instruction=instruction,
-        current_directory=Path.cwd(),
-        max_output_tokens=max_output_tokens,
-        shell=shell,
-    )
-    typer.echo(result.compressed_output)
-    raise typer.Exit(code=exit_code)
-
-
 @app.command()
 def recall(
     query: Annotated[str, typer.Argument(help="Query used to search prior compressed records.")],
