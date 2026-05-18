@@ -47,6 +47,11 @@ def ensure_workspace_ignore_entry(workspace: WorkspaceContext, db_path: Path) ->
     )
 
 
+def requires_workspace_ignore_entry(workspace: WorkspaceContext, db_path: Path) -> bool:
+    """Return whether the configured DB path lives under the workspace .ctxsift directory."""
+    return _is_workspace_scoped_db(workspace, db_path)
+
+
 def _appended_ignore_text(existing_text: str) -> str:
     if not existing_text:
         return f"{IGNORE_ENTRY}\n"

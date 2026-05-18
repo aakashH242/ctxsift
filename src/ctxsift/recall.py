@@ -11,6 +11,7 @@ from ctxsift.embeddings import create_embedding_backend
 from ctxsift.embeddings.base import EmbeddingBackendUnavailableError, QueryEmbeddingRequest
 from ctxsift.recall_freshness import assess_record_freshness
 from ctxsift.recall_hybrid import HybridRecallRequest, build_hybrid_records
+from ctxsift.retention import schedule_retention_cleanup
 from ctxsift.storage import initialize_database, read_recall_records_by_ids, search_records
 from ctxsift.types import RecallRecord
 from ctxsift.vector_store import search_record_embeddings
@@ -24,6 +25,7 @@ async def recall_records(
     cwd: Path,
     file_filters: list[str] | None = None,
     limit: int | None = None,
+    warnings_sink: list[str] | None = None,
 ) -> list[RecallRecord]:
     """Recall stored records and annotate them with freshness labels."""
     workspace = detect_workspace_context(cwd)
@@ -31,6 +33,13 @@ async def recall_records(
     recall_config = resolved_config.config.recall
     db_path = _resolved_db_path(workspace.db_path, resolved_config.config.db_path)
     await initialize_database(db_path)
+    try:
+        await schedule_retention_cleanup(
+            db_path,
+            resolved_config.config.retention.max_age_days,
+        )
+    except Exception:
+        pass
     resolved_limit = limit or recall_config.default_limit
     normalized_query = query.casefold().strip()
     search_terms = _search_terms(query)
@@ -44,7 +53,10 @@ async def recall_records(
         db_path,
         query,
         resolved_config.config.embedding,
+        resolved_config.config.daemon,
+        resolved_config.config.timeout_ms,
         recall_config.vector_candidate_limit,
+        warnings_sink=warnings_sink,
     )
     candidate_records = await _candidate_records(db_path, lexical_records, vector_hits)
     freshness_pairs = await asyncio.gather(
@@ -103,9 +115,17 @@ def _resolved_db_path(workspace_db_path: str | None, config_db_path: str | None)
     return Path(selected).expanduser()
 
 
-async def _vector_hits(db_path: Path, query: str, config, limit: int):
+async def _vector_hits(
+    db_path: Path,
+    query: str,
+    config,
+    daemon_config,
+    timeout_ms: int,
+    limit: int,
+    warnings_sink: list[str] | None = None,
+):
     try:
-        backend = create_embedding_backend(config)
+        backend = _embedding_backend(config, daemon_config, timeout_ms)
         dimension = await backend.embedding_dimension()
         query_vector = await backend.embed_query(
             QueryEmbeddingRequest(
@@ -113,7 +133,12 @@ async def _vector_hits(db_path: Path, query: str, config, limit: int):
                 max_length=config.max_length,
             )
         )
-    except EmbeddingBackendUnavailableError:
+    except EmbeddingBackendUnavailableError as error:
+        if warnings_sink is not None:
+            warnings_sink.append(
+                f"[ctxsift warning] Embedding recall backend unavailable: {error}. "
+                "Continuing with lexical-only recall."
+            )
         return []
     _, hits = await search_record_embeddings(
         db_path=db_path,
@@ -149,3 +174,9 @@ def _search_terms(query: str) -> list[str]:
         seen.add(value)
         result.append(value)
     return result
+
+
+def _embedding_backend(config, daemon_config, timeout_ms: int):
+    if daemon_config is None or not daemon_config.enabled:
+        return create_embedding_backend(config)
+    return create_embedding_backend(config, daemon=daemon_config, timeout_ms=timeout_ms)

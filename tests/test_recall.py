@@ -259,6 +259,66 @@ def test_recall_records_include_vector_only_candidates(
     assert "vector" in results[0].matched_fields
 
 
+def test_recall_records_schedule_background_retention_cleanup(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ctxsift.recall as recall_module
+
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    db_path = git_dir / "ctxsift" / "ctxsift.db"
+    target_file = repo_path / "src" / "auth.py"
+    target_file.parent.mkdir(parents=True)
+    target_file.write_text("raise AuthError\n", encoding="utf-8")
+    asyncio.run(initialize_database(db_path))
+    asyncio.run(
+        insert_record_bundle(
+            db_path,
+            StoredRecord(
+                instruction="summarize auth failures",
+                normalized_instruction="summarize auth failures",
+                compressed_output="AuthError in src/auth.py",
+                raw_input_hash="hash-1",
+                mode="run",
+                workspace_root=str(repo_path),
+                cwd=str(repo_path),
+                command="pytest tests/test_auth.py -q",
+            ),
+            referenced_files=[
+                ReferencedFileRecord(
+                    path="src/auth.py",
+                    abs_path=str(target_file),
+                    sha256="badhash",
+                    exists_at_capture=True,
+                )
+            ],
+            extracted_terms=[
+                ExtractedTermRecord(term="AuthError", kind="symbol"),
+            ],
+        )
+    )
+    scheduled: dict[str, object] = {}
+
+    async def fake_schedule_retention_cleanup(db_path: Path, max_age_days: int) -> bool:
+        scheduled["db_path"] = db_path
+        scheduled["max_age_days"] = max_age_days
+        return True
+
+    async def fake_vector_hits(*args, **kwargs):
+        return []
+
+    monkeypatch.setattr(recall_module, "schedule_retention_cleanup", fake_schedule_retention_cleanup)
+    monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
+
+    results = asyncio.run(recall_records("AuthError", repo_path))
+
+    assert len(results) == 1
+    assert scheduled["db_path"] == db_path
+    assert scheduled["max_age_days"] == 30
+
+
 def test_recall_records_drop_weak_vector_only_candidates(
     tmp_path: Path,
     monkeypatch,

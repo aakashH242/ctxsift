@@ -6,7 +6,7 @@ from datetime import datetime
 from enum import Enum
 from pathlib import Path
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class ReasoningMode(str, Enum):
@@ -34,10 +34,6 @@ class LocalQuantizationMode(str, Enum):
     BNB_8BIT = "bnb-8bit"
     BNB_4BIT_FP4 = "bnb-4bit-fp4"
     BNB_4BIT_NF4 = "bnb-4bit-nf4"
-    QUANTO_INT8 = "quanto-int8"
-    QUANTO_INT4 = "quanto-int4"
-    QUANTO_INT2 = "quanto-int2"
-    QUANTO_FLOAT8 = "quanto-float8"
 
 
 class StrictModel(BaseModel):
@@ -208,11 +204,30 @@ class RemoteModelConfig(StrictModel):
 class LocalModelConfig(StrictModel):
     """Local model configuration."""
 
-    model: str = "google/gemma-4-E2B-it"
-    device: str = "cpu"
+    model: str = "ibm-granite/granite-4.0-350m-GGUF"
+    gguf_filename: str | None = "smollm2-360m-instruct-q8_0.gguf"
+    llama_context_window: int | None = None
+    device: str = "auto"
     dtype: str = "auto"
     attn_implementation: str = "auto"
     quantization: LocalQuantizationMode = LocalQuantizationMode.NONE
+    model_cache_path: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_cpu_requirements(self) -> "LocalModelConfig":
+        if not self.model.strip():
+            raise ValueError("local.model cannot be empty.")
+        normalized_device = self.device.strip().casefold()
+        if normalized_device == "cpu" and not (self.gguf_filename or "").strip():
+            raise ValueError("local.gguf_filename is required when local.device is cpu.")
+        if normalized_device == "cpu" and self.quantization is not LocalQuantizationMode.NONE:
+            raise ValueError(
+                "local.quantization must be `none` when local.device is cpu; "
+                "llama.cpp CPU runtime does not use Transformers quantization."
+            )
+        if self.llama_context_window is not None and self.llama_context_window <= 0:
+            raise ValueError("local.llama_context_window must be greater than 0.")
+        return self
 
 
 class EmbeddingConfig(StrictModel):
@@ -220,7 +235,7 @@ class EmbeddingConfig(StrictModel):
 
     model: str = "microsoft/harrier-oss-v1-0.6b"
     backend: str = "auto"
-    device: str = "cpu"
+    device: str = "auto"
     dtype: str = "auto"
     attn_implementation: str = "auto"
     query_prompt_name: str = ""
@@ -255,6 +270,29 @@ class RecallConfig(StrictModel):
     max_vector_distance: float = Field(default=0.75, ge=0.0)
 
 
+class DaemonConfig(StrictModel):
+    """Local daemon runtime configuration."""
+
+    enabled: bool = True
+    idle_timeout_seconds: int = Field(default=600, ge=1)
+    startup_timeout_ms: int = Field(default=15000, ge=1000)
+    embedding_batch_window_ms: int = Field(default=20, ge=0)
+    embedding_max_batch_size: int = Field(default=16, ge=1)
+
+
+class RetentionConfig(StrictModel):
+    """Persistent record-retention configuration."""
+
+    max_age_days: int = Field(default=30, ge=1)
+
+
+class RetentionCleanupResult(StrictModel):
+    """Result of one retention cleanup run."""
+
+    deleted_record_count: int = 0
+    deleted_record_ids: list[int] = Field(default_factory=list)
+
+
 class AppConfig(StrictModel):
     """Top-level resolved ctxsift configuration."""
 
@@ -266,3 +304,5 @@ class AppConfig(StrictModel):
     local: LocalModelConfig = Field(default_factory=LocalModelConfig)
     embedding: EmbeddingConfig = Field(default_factory=EmbeddingConfig)
     recall: RecallConfig = Field(default_factory=RecallConfig)
+    daemon: DaemonConfig = Field(default_factory=DaemonConfig)
+    retention: RetentionConfig = Field(default_factory=RetentionConfig)

@@ -2,19 +2,38 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from pydantic import TypeAdapter
 import typer
 
+from ctxsift.config_store import ConfigScope
 from ctxsift.types import (
     AppConfig,
-    LocalQuantizationMode,
     ReasoningMode,
     RemoteModelConfig,
 )
 
+CPU_RECOMMENDED_LOCAL_MODEL = "HuggingFaceTB/SmolLM2-360M-Instruct"
+CPU_RECOMMENDED_LOCAL_GGUF_REPO = "ibm-granite/granite-4.0-350m-GGUF"
+CPU_RECOMMENDED_LOCAL_GGUF_FILENAME = "smollm2-360m-instruct-q8_0.gguf"
+GPU_RECOMMENDED_LOCAL_MODEL = "Qwen/Qwen3.5-0.8B"
+LEGACY_LOCAL_MODEL_DEFAULT = "google/gemma-4-E2B-it"
+AUTO_LOCAL_MODEL_DEFAULTS = {
+    LEGACY_LOCAL_MODEL_DEFAULT,
+    CPU_RECOMMENDED_LOCAL_MODEL,
+    CPU_RECOMMENDED_LOCAL_GGUF_REPO,
+    GPU_RECOMMENDED_LOCAL_MODEL,
+}
+
 
 def prompt_for_config(current: AppConfig) -> AppConfig:
     """Collect one full config interactively using current values as defaults."""
+    compression_mode = _prompt_choice(
+        "Compression mode",
+        _current_compression_mode(current),
+        ["local", "remote"],
+    )
     max_output_tokens = typer.prompt(
         "Max output tokens",
         default=current.max_output_tokens,
@@ -30,36 +49,8 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
         default=current.retries,
         type=int,
     )
-    local_backend = typer.prompt(
-        "Local backend",
-        default=current.local.backend,
-    )
-    local_model = typer.prompt(
-        "Local model",
-        default=current.local.model,
-    )
-    local_device = typer.prompt(
-        "Local device",
-        default=current.local.device,
-    )
-    local_dtype = typer.prompt(
-        "Local dtype",
-        default=current.local.dtype,
-    )
-    local_attention = typer.prompt(
-        "Local attention backend",
-        default=current.local.attn_implementation,
-    )
-    local_quantization = _prompt_enum(
-        "Local quantization",
-        current.local.quantization,
-        TypeAdapter(LocalQuantizationMode),
-    )
-    remote_enabled = typer.confirm(
-        "Enable remote LiteLLM backend?",
-        default=bool(current.remote.base_url.strip()),
-    )
-    remote = _prompt_remote_config(current.remote, remote_enabled)
+    local = _local_config_for_mode(current, compression_mode)
+    remote = _remote_config_for_mode(current, compression_mode)
     embedding_model = typer.prompt(
         "Embedding model",
         default=current.embedding.model,
@@ -71,14 +62,6 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
     embedding_dtype = typer.prompt(
         "Embedding dtype",
         default=current.embedding.dtype,
-    )
-    embedding_backend = typer.prompt(
-        "Embedding backend",
-        default=current.embedding.backend,
-    )
-    embedding_attention = typer.prompt(
-        "Embedding attention backend",
-        default=current.embedding.attn_implementation,
     )
     query_prompt_name = typer.prompt(
         "Embedding query prompt name",
@@ -132,20 +115,13 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
             "max_output_tokens": max_output_tokens,
             "db_path": db_path or None,
             "remote": remote.model_dump(mode="json"),
-            "local": {
-                "backend": local_backend,
-                "model": local_model,
-                "device": local_device,
-                "dtype": local_dtype,
-                "attn_implementation": local_attention,
-                "quantization": local_quantization,
-            },
+            "local": local.model_dump(mode="json"),
             "embedding": {
                 "model": embedding_model,
-                "backend": embedding_backend,
+                "backend": current.embedding.backend,
                 "device": embedding_device,
                 "dtype": embedding_dtype,
-                "attn_implementation": embedding_attention,
+                "attn_implementation": current.embedding.attn_implementation,
                 "query_prompt_name": query_prompt_name,
                 "query_prompt": query_prompt,
                 "document_prompt_name": document_prompt_name,
@@ -159,6 +135,83 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
             },
         }
     )
+
+
+def _local_config_for_mode(current: AppConfig, compression_mode: str):
+    if compression_mode == "remote":
+        return current.local
+    cuda_available = _cuda_available()
+    local_device = _prompt_choice(
+        _local_device_prompt(cuda_available),
+        _default_local_device(current.local.device, current.local.model, cuda_available),
+        _local_device_choices(cuda_available),
+    )
+    if _uses_cpu_llama_runtime(local_device):
+        typer.echo(
+            "CPU local compression uses embedded llama.cpp. "
+            "Use a Hugging Face GGUF repo id for the model, then choose one GGUF filename "
+            "from that repo's Files tab. CtxSift will download the artifact for you."
+        )
+    local_model = typer.prompt(
+        _local_model_prompt(local_device),
+        default=_default_local_model(current.local.model, local_device),
+    )
+    local_gguf_filename = _default_local_gguf_filename(
+        current.local.gguf_filename,
+        current.local.model,
+        local_model,
+        local_device,
+    )
+    if _uses_cpu_llama_runtime(local_device):
+        local_gguf_filename = typer.prompt(
+            "Local GGUF filename (from that repo's Files tab)",
+            default=local_gguf_filename,
+        )
+    else:
+        local_gguf_filename = None
+    local_model_cache_path = typer.prompt(
+        "Local model cache path override (leave blank for default cache)",
+        default=current.local.model_cache_path or "",
+        show_default=bool(current.local.model_cache_path),
+    )
+    local_dtype = typer.prompt(
+        "Local dtype",
+        default=current.local.dtype,
+    )
+    return current.local.model_validate(
+        {
+            **current.local.model_dump(mode="json"),
+            "model": local_model,
+            "gguf_filename": local_gguf_filename,
+            "device": local_device,
+            "model_cache_path": local_model_cache_path or None,
+            "dtype": local_dtype,
+        }
+    )
+
+
+def _remote_config_for_mode(current: AppConfig, compression_mode: str) -> RemoteModelConfig:
+    if compression_mode == "local":
+        return RemoteModelConfig()
+    return _prompt_remote_config(current.remote, remote_enabled=True)
+
+
+def prompt_for_save_scope(workspace_path: Path, global_path: Path) -> ConfigScope:
+    """Ask where the collected config should be written."""
+    typer.echo("")
+    typer.echo("Save config to:")
+    typer.echo(f"  workspace: {workspace_path}")
+    typer.echo(f"  global:    {global_path}")
+    while True:
+        raw_value = typer.prompt(
+            "Save target (workspace/global, default global)",
+            default="global",
+        ).strip().casefold()
+        if raw_value in {"global", "g"}:
+            return ConfigScope.GLOBAL
+        if raw_value in {"workspace", "w"}:
+            return ConfigScope.WORKSPACE
+        typer.echo("Invalid value. Choose `workspace` or `global`.", err=True)
 
 
 def _prompt_remote_config(current: RemoteModelConfig, remote_enabled: bool) -> RemoteModelConfig:
@@ -197,6 +250,8 @@ def _prompt_remote_config(current: RemoteModelConfig, remote_enabled: bool) -> R
             "reasoning_mode": reasoning_mode,
         }
     )
+
+
 def _prompt_enum(prompt: str, current, adapter: TypeAdapter) -> str:
     default_value = current.value
     while True:
@@ -205,3 +260,101 @@ def _prompt_enum(prompt: str, current, adapter: TypeAdapter) -> str:
             return adapter.validate_python(raw_value).value
         except Exception as error:
             typer.echo(f"Invalid value: {error}", err=True)
+
+
+def _prompt_choice(prompt: str, current: str, choices: list[str]) -> str:
+    default_value = _default_choice(current, choices)
+    canonical_choices = {choice.casefold(): choice for choice in choices}
+    choice_list = ", ".join(choices)
+    while True:
+        raw_value = typer.prompt(f"{prompt} ({choice_list})", default=default_value)
+        selected = canonical_choices.get(raw_value.strip().casefold())
+        if selected is not None:
+            return selected
+        typer.echo(f"Invalid value. Choose one of: {choice_list}", err=True)
+
+
+def _default_choice(current: str, choices: list[str]) -> str:
+    normalized_choices = {choice.casefold(): choice for choice in choices}
+    return normalized_choices.get(current.strip().casefold(), choices[0])
+
+
+def _current_compression_mode(current: AppConfig) -> str:
+    if current.remote.base_url.strip():
+        return "remote"
+    return "local"
+
+
+def _local_device_prompt(cuda_available: bool) -> str:
+    if cuda_available:
+        return "Local device (GPU detected)"
+    return "Local device (CPU only detected)"
+
+
+def _local_device_choices(cuda_available: bool) -> list[str]:
+    if cuda_available:
+        return ["cuda", "cpu"]
+    return ["cpu"]
+
+
+def _default_local_device(current_device: str, current_model: str, cuda_available: bool) -> str:
+    normalized = current_device.strip().casefold()
+    if normalized.startswith("cuda") and cuda_available:
+        return "cuda"
+    if (
+        normalized == "cpu"
+        and cuda_available
+        and current_model in AUTO_LOCAL_MODEL_DEFAULTS
+    ):
+        return "cuda"
+    if normalized == "cpu":
+        return "cpu"
+    if cuda_available:
+        return "cuda"
+    return "cpu"
+
+
+def _local_model_prompt(local_device: str) -> str:
+    recommendation = _recommended_local_model(local_device)
+    if _uses_cpu_llama_runtime(local_device):
+        return f"Local model repo (GGUF repo id, recommended: {recommendation})"
+    return f"Local model (recommended: {recommendation})"
+
+
+def _default_local_model(current_model: str, local_device: str) -> str:
+    if not current_model or current_model in AUTO_LOCAL_MODEL_DEFAULTS:
+        return _recommended_local_model(local_device)
+    return current_model
+
+
+def _recommended_local_model(local_device: str) -> str:
+    if local_device.strip().casefold().startswith("cuda"):
+        return GPU_RECOMMENDED_LOCAL_MODEL
+    return CPU_RECOMMENDED_LOCAL_GGUF_REPO
+
+
+def _default_local_gguf_filename(
+    current_filename: str | None,
+    current_model: str,
+    selected_model: str,
+    local_device: str,
+) -> str:
+    if not _uses_cpu_llama_runtime(local_device):
+        return ""
+    if current_filename and selected_model == current_model:
+        return current_filename
+    if selected_model == CPU_RECOMMENDED_LOCAL_GGUF_REPO:
+        return CPU_RECOMMENDED_LOCAL_GGUF_FILENAME
+    return current_filename or ""
+
+
+def _uses_cpu_llama_runtime(local_device: str) -> bool:
+    return not local_device.strip().casefold().startswith("cuda")
+
+
+def _cuda_available() -> bool:
+    try:
+        import torch
+    except ImportError:
+        return False
+    return bool(torch.cuda.is_available())

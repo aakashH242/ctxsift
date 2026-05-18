@@ -145,12 +145,70 @@ def test_config_set_supports_local_quantization_key(
     isolated_config_paths: Path,
 ) -> None:
     monkeypatch.chdir(tmp_path)
+    runner.invoke(app, ["config", "set", "local.device", "cuda", "--global"])
 
     set_result = runner.invoke(
         app,
-        ["config", "set", "local.quantization", "quanto-int4", "--global"],
+        ["config", "set", "local.quantization", "bnb-4bit-nf4", "--global"],
     )
     show_result = runner.invoke(app, ["config", "show", "--global"])
 
     assert set_result.exit_code == 0
-    assert "quantization = \"quanto-int4\"" in show_result.stdout
+    assert "quantization = \"bnb-4bit-nf4\"" in show_result.stdout
+
+
+def test_config_set_supports_local_gguf_filename_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(
+        app,
+        [
+            "config",
+            "set",
+            "local.gguf_filename",
+            "smollm2-360m-instruct-q4_k_m.gguf",
+            "--global",
+        ],
+    )
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert 'gguf_filename = "smollm2-360m-instruct-q4_k_m.gguf"' in show_result.stdout
+
+
+def test_config_set_supports_local_model_cache_path_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "local.model_cache_path", "D:/ctxsift-cache", "--global"],
+    )
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert 'model_cache_path = "D:/ctxsift-cache"' in show_result.stdout
+
+
+def test_config_set_supports_local_llama_context_window_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "local.llama_context_window", "16384", "--global"],
+    )
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert "llama_context_window = 16384" in show_result.stdout

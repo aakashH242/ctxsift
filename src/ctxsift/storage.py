@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import re
 
@@ -13,12 +14,15 @@ from ctxsift.types import (
     CacheLookupResult,
     RecallStorageRecord,
     ReferencedFileRecord,
+    RetentionCleanupResult,
     StorageInitResult,
     StoredRecord,
 )
+from ctxsift.vector_store import delete_record_embeddings
 
 
 SCHEMA_VERSION = "3"
+RETENTION_LAST_RUN_AT_KEY = "retention_last_run_at"
 
 
 SEARCH_TERM_RE = re.compile(r"[\w./:\\-]+")
@@ -162,6 +166,61 @@ async def read_schema_version(db_path: Path) -> str | None:
     if row is None:
         return None
     return str(row[0])
+
+
+async def retention_cleanup_due(
+    db_path: Path,
+    interval_seconds: int,
+) -> bool:
+    """Return whether retention cleanup should run for this workspace DB."""
+    if interval_seconds <= 0:
+        return True
+    last_run_at = await _read_schema_info_value(db_path, RETENTION_LAST_RUN_AT_KEY)
+    if not last_run_at:
+        return True
+    try:
+        last_run = datetime.fromisoformat(last_run_at)
+    except ValueError:
+        return True
+    if last_run.tzinfo is None:
+        last_run = last_run.replace(tzinfo=timezone.utc)
+    elapsed_seconds = (datetime.now(timezone.utc) - last_run).total_seconds()
+    return elapsed_seconds >= interval_seconds
+
+
+async def prune_expired_records(
+    db_path: Path,
+    max_age_days: int,
+) -> RetentionCleanupResult:
+    """Delete expired records and related rows from the workspace database."""
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max_age_days)
+    cutoff_text = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    async with aiosqlite.connect(db_path) as connection:
+        await connection.execute("PRAGMA busy_timeout = 5000")
+        record_ids = await _expired_record_ids(connection, cutoff_text)
+        if record_ids:
+            await _delete_rows_by_record_id(connection, "records_fts", "rowid", record_ids)
+            await _delete_rows_by_record_id(
+                connection, "referenced_files", "record_id", record_ids
+            )
+            await _delete_rows_by_record_id(
+                connection, "extracted_terms", "record_id", record_ids
+            )
+            await _delete_rows_by_record_id(connection, "records", "id", record_ids)
+        await _write_schema_info_value(
+            connection,
+            RETENTION_LAST_RUN_AT_KEY,
+            datetime.now(timezone.utc).isoformat(),
+        )
+        await connection.commit()
+    try:
+        await delete_record_embeddings(db_path, record_ids)
+    except Exception:
+        pass
+    return RetentionCleanupResult(
+        deleted_record_count=len(record_ids),
+        deleted_record_ids=record_ids,
+    )
 
 
 async def search_records(
@@ -395,6 +454,65 @@ async def _ensure_indexes(connection: aiosqlite.Connection) -> None:
         CREATE INDEX IF NOT EXISTS idx_records_exact_cache_key
         ON records(exact_cache_key)
         """
+    )
+
+
+async def _expired_record_ids(
+    connection: aiosqlite.Connection,
+    cutoff_text: str,
+) -> list[int]:
+    cursor = await connection.execute(
+        """
+        SELECT id
+        FROM records
+        WHERE created_at < ?
+        ORDER BY id ASC
+        """,
+        (cutoff_text,),
+    )
+    rows = await cursor.fetchall()
+    return [int(row[0]) for row in rows]
+
+
+async def _delete_rows_by_record_id(
+    connection: aiosqlite.Connection,
+    table_name: str,
+    column_name: str,
+    record_ids: list[int],
+) -> None:
+    if not record_ids:
+        return
+    placeholders = ", ".join("?" for _ in record_ids)
+    await connection.execute(
+        f"DELETE FROM {table_name} WHERE {column_name} IN ({placeholders})",
+        tuple(record_ids),
+    )
+
+
+async def _read_schema_info_value(db_path: Path, key: str) -> str | None:
+    async with aiosqlite.connect(db_path) as connection:
+        cursor = await connection.execute(
+            "SELECT value FROM schema_info WHERE key = ?",
+            (key,),
+        )
+        row = await cursor.fetchone()
+    if row is None:
+        return None
+    return str(row[0])
+
+
+async def _write_schema_info_value(
+    connection: aiosqlite.Connection,
+    key: str,
+    value: str,
+) -> None:
+    await connection.execute(
+        """
+        INSERT INTO schema_info (key, value)
+        VALUES (?, ?)
+        ON CONFLICT(key) DO UPDATE SET value = excluded.value
+        """,
+        (key, value),
     )
 
 

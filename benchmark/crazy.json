@@ -1,0 +1,323 @@
+{
+  "scenarios": [
+              {
+    "name": "cpu-qwen2-500m-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "lmstudio-community/Qwen2-500M-Instruct-GGUF",
+    "gguf_filename": "Qwen2-500M-Instruct-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+          {
+    "name": "cpu-qwen3-0.6b-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "unsloth/Qwen3-0.6B-GGUF",
+    "gguf_filename": "Qwen3-0.6B-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+      {
+    "name": "cpu-qwen2.5-0.5b-instruct-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+    "gguf_filename": "qwen2.5-0.5b-instruct-q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+      {
+    "name": "cpu-granite-4.0-350m-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "ibm-granite/granite-4.0-350m-GGUF",
+    "gguf_filename": "granite-4.0-350m-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+  {
+    "name": "cpu-gemma3-270m-it-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "unsloth/gemma-3-270m-it-GGUF",
+    "gguf_filename": "gemma-3-270m-it-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+  {
+    "name": "cpu-functiongemma-270m-it-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "unsloth/functiongemma-270m-it-GGUF",
+    "gguf_filename": "functiongemma-270m-it-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+  {
+    "name": "cpu-qwen2.5-coder-0.5b-instruct-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "Qwen/Qwen2.5-Coder-0.5B-Instruct-GGUF",
+    "gguf_filename": "qwen2.5-coder-0.5b-instruct-q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+    {
+      "name": "cpu-smollm2-135m-no-quant",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "HuggingFaceTB/SmolLM2-135M-Instruct-GGUF",
+      "gguf_filename": "smollm2-135m-instruct-q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
+    {
+      "name": "cpu-smollm2-360m-no-quant",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "HuggingFaceTB/SmolLM2-360M-Instruct-GGUF",
+      "gguf_filename": "smollm2-360m-instruct-q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
+    {
+      "name": "gpu-gemma4-e2b-bnb8",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "google/gemma-4-E2B-it",
+      "quantization": "bnb-8bit",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-gemma4-e2b-bnb8-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "google/gemma-4-E2B-it",
+      "quantization": "bnb-8bit",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-gemma4-e2b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "google/gemma-4-E2B-it",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-gemma4-e2b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "google/gemma-4-E2B-it",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-granite-3.3-2b-bnb8",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "ibm-granite/granite-3.3-2b-instruct",
+      "quantization": "bnb-8bit",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-granite-3.3-2b-bnb8-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "ibm-granite/granite-3.3-2b-instruct",
+      "quantization": "bnb-8bit",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-granite-3.3-2b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "ibm-granite/granite-3.3-2b-instruct",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-granite-3.3-2b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "ibm-granite/granite-3.3-2b-instruct",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen2.5-1.5b-bnb8",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "quantization": "bnb-8bit",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen2.5-1.5b-bnb8-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "quantization": "bnb-8bit",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen2.5-1.5b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen2.5-1.5b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen3-1.7b-bnb8",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3-1.7B",
+      "quantization": "bnb-8bit",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen3-1.7b-bnb8-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3-1.7B",
+      "quantization": "bnb-8bit",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen3-1.7b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3-1.7B",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen3-1.7b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3-1.7B",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen3.5-2b-bnb8",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-2B",
+      "quantization": "bnb-8bit",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen3.5-2b-bnb8-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-2B",
+      "quantization": "bnb-8bit",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen3.5-2b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-2B",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen3.5-2b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-2B",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-smollm2-1.7b-bnb8",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "quantization": "bnb-8bit",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-smollm2-1.7b-bnb8-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "quantization": "bnb-8bit",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-qwen3.5-0.8b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-0.8B",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-qwen3.5-0.8b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-0.8B",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-smollm2-1.7b-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-smollm2-1.7b-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    },
+    {
+      "name": "gpu-lfm2.5-1.2B-instruct-no-quant",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "LiquidAI/LFM2.5-1.2B-Instruct",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "gpu-lfm2.5-1.2B-instruct-no-quant-sdpa",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "LiquidAI/LFM2.5-1.2B-Instruct",
+      "quantization": "none",
+      "device": "cuda",
+      "attn_implementation": "sdpa"
+    }
+  ]
+}

@@ -17,10 +17,13 @@ from ctxsift.extraction import (
 )
 from ctxsift.models import create_compression_backend
 from ctxsift.models.base import BackendUnavailableError, ModelCompressionInput
+from ctxsift.models.local_runtime import local_provider_name
+from ctxsift.retention import schedule_retention_cleanup
 from ctxsift.storage import find_cached_record, initialize_database, insert_record_bundle
 from ctxsift.types import (
     CompressionRequest,
     CompressionResult,
+    DaemonConfig,
     EmbeddingConfig,
     ExtractedSignal,
     ExtractedTermRecord,
@@ -66,13 +69,14 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
     extracted_terms = build_extracted_terms(signal)
     remote_active = _remote_backend_enabled(resolved_config.config.remote.base_url)
     attempted_provider = (
-        "litellm" if remote_active else resolved_config.config.local.backend
+        "litellm" if remote_active else local_provider_name(resolved_config.config.local)
     )
     attempted_model_name = (
         resolved_config.config.remote.model_name
         if remote_active
         else resolved_config.config.local.model
     )
+    retention_max_age_days = resolved_config.config.retention.max_age_days
 
     try:
         backend = create_compression_backend(resolved_config.config)
@@ -89,7 +93,11 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
         )
         cached_result = await _cached_compression_result(db_path, model_cache_key)
         if cached_result is not None:
-            return cached_result
+            return await _finalize_compression_result(
+                cached_result,
+                db_path,
+                retention_max_age_days,
+            )
         compressed_output = await backend.compress(
             ModelCompressionInput(
                 instruction=request.instruction,
@@ -98,7 +106,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
                 max_output_tokens=resolved_config.config.max_output_tokens,
             )
         )
-        return await _store_new_result(
+        stored_result = await _store_new_result(
             db_path=db_path,
             request=request,
             workspace=workspace,
@@ -114,26 +122,41 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             prompt_version=MODEL_PROMPT_VERSION,
             max_output_tokens=resolved_config.config.max_output_tokens,
             embedding_config=resolved_config.config.embedding,
+            daemon_config=resolved_config.config.daemon,
+            timeout_ms=resolved_config.config.timeout_ms,
+        )
+        return await _finalize_compression_result(
+            stored_result,
+            db_path,
+            retention_max_age_days,
         )
     except BackendUnavailableError as error:
         if remote_active:
-            return _backend_failure_result(
+            return await _finalize_compression_result(
+                _backend_failure_result(
+                    request=request,
+                    signal=signal,
+                    extracted_terms=extracted_terms,
+                    model_provider=attempted_provider,
+                    model_name=attempted_model_name,
+                    label="Remote",
+                    error=error,
+                ),
+                db_path,
+                retention_max_age_days,
+            )
+        return await _finalize_compression_result(
+            _backend_failure_result(
                 request=request,
                 signal=signal,
                 extracted_terms=extracted_terms,
                 model_provider=attempted_provider,
                 model_name=attempted_model_name,
-                label="Remote",
+                label="Local",
                 error=error,
-            )
-        return _backend_failure_result(
-            request=request,
-            signal=signal,
-            extracted_terms=extracted_terms,
-            model_provider=attempted_provider,
-            model_name=attempted_model_name,
-            label="Local",
-            error=error,
+            ),
+            db_path,
+            retention_max_age_days,
         )
 
 
@@ -201,6 +224,8 @@ async def _deterministic_fallback(
     raw_input_hash: str,
     max_output_tokens: int,
     embedding_config: EmbeddingConfig,
+    daemon_config: DaemonConfig,
+    timeout_ms: int,
 ) -> CompressionResult:
     fallback_cache_key = build_exact_cache_key(
         workspace_root=workspace.workspace_root,
@@ -231,6 +256,8 @@ async def _deterministic_fallback(
         prompt_version=DETERMINISTIC_PROMPT_VERSION,
         max_output_tokens=max_output_tokens,
         embedding_config=embedding_config,
+        daemon_config=daemon_config,
+        timeout_ms=timeout_ms,
     )
 
 
@@ -250,6 +277,8 @@ async def _store_new_result(
     prompt_version: str,
     max_output_tokens: int,
     embedding_config: EmbeddingConfig,
+    daemon_config: DaemonConfig,
+    timeout_ms: int,
 ) -> CompressionResult:
     record = StoredRecord(
         instruction=request.instruction,
@@ -288,6 +317,8 @@ async def _store_new_result(
             referenced_files=referenced_files,
             extracted_terms=extracted_terms,
             config=embedding_config,
+            daemon_config=daemon_config,
+            timeout_ms=timeout_ms,
         )
     except Exception:
         pass
@@ -300,6 +331,18 @@ async def _store_new_result(
         model_name=model_name,
         record_id=record_id,
     )
+
+
+async def _finalize_compression_result(
+    result: CompressionResult,
+    db_path: Path,
+    retention_max_age_days: int,
+) -> CompressionResult:
+    try:
+        await schedule_retention_cleanup(db_path, retention_max_age_days)
+    except Exception:
+        pass
+    return result
 
 
 def _compression_overrides(request: CompressionRequest) -> dict[str, int]:

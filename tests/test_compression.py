@@ -11,8 +11,9 @@ from ctxsift import compression
 from ctxsift.compression import compress_input, summarize_deterministically
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
+from ctxsift.models.transformers_gemma import TransformersTextBackend
 from ctxsift.run_capture import CommandCapture, render_run_payload
-from ctxsift.types import AppConfig, CompressionRequest
+from ctxsift.types import AppConfig, CompressionRequest, LocalModelConfig
 from ctxsift.types import WorkspaceContext
 
 
@@ -146,6 +147,41 @@ def test_compress_input_uses_model_backend_when_available(
         ).fetchone()
 
     assert stored == ("transformers", "google/gemma-test", "gemma-transformers-v1")
+
+
+def test_compress_input_schedules_background_retention_cleanup(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    scheduled: dict[str, object] = {}
+
+    class FakeBackend:
+        provider_name = "transformers"
+        model_name = "google/gemma-test"
+        cache_model_id = "google/gemma-test"
+
+        async def compress(self, request) -> str:
+            return "Model summary with AuthError"
+
+    async def fake_schedule_retention_cleanup(db_path: Path, max_age_days: int) -> bool:
+        scheduled["db_path"] = db_path
+        scheduled["max_age_days"] = max_age_days
+        return True
+
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
+    monkeypatch.setattr(compression, "schedule_retention_cleanup", fake_schedule_retention_cleanup)
+    request = CompressionRequest(
+        instruction="Summarize auth failures",
+        raw_input="AuthError: login failed\npytest exited with code 1\n",
+        cwd=str(repo_path),
+    )
+
+    asyncio.run(compress_input(request))
+
+    assert scheduled["db_path"] == repo_path / ".git" / "ctxsift" / "ctxsift.db"
+    assert scheduled["max_age_days"] == 30
 
 
 def test_compress_input_run_mode_sends_only_output_text_to_model_backend(
@@ -593,3 +629,95 @@ def test_summarize_deterministically_does_not_truncate_values() -> None:
     assert "line 1" in output
     assert "line 7" in output
     assert "..." not in output
+
+
+def test_compress_input_unknown_family_fallback_profile_stores_soft_accepted_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+
+    class FakeInputs(dict):
+        def to(self, device):
+            self["device"] = device
+            return self
+
+    class InvalidTokenizer:
+        pad_token_id = 0
+        eos_token_id = 2
+
+        def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+            return "templated prompt"
+
+        def __call__(self, text: str, return_tensors: str) -> FakeInputs:
+            return FakeInputs({"input_ids": [[1, 2, 3]]})
+
+        def decode(self, tokens, skip_special_tokens: bool) -> str:
+            return "generic summary without anchors"
+
+    class FakeModel:
+        device = "cpu"
+        hf_device_map = None
+
+        def to(self, device: str) -> None:
+            self.device = device
+
+        def eval(self) -> None:
+            return None
+
+        def generate(self, **kwargs):
+            return [[1, 2, 3, 4]]
+
+    class FakeAutoModel:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return FakeModel()
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return InvalidTokenizer()
+
+    fake_torch = type(
+        "FakeTorch",
+        (),
+        {
+            "cuda": type("Cuda", (), {"is_available": staticmethod(lambda: False)})(),
+            "float32": "float32",
+            "float16": "float16",
+            "bfloat16": "bfloat16",
+        },
+    )()
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_gemma._load_transformers_components",
+        lambda: (FakeAutoModel, FakeAutoTokenizer),
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_gemma._load_torch_module",
+        lambda: fake_torch,
+    )
+    monkeypatch.setattr(
+        compression,
+        "create_compression_backend",
+        lambda config: TransformersTextBackend(
+            LocalModelConfig(model="unknown/model", device="cpu")
+        ),
+    )
+    request = CompressionRequest(
+        instruction="Summarize cli failure",
+        raw_input="src/cli.py\nValidationError: Extra inputs are not permitted\n",
+        cwd=str(repo_path),
+    )
+
+    result = asyncio.run(compress_input(request))
+
+    assert result.record_id is not None
+    assert result.model_provider == "transformers"
+    assert result.model_name == "unknown/model"
+    assert result.compressed_output == "generic summary without anchors"
+    db_path = repo_path / ".git" / "ctxsift" / "ctxsift.db"
+    with sqlite3.connect(db_path) as connection:
+        count = connection.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+
+    assert count == 1

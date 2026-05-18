@@ -94,8 +94,12 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
     "remote.reasoning_mode": ConfigKeySpec(
         ("remote", "reasoning_mode"), TypeAdapter(ReasoningMode)
     ),
-    "local.backend": ConfigKeySpec(("local", "backend"), TypeAdapter(str)),
     "local.model": ConfigKeySpec(("local", "model"), TypeAdapter(str)),
+    "local.gguf_filename": ConfigKeySpec(("local", "gguf_filename"), TypeAdapter(str)),
+    "local.llama_context_window": ConfigKeySpec(
+        ("local", "llama_context_window"),
+        TypeAdapter(int),
+    ),
     "local.device": ConfigKeySpec(("local", "device"), TypeAdapter(str)),
     "local.dtype": ConfigKeySpec(("local", "dtype"), TypeAdapter(str)),
     "local.attn_implementation": ConfigKeySpec(
@@ -105,6 +109,10 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
     "local.quantization": ConfigKeySpec(
         ("local", "quantization"),
         TypeAdapter(LocalQuantizationMode),
+    ),
+    "local.model_cache_path": ConfigKeySpec(
+        ("local", "model_cache_path"),
+        TypeAdapter(str),
     ),
     "embedding.model": ConfigKeySpec(("embedding", "model"), TypeAdapter(str)),
     "embedding.backend": ConfigKeySpec(("embedding", "backend"), TypeAdapter(str)),
@@ -140,6 +148,27 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
         ("recall", "max_vector_distance"),
         TypeAdapter(float),
     ),
+    "daemon.enabled": ConfigKeySpec(("daemon", "enabled"), TypeAdapter(bool)),
+    "daemon.idle_timeout_seconds": ConfigKeySpec(
+        ("daemon", "idle_timeout_seconds"),
+        TypeAdapter(int),
+    ),
+    "daemon.startup_timeout_ms": ConfigKeySpec(
+        ("daemon", "startup_timeout_ms"),
+        TypeAdapter(int),
+    ),
+    "daemon.embedding_batch_window_ms": ConfigKeySpec(
+        ("daemon", "embedding_batch_window_ms"),
+        TypeAdapter(int),
+    ),
+    "daemon.embedding_max_batch_size": ConfigKeySpec(
+        ("daemon", "embedding_max_batch_size"),
+        TypeAdapter(int),
+    ),
+    "retention.max_age_days": ConfigKeySpec(
+        ("retention", "max_age_days"),
+        TypeAdapter(int),
+    ),
 }
 
 
@@ -152,12 +181,14 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_MAX_OUTPUT_TOKENS": ("max_output_tokens",),
     "CTXSIFT_TIMEOUT_MS": ("timeout_ms",),
     "CTXSIFT_RETRIES": ("retries",),
-    "CTXSIFT_LOCAL_BACKEND": ("local", "backend"),
     "CTXSIFT_LOCAL_MODEL": ("local", "model"),
+    "CTXSIFT_LOCAL_GGUF_FILENAME": ("local", "gguf_filename"),
+    "CTXSIFT_LOCAL_LLAMA_CONTEXT_WINDOW": ("local", "llama_context_window"),
     "CTXSIFT_LOCAL_DEVICE": ("local", "device"),
     "CTXSIFT_LOCAL_DTYPE": ("local", "dtype"),
     "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": ("local", "attn_implementation"),
     "CTXSIFT_LOCAL_QUANTIZATION": ("local", "quantization"),
+    "CTXSIFT_MODEL_CACHE_PATH": ("local", "model_cache_path"),
     "CTXSIFT_EMBEDDING_MODEL": ("embedding", "model"),
     "CTXSIFT_EMBEDDING_BACKEND": ("embedding", "backend"),
     "CTXSIFT_EMBEDDING_DEVICE": ("embedding", "device"),
@@ -171,7 +202,12 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": ("recall", "lexical_candidate_limit"),
     "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": ("recall", "vector_candidate_limit"),
     "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": ("recall", "max_vector_distance"),
-    "CTXSIFT_DB_PATH": ("db_path",),
+    "CTXSIFT_DAEMON_ENABLED": ("daemon", "enabled"),
+    "CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS": ("daemon", "idle_timeout_seconds"),
+    "CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS": ("daemon", "startup_timeout_ms"),
+    "CTXSIFT_DAEMON_EMBEDDING_BATCH_WINDOW_MS": ("daemon", "embedding_batch_window_ms"),
+    "CTXSIFT_DAEMON_EMBEDDING_MAX_BATCH_SIZE": ("daemon", "embedding_max_batch_size"),
+    "CTXSIFT_RETENTION_MAX_AGE_DAYS": ("retention", "max_age_days"),
 }
 
 
@@ -184,12 +220,14 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_MAX_OUTPUT_TOKENS": TypeAdapter(int),
     "CTXSIFT_TIMEOUT_MS": TypeAdapter(int),
     "CTXSIFT_RETRIES": TypeAdapter(int),
-    "CTXSIFT_LOCAL_BACKEND": TypeAdapter(str),
     "CTXSIFT_LOCAL_MODEL": TypeAdapter(str),
+    "CTXSIFT_LOCAL_GGUF_FILENAME": TypeAdapter(str),
+    "CTXSIFT_LOCAL_LLAMA_CONTEXT_WINDOW": TypeAdapter(int),
     "CTXSIFT_LOCAL_DEVICE": TypeAdapter(str),
     "CTXSIFT_LOCAL_DTYPE": TypeAdapter(str),
     "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": TypeAdapter(str),
     "CTXSIFT_LOCAL_QUANTIZATION": TypeAdapter(LocalQuantizationMode),
+    "CTXSIFT_MODEL_CACHE_PATH": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_MODEL": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_BACKEND": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DEVICE": TypeAdapter(str),
@@ -203,7 +241,12 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": TypeAdapter(float),
-    "CTXSIFT_DB_PATH": TypeAdapter(str),
+    "CTXSIFT_DAEMON_ENABLED": TypeAdapter(bool),
+    "CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS": TypeAdapter(int),
+    "CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS": TypeAdapter(int),
+    "CTXSIFT_DAEMON_EMBEDDING_BATCH_WINDOW_MS": TypeAdapter(int),
+    "CTXSIFT_DAEMON_EMBEDDING_MAX_BATCH_SIZE": TypeAdapter(int),
+    "CTXSIFT_RETENTION_MAX_AGE_DAYS": TypeAdapter(int),
 }
 
 
@@ -252,12 +295,13 @@ def set_config_value(request: ConfigWriteRequest) -> ResolvedConfig:
 
 def save_config(request: ConfigSaveRequest) -> ResolvedConfig:
     """Persist one full config document at the selected scope."""
-    AppConfig.model_validate(request.config.model_dump(mode="json"))
+    serialized = request.config.model_dump(mode="json")
+    AppConfig.model_validate(serialized)
     scope = _selected_scope(request.force_global)
     paths = discover_global_config_paths()
     workspace = detect_workspace_context(request.cwd)
     write_path = _write_path_for_scope(scope, paths, workspace)
-    save_toml_file(write_path, request.config.model_dump(mode="json"))
+    save_toml_file(write_path, _drop_none_values(serialized))
     return resolve_config(
         ConfigResolutionRequest(
             cwd=request.cwd,
@@ -308,7 +352,7 @@ def load_toml_file(path: Path) -> dict[str, Any]:
         return {}
     with path.open("rb") as handle:
         data = tomllib.load(handle)
-    return dict(data)
+    return _sanitize_legacy_config_dict(dict(data))
 
 
 def save_toml_file(path: Path, data: Mapping[str, Any]) -> None:
@@ -381,6 +425,35 @@ def merge_dicts(base: Mapping[str, Any], overlay: Mapping[str, Any]) -> dict[str
             continue
         merged[key] = value
     return merged
+
+
+def _drop_none_values(data: Mapping[str, Any]) -> dict[str, Any]:
+    """Remove None entries before persisting full config documents."""
+    compacted: dict[str, Any] = {}
+    for key, value in data.items():
+        if value is None:
+            continue
+        if isinstance(value, Mapping):
+            nested = _drop_none_values(value)
+            if nested:
+                compacted[key] = nested
+            continue
+        compacted[key] = value
+    return compacted
+
+
+def _sanitize_legacy_config_dict(data: dict[str, Any]) -> dict[str, Any]:
+    """Drop removed config keys from persisted config documents."""
+    local_config = data.get("local")
+    if not isinstance(local_config, Mapping):
+        return data
+    sanitized_local = dict(local_config)
+    sanitized_local.pop("backend", None)
+    if sanitized_local == local_config:
+        return data
+    sanitized = dict(data)
+    sanitized["local"] = sanitized_local
+    return sanitized
 
 
 def environment_layer(env: Mapping[str, str] | None = None) -> dict[str, Any]:

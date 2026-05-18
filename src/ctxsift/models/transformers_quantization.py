@@ -16,16 +16,6 @@ _BITSANDBYTES_MODES = {
     LocalQuantizationMode.BNB_4BIT_NF4,
 }
 
-_QUANTO_WEIGHT_VALUES = {
-    LocalQuantizationMode.QUANTO_INT8: "int8",
-    LocalQuantizationMode.QUANTO_INT4: "int4",
-    LocalQuantizationMode.QUANTO_INT2: "int2",
-    LocalQuantizationMode.QUANTO_FLOAT8: "float8",
-}
-
-_QUANTO_MODULE_NAMES = ("optimum.quanto", "optimum_quanto")
-
-
 @dataclass(frozen=True)
 class TransformersLoadOptions:
     """Resolved load options for one Transformers model load."""
@@ -66,10 +56,6 @@ def _build_quantization_config(
     if quantization in _BITSANDBYTES_MODES:
         config_class = _load_bitsandbytes_config_class()
         return config_class(**_bitsandbytes_kwargs(quantization, torch_dtype))
-    weights = _QUANTO_WEIGHT_VALUES.get(quantization)
-    if weights is not None:
-        config_class = _load_quanto_config_class()
-        return config_class(weights=weights)
     raise BackendUnavailableError(
         f"Unsupported quantization mode '{quantization.value}'."
     )
@@ -119,24 +105,6 @@ def _load_bitsandbytes_config_class() -> Any:
             "Transformers BitsAndBytesConfig support is unavailable."
         ) from error
     return BitsAndBytesConfig
-
-
-def _load_quanto_config_class() -> Any:
-    _require_module(
-        "accelerate",
-        "Quanto quantization requires the optional `accelerate` package.",
-    )
-    if not any(_module_available(module_name) for module_name in _QUANTO_MODULE_NAMES):
-        raise BackendUnavailableError(
-            "Quanto quantization requires the optional `optimum-quanto` package."
-        )
-    try:
-        from transformers import QuantoConfig
-    except ImportError as error:
-        raise BackendUnavailableError(
-            "Transformers QuantoConfig support is unavailable."
-        ) from error
-    return QuantoConfig
 
 
 def _require_module(module_name: str, message: str) -> None:

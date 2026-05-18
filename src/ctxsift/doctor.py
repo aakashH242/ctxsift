@@ -12,11 +12,13 @@ from ctxsift.doctor_probes import (
     fts5_probe,
     git_probe,
     optional_package_probe,
-    optional_package_probe_any,
     remote_config_probe,
     sqlite_core_probe,
 )
+from ctxsift.models.hf_hub_cache import resolve_cached_hf_file
 from ctxsift.storage import StorageInitResult, initialize_database
+from ctxsift.models.local_runtime import required_gguf_filename, resolve_local_runtime
+from ctxsift.models.base import BackendUnavailableError
 from ctxsift.types import AppConfig, LocalQuantizationMode
 from ctxsift.vector_store import probe_vector_store
 from ctxsift.workspace import detect_workspace_context
@@ -41,19 +43,24 @@ class DoctorReport:
 
 async def collect_doctor_report(cwd: Path) -> DoctorReport:
     """Collect doctor checks without mutating repo-tracked files."""
-    workspace = detect_workspace_context(cwd)
     resolved_config = resolve_config(ConfigResolutionRequest(cwd=cwd))
-    db_path = Path(resolved_config.config.db_path or workspace.db_path or "").expanduser()
+    return await collect_doctor_report_for_config(cwd, resolved_config.config)
+
+
+async def collect_doctor_report_for_config(cwd: Path, config: AppConfig) -> DoctorReport:
+    """Collect doctor checks for one explicit config snapshot."""
+    workspace = detect_workspace_context(cwd)
+    db_path = Path(config.db_path or workspace.db_path or "").expanduser()
     checks: list[DoctorCheck] = [
         _probe_check("git_workspace", "warning", git_probe(workspace)),
-        _probe_check("remote_config", "warning", remote_config_probe(resolved_config.config)),
+        _probe_check("remote_config", "warning", remote_config_probe(config)),
         _probe_check("sqlite_core", "required", sqlite_core_probe()),
         _probe_check("sqlite_fts5", "required", fts5_probe()),
     ]
     db_check, init_result = await _database_check(db_path)
     checks.insert(0, db_check)
     if init_result is not None:
-        checks.append(await _sqlite_vec_check(db_path, resolved_config.config.embedding.model))
+        checks.append(await _sqlite_vec_check(db_path, config.embedding.model))
     else:
         checks.append(
             DoctorCheck(
@@ -63,7 +70,7 @@ async def collect_doctor_report(cwd: Path) -> DoctorReport:
                 detail="Skipped sqlite-vec probe because the database could not be initialized.",
             )
         )
-    checks.extend(_optional_runtime_checks(resolved_config.config))
+    checks.extend(_optional_runtime_checks(config))
     return DoctorReport(checks=checks)
 
 
@@ -144,11 +151,67 @@ def _optional_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
             flash_attention_probe(),
         ),
     ]
+    checks.extend(_remote_runtime_checks(config))
+    checks.extend(_local_runtime_checks(config))
     checks.extend(_quantization_runtime_checks(config))
     return checks
 
 
+def _local_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+    if config.remote.base_url.strip():
+        return []
+    try:
+        runtime = resolve_local_runtime(config.local)
+    except BackendUnavailableError as error:
+        return [
+            DoctorCheck(
+                name="local_runtime",
+                severity="warning",
+                ok=False,
+                detail=str(error),
+            )
+        ]
+    if runtime.uses_llama_cpp:
+        checks = [
+            _probe_check(
+                "llama_cpp",
+                "optional",
+                optional_package_probe("llama_cpp", "llama-cpp-python"),
+            )
+        ]
+        checks.append(_gguf_resolution_check(config))
+        return checks
+    return []
+
+
+def _remote_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+    if not config.remote.base_url.strip():
+        return []
+    ok, detail = optional_package_probe("litellm", "LiteLLM")
+    if ok:
+        return [DoctorCheck("litellm", "warning", True, detail)]
+    return [
+        DoctorCheck(
+            name="litellm",
+            severity="warning",
+            ok=False,
+            detail=(
+                "LiteLLM is not installed. Install it with `uv add \"ctxsift[remote]\"`; "
+                "remote compression will not work until it is available."
+            ),
+        )
+    ]
+
+
 def _quantization_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+    if config.remote.base_url.strip():
+        return []
+    try:
+        runtime = resolve_local_runtime(config.local)
+    except BackendUnavailableError:
+        return []
+    if runtime.uses_llama_cpp:
+        return []
     mode = config.local.quantization
     if mode is LocalQuantizationMode.NONE:
         return []
@@ -168,17 +231,49 @@ def _quantization_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
             )
         )
         return checks
-    checks.append(
-        _probe_check(
-            "optimum_quanto",
-            "warning",
-            optional_package_probe_any(
-                ("optimum.quanto", "optimum_quanto"),
-                "Optimum Quanto",
+    return checks
+
+
+def _gguf_resolution_check(config: AppConfig) -> DoctorCheck:
+    try:
+        import huggingface_hub  # noqa: F401
+    except ImportError as error:
+        return DoctorCheck(
+            name="gguf_artifact",
+            severity="warning",
+            ok=False,
+            detail=f"huggingface_hub is unavailable: {error}",
+        )
+    try:
+        filename = required_gguf_filename(config.local)
+        path = resolve_cached_hf_file(
+            repo_id=config.local.model,
+            filename=filename,
+            cache_dir=config.local.model_cache_path,
+        )
+    except Exception as error:
+        return DoctorCheck(
+            name="gguf_artifact",
+            severity="warning",
+            ok=False,
+            detail=str(error),
+        )
+    if path is None:
+        return DoctorCheck(
+            name="gguf_artifact",
+            severity="warning",
+            ok=True,
+            detail=(
+                f"Configured GGUF artifact {config.local.model}/{filename} is not cached locally yet. "
+                "Configure or first use will download it."
             ),
         )
+    return DoctorCheck(
+        name="gguf_artifact",
+        severity="warning",
+        ok=True,
+        detail=f"Resolved GGUF artifact at {path}.",
     )
-    return checks
 
 
 def _probe_check(name: str, severity: str, probe: tuple[bool, str]) -> DoctorCheck:

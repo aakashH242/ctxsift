@@ -17,9 +17,14 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.timeout_ms == 90000
     assert config.retries == 1
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
+    assert config.local.model == "ibm-granite/granite-4.0-350m-GGUF"
+    assert config.local.gguf_filename == "smollm2-360m-instruct-q8_0.gguf"
+    assert config.local.llama_context_window is None
     assert config.local.attn_implementation == "auto"
     assert config.local.quantization is LocalQuantizationMode.NONE
+    assert config.local.model_cache_path is None
     assert config.embedding.backend == "auto"
+    assert config.embedding.device == "auto"
     assert config.embedding.attn_implementation == "auto"
     assert config.embedding.query_prompt_name == ""
     assert config.embedding.query_prompt == ""
@@ -27,6 +32,12 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.recall.lexical_candidate_limit == 50
     assert config.recall.vector_candidate_limit == 50
     assert config.recall.max_vector_distance == 0.75
+    assert config.daemon.enabled is True
+    assert config.daemon.idle_timeout_seconds == 600
+    assert config.daemon.startup_timeout_ms == 15000
+    assert config.daemon.embedding_batch_window_ms == 20
+    assert config.daemon.embedding_max_batch_size == 16
+    assert config.retention.max_age_days == 30
 
 
 def test_reasoning_mode_rejects_invalid_values() -> None:
@@ -127,9 +138,12 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_LLM_MODEL": "gpt-5-mini",
             "CTXSIFT_TIMEOUT_MS": "1234",
             "CTXSIFT_EMBEDDING_MODEL": "mini",
-            "CTXSIFT_LOCAL_MODEL": "google/gemma-4-E2B-it",
+            "CTXSIFT_LOCAL_MODEL": "ibm-granite/granite-4.0-350m-GGUF",
+            "CTXSIFT_LOCAL_GGUF_FILENAME": "smollm2-360m-instruct-q8_0.gguf",
+            "CTXSIFT_LOCAL_LLAMA_CONTEXT_WINDOW": "16384",
             "CTXSIFT_LOCAL_ATTN_IMPLEMENTATION": "flash_attention_2",
-            "CTXSIFT_LOCAL_QUANTIZATION": "quanto-int8",
+            "CTXSIFT_LOCAL_QUANTIZATION": "bnb-8bit",
+            "CTXSIFT_MODEL_CACHE_PATH": "D:/model-cache",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": "web_search_query",
             "CTXSIFT_EMBEDDING_QUERY_PROMPT": "Instruct: custom\nQuery: ",
             "CTXSIFT_EMBEDDING_BACKEND": "onnx",
@@ -138,14 +152,23 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": "44",
             "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": "33",
             "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": "0.61",
+            "CTXSIFT_DAEMON_ENABLED": "false",
+            "CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS": "321",
+            "CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS": "6543",
+            "CTXSIFT_DAEMON_EMBEDDING_BATCH_WINDOW_MS": "30",
+            "CTXSIFT_DAEMON_EMBEDDING_MAX_BATCH_SIZE": "9",
+            "CTXSIFT_RETENTION_MAX_AGE_DAYS": "45",
         }
     )
 
     assert layer["remote"]["model_name"] == "gpt-5-mini"
     assert layer["timeout_ms"] == 1234
-    assert layer["local"]["model"] == "google/gemma-4-E2B-it"
+    assert layer["local"]["model"] == "ibm-granite/granite-4.0-350m-GGUF"
+    assert layer["local"]["gguf_filename"] == "smollm2-360m-instruct-q8_0.gguf"
+    assert layer["local"]["llama_context_window"] == 16384
     assert layer["local"]["attn_implementation"] == "flash_attention_2"
-    assert layer["local"]["quantization"] is LocalQuantizationMode.QUANTO_INT8
+    assert layer["local"]["quantization"] is LocalQuantizationMode.BNB_8BIT
+    assert layer["local"]["model_cache_path"] == "D:/model-cache"
     assert layer["embedding"]["model"] == "mini"
     assert layer["embedding"]["backend"] == "onnx"
     assert layer["embedding"]["attn_implementation"] == "sdpa"
@@ -155,3 +178,14 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["recall"]["lexical_candidate_limit"] == 44
     assert layer["recall"]["vector_candidate_limit"] == 33
     assert layer["recall"]["max_vector_distance"] == 0.61
+    assert layer["daemon"]["enabled"] is False
+    assert layer["daemon"]["idle_timeout_seconds"] == 321
+    assert layer["daemon"]["startup_timeout_ms"] == 6543
+    assert layer["daemon"]["embedding_batch_window_ms"] == 30
+    assert layer["daemon"]["embedding_max_batch_size"] == 9
+    assert layer["retention"]["max_age_days"] == 45
+
+
+def test_local_model_config_rejects_non_positive_llama_context_window() -> None:
+    with pytest.raises(ValueError, match="local.llama_context_window"):
+        AppConfig.model_validate({"local": {"llama_context_window": 0}})

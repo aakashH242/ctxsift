@@ -55,9 +55,31 @@ class SentenceTransformersBackend(EmbeddingBackend):
         model = await self._load_model()
         return await asyncio.to_thread(self._encode_query_sync, model, request)
 
+    async def embed_queries(self, requests: list[QueryEmbeddingRequest]) -> list[list[float]]:
+        if not requests:
+            return []
+        model = await self._load_model()
+        return await asyncio.to_thread(self._encode_queries_sync, model, requests)
+
     async def embed_documents(self, request: DocumentEmbeddingRequest) -> list[list[float]]:
         model = await self._load_model()
         return await asyncio.to_thread(self._encode_documents_sync, model, request)
+
+    async def embed_documents_batch(
+        self,
+        requests: list[DocumentEmbeddingRequest],
+    ) -> list[list[list[float]]]:
+        if not requests:
+            return []
+        model = await self._load_model()
+        return await asyncio.to_thread(self._encode_documents_batch_sync, model, requests)
+
+    async def preload(self) -> None:
+        await self._load_model()
+
+    async def shutdown(self) -> None:
+        self._model = None
+        self._dimension = None
 
     async def _load_model(self):
         if self._model is not None:
@@ -117,12 +139,44 @@ class SentenceTransformersBackend(EmbeddingBackend):
         embedding = encoder(request.text, **kwargs)
         return _embedding_to_list(embedding)
 
+    def _encode_queries_sync(
+        self,
+        model,
+        requests: list[QueryEmbeddingRequest],
+    ) -> list[list[float]]:
+        kwargs = self._common_encode_kwargs()
+        kwargs.update(self._query_prompt_kwargs(model))
+        encoder = self._query_encoder(model, kwargs)
+        embeddings = encoder([request.text for request in requests], **kwargs)
+        return _embeddings_to_lists(embeddings)
+
     def _encode_documents_sync(self, model, request: DocumentEmbeddingRequest) -> list[list[float]]:
         kwargs = self._common_encode_kwargs()
         kwargs.update(self._document_prompt_kwargs(model))
         encoder = self._document_encoder(model, kwargs)
         embeddings = encoder(request.texts, **kwargs)
         return _embeddings_to_lists(embeddings)
+
+    def _encode_documents_batch_sync(
+        self,
+        model,
+        requests: list[DocumentEmbeddingRequest],
+    ) -> list[list[list[float]]]:
+        kwargs = self._common_encode_kwargs()
+        kwargs.update(self._document_prompt_kwargs(model))
+        encoder = self._document_encoder(model, kwargs)
+        flattened_texts: list[str] = []
+        lengths: list[int] = []
+        for request in requests:
+            flattened_texts.extend(request.texts)
+            lengths.append(len(request.texts))
+        embeddings = _embeddings_to_lists(encoder(flattened_texts, **kwargs))
+        results: list[list[list[float]]] = []
+        start_index = 0
+        for length in lengths:
+            results.append(embeddings[start_index : start_index + length])
+            start_index += length
+        return results
 
     def _query_encoder(self, model, kwargs: dict[str, Any]) -> Callable[..., Any]:
         if hasattr(model, "encode_query"):

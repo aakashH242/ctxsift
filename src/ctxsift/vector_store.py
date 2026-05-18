@@ -123,6 +123,27 @@ async def probe_vector_store(db_path: Path) -> VectorStoreStatus:
     )
 
 
+async def delete_record_embeddings(
+    db_path: Path,
+    record_ids: list[int],
+) -> VectorStoreStatus:
+    """Delete stored sqlite-vec rows for the given record ids when available."""
+    if not record_ids:
+        return VectorStoreStatus(available=True)
+    async with aiosqlite.connect(db_path) as connection:
+        status = await _load_sqlite_vec(connection, "", None)
+        if not status.available:
+            return status
+        if not await _vector_table_exists(connection):
+            return status
+        await connection.executemany(
+            f"DELETE FROM {VECTOR_TABLE_NAME} WHERE rowid = ?",
+            [(record_id,) for record_id in record_ids],
+        )
+        await connection.commit()
+        return status
+
+
 async def _load_sqlite_vec(
     connection: aiosqlite.Connection,
     model_name: str,
@@ -168,6 +189,19 @@ async def _create_vector_table_if_needed(
         USING vec0({VECTOR_COLUMN_NAME} float[{dimension}])
         """
     )
+
+
+async def _vector_table_exists(connection: aiosqlite.Connection) -> bool:
+    cursor = await connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table' AND name = ?
+        """,
+        (VECTOR_TABLE_NAME,),
+    )
+    row = await cursor.fetchone()
+    return row is not None
 
 
 async def _vector_metadata(connection: aiosqlite.Connection) -> dict[str, str]:

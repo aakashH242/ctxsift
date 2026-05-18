@@ -9,7 +9,14 @@ from ctxsift.models.base import (
     BackendUnavailableError,
     ModelBackend,
     ModelCompressionInput,
+    ModelOutputRejectedError,
     RemoteBackendOptions,
+)
+from ctxsift.models.text_profile_common import (
+    normalize_instruction_aware_output,
+    recover_scaffold_prefixed_output,
+    validate_instruction_aware_output,
+    validation_flags,
 )
 
 
@@ -49,7 +56,21 @@ class LiteLLMRemoteBackend(ModelBackend):
         text = _response_text(response)
         if not text:
             raise BackendUnavailableError("LiteLLM backend returned empty output.")
-        return text
+        normalized = normalize_instruction_aware_output(request, text)
+        recovered = recover_scaffold_prefixed_output(
+            request,
+            normalized,
+            normalize_output=normalize_instruction_aware_output,
+        )
+        validation = validate_instruction_aware_output(request, recovered)
+        if validation.status == "rejected":
+            raise ModelOutputRejectedError(
+                "litellm output validation failed. "
+                f"status={validation.status} "
+                f"flags={list(validation_flags(validation))!r} "
+                f"output={_preview_generation_output(recovered)!r}"
+            )
+        return recovered
 
 
 def _response_text(response: Any) -> str:
@@ -87,3 +108,10 @@ def _load_litellm_acompletion():
     except ImportError as error:  # pragma: no cover - depends on local environment
         raise BackendUnavailableError("LiteLLM is not installed.") from error
     return acompletion
+
+
+def _preview_generation_output(text: str, limit: int = 160) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."

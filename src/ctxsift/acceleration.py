@@ -23,8 +23,8 @@ def onnxruntime_gpu_available() -> bool:
     return _module_available("onnxruntime") and _module_available("onnxruntime.capi")
 
 
-def gemma_attention_choice(device_label: str, configured_value: str) -> str | None:
-    """Resolve the desired Gemma attention backend with safe defaults."""
+def text_attention_choice(device_label: str, configured_value: str) -> str | None:
+    """Resolve the desired text-model attention backend with safe defaults."""
     normalized = configured_value.strip().casefold()
     if normalized in {"", "auto"}:
         if device_label.startswith("cuda") and flash_attention_available():
@@ -35,6 +35,11 @@ def gemma_attention_choice(device_label: str, configured_value: str) -> str | No
     if normalized == "sdpa":
         return "sdpa"
     return None
+
+
+def gemma_attention_choice(device_label: str, configured_value: str) -> str | None:
+    """Backward-compatible alias for the text-model attention policy."""
+    return text_attention_choice(device_label, configured_value)
 
 
 def embedding_backend_choice(device_label: str, configured_value: str, model_name: str) -> str:

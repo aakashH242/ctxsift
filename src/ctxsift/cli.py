@@ -14,13 +14,24 @@ from ctxsift.compression import compress_input
 from ctxsift.config import (
     ConfigResolutionRequest,
     ConfigSaveRequest,
+    ConfigScope,
     ConfigWriteRequest,
     render_resolved_config,
     resolve_config,
     save_config,
     set_config_value,
 )
-from ctxsift.configure_flow import prompt_for_config
+from ctxsift.config_store import discover_global_config_paths
+from ctxsift.configure_setup import run_configure_setup
+from ctxsift.configure_flow import prompt_for_config, prompt_for_save_scope
+from ctxsift.daemon.manager import (
+    daemon_statuses,
+    required_daemon_specs,
+    startup_statuses,
+    stop_all_daemons,
+    stop_daemon,
+)
+from ctxsift.daemon.types import DaemonStatus
 from ctxsift.doctor import collect_doctor_report, render_doctor_report
 from ctxsift.execution import (
     CommandExecutionRequest,
@@ -33,19 +44,31 @@ from ctxsift.recall import recall_records, render_recall_records
 from ctxsift.run_capture import (
     render_run_payload,
 )
-from ctxsift.storage import initialize_database
 from ctxsift.types import CompressionRequest
-from ctxsift.workspace_ignore import ensure_workspace_ignore_entry
 from ctxsift.workspace import detect_workspace_context
+from ctxsift.workspace_setup import (
+    bootstrap_config_available,
+    ensure_workspace_initialized,
+    should_offer_workspace_ignore,
+)
 
 app = typer.Typer(
     add_completion=False,
-    help="Local-first command output compression and recall.",
+    help=(
+        "Local-first command output compression and recall.\n\n"
+        "Compress command output, save useful summaries, and recall them later.\n\n"
+        "Use `ctxsift configure` to set up ctxsift and the current workspace.\n"
+        "Use `ctxsift config ...` when you want to edit config values directly."
+    ),
     no_args_is_help=True,
 )
-config_app = typer.Typer(help="Inspect or update configuration.")
+config_app = typer.Typer(
+    help="Show or change config values directly. Use `configure` for the guided interactive setup."
+)
+daemon_app = typer.Typer(help="Start, stop, or inspect local ctxsift daemons.")
 
 app.add_typer(config_app, name="config")
+app.add_typer(daemon_app, name="daemon")
 
 
 def _not_implemented(command_name: str) -> None:
@@ -54,63 +77,79 @@ def _not_implemented(command_name: str) -> None:
 
 
 @app.command()
-def init(
-    write_ignore: Annotated[
-        bool,
-        typer.Option(
-            "--write-ignore", help="Write ignore entries during workspace initialization."
-        ),
-    ] = False,
-) -> None:
-    """Initialize the workspace database and local metadata."""
-    workspace = detect_workspace_context(Path.cwd())
-    result = resolve_config(
-        ConfigResolutionRequest(
-            cwd=Path.cwd(),
-        )
-    )
-    db_path = Path(result.config.db_path or "").expanduser() if result.config.db_path else None
-    target_path = db_path or Path(result.write_path).with_name("ctxsift.db")
-    init_result = asyncio.run(initialize_database(target_path))
-    typer.echo(
-        f"Initialized workspace database at {init_result.db_path} "
-        f"(schema {init_result.schema_version})"
-    )
-    if write_ignore:
-        ignore_result = ensure_workspace_ignore_entry(workspace, Path(init_result.db_path))
-        typer.echo(ignore_result.detail)
-    doctor_report = asyncio.run(collect_doctor_report(Path.cwd()))
-    typer.echo("")
-    typer.echo(render_doctor_report(doctor_report))
-
-
-@app.command()
 def configure(
-    global_scope: Annotated[
-        bool,
-        typer.Option("--global", help="Force the global config file instead of workspace config."),
-    ] = False,
+    write_ignore: Annotated[
+        bool | None,
+        typer.Option(
+            "--write-ignore/--no-write-ignore",
+            help="Override whether configure adds `.ctxsift/` to the workspace `.gitignore` when that DB path is used.",
+        ),
+    ] = None,
 ) -> None:
-    """Interactively configure ctxsift settings."""
+    """Guided setup for ctxsift behavior in this workspace or globally."""
+    current_directory = Path.cwd()
+    workspace = detect_workspace_context(current_directory)
+    global_paths = discover_global_config_paths()
     resolved = resolve_config(
         ConfigResolutionRequest(
-            cwd=Path.cwd(),
-            force_global=global_scope,
+            cwd=current_directory,
         )
     )
     try:
         updated_config = prompt_for_config(resolved.config)
+        selected_scope = prompt_for_save_scope(
+            workspace_path=Path(workspace.workspace_config_path),
+            global_path=global_paths.write_path,
+        )
+        effective_write_ignore = _resolve_configure_write_ignore(
+            current_directory=current_directory,
+            config=updated_config,
+            write_ignore_override=write_ignore,
+        )
         saved = save_config(
             ConfigSaveRequest(
                 config=updated_config,
-                cwd=Path.cwd(),
-                force_global=global_scope,
+                cwd=current_directory,
+                force_global=selected_scope is ConfigScope.GLOBAL,
             )
         )
     except (ValueError, ValidationError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=2) from error
+    setup_result = asyncio.run(
+        run_configure_setup(
+            cwd=current_directory,
+            config=updated_config,
+            write_ignore=effective_write_ignore,
+        )
+    )
     typer.echo(f"Updated {saved.scope.value} config at {saved.write_path}")
+    if setup_result.workspace.created:
+        typer.echo(f"Initialized workspace database at {setup_result.workspace.db_path}")
+    if setup_result.workspace.ignore_detail:
+        typer.echo(setup_result.workspace.ignore_detail)
+    for preload_result in setup_result.model_preloads:
+        if preload_result.ok:
+            typer.echo(preload_result.detail)
+        else:
+            typer.echo(f"[ctxsift warning] {preload_result.detail}", err=True)
+    typer.echo("")
+    typer.echo(render_doctor_report(setup_result.doctor))
+
+
+def _resolve_configure_write_ignore(
+    current_directory: Path,
+    config,
+    write_ignore_override: bool | None,
+) -> bool:
+    if write_ignore_override is not None:
+        return write_ignore_override
+    if not should_offer_workspace_ignore(current_directory, config):
+        return False
+    return typer.confirm(
+        "ctxsift will store data under .ctxsift/. Add .ctxsift/ to the workspace .gitignore?",
+        default=True,
+    )
 
 
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
@@ -133,7 +172,16 @@ def compress(
 ) -> None:
     """Compress stdin or command output using an instruction."""
     command = tuple(_command_args(ctx.args))
+    if not bootstrap_config_available(Path.cwd()):
+        _handle_missing_bootstrap_config_for_compress(
+            ctx=ctx,
+            instruction=instruction,
+            command=command,
+            shell=shell,
+        )
     if command or shell:
+        resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd()))
+        _ensure_workspace_ready(resolved.config, current_directory=Path.cwd())
         result, exit_code = _invoke_command_compression(
             ctx=ctx,
             instruction=instruction,
@@ -143,6 +191,8 @@ def compress(
         )
         typer.echo(result.compressed_output)
         raise typer.Exit(code=exit_code)
+    resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd()))
+    _ensure_workspace_ready(resolved.config, current_directory=Path.cwd())
     raw_input = sys.stdin.read()
     result = asyncio.run(
         compress_input(
@@ -170,14 +220,28 @@ def recall(
     ] = None,
 ) -> None:
     """Recall previously stored compressed records."""
+    if not bootstrap_config_available(Path.cwd()):
+        typer.echo(
+            "[ctxsift warning] No workspace config, global config, or ctxsift env config is set yet. "
+            "Run `ctxsift configure` first.",
+            err=True,
+        )
+        typer.echo("No recall results.")
+        return
+    resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd()))
+    _ensure_workspace_ready(resolved.config, current_directory=Path.cwd())
+    warnings: list[str] = []
     results = asyncio.run(
         recall_records(
             query=query,
             cwd=Path.cwd(),
             file_filters=files,
             limit=limit,
+            warnings_sink=warnings,
         )
     )
+    for warning in warnings:
+        typer.echo(warning, err=True)
     typer.echo(render_recall_records(results))
 
 
@@ -185,10 +249,13 @@ def recall(
 def config_show(
     global_scope: Annotated[
         bool,
-        typer.Option("--global", help="Force the global config file instead of workspace config."),
+        typer.Option(
+            "--global",
+            help="Show the global config instead of resolving from the current workspace.",
+        ),
     ] = False,
 ) -> None:
-    """Show the resolved configuration."""
+    """Show the config that ctxsift is currently using."""
     result = resolve_config(
         ConfigResolutionRequest(
             cwd=Path.cwd(),
@@ -204,10 +271,13 @@ def config_set(
     value: Annotated[str, typer.Argument(help="Value to set for the given config key.")],
     global_scope: Annotated[
         bool,
-        typer.Option("--global", help="Force the global config file instead of workspace config."),
+        typer.Option(
+            "--global",
+            help="Write to global config instead of the current workspace config.",
+        ),
     ] = False,
 ) -> None:
-    """Set one configuration value."""
+    """Change one config value directly."""
     try:
         result = set_config_value(
             ConfigWriteRequest(
@@ -228,6 +298,43 @@ def doctor() -> None:
     """Inspect runtime health and optional features."""
     report = asyncio.run(collect_doctor_report(Path.cwd()))
     typer.echo(render_doctor_report(report))
+
+
+@daemon_app.command("start")
+def daemon_start() -> None:
+    """Start the daemons required by the effective config in this directory."""
+    resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd()))
+    statuses = startup_statuses(resolved.config)
+    typer.echo(_render_daemon_statuses(statuses))
+
+
+@daemon_app.command("stop")
+def daemon_stop(
+    all_daemons: Annotated[
+        bool,
+        typer.Option("--all", help="Stop every registered ctxsift daemon."),
+    ] = False,
+) -> None:
+    """Stop the daemons required by the effective config in this directory."""
+    if all_daemons:
+        statuses = stop_all_daemons()
+    else:
+        resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd()))
+        statuses = [stop_daemon(spec) for spec in required_daemon_specs(resolved.config)]
+    typer.echo(_render_daemon_statuses(statuses))
+
+
+@daemon_app.command("status")
+def daemon_status(
+    all_daemons: Annotated[
+        bool,
+        typer.Option("--all", help="Show every registered ctxsift daemon."),
+    ] = False,
+) -> None:
+    """Show daemon health for the effective config in this directory."""
+    resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd()))
+    statuses = daemon_statuses(resolved.config, include_all=all_daemons)
+    typer.echo(_render_daemon_statuses(statuses))
 
 
 async def _run_capture(request: CommandExecutionRequest):
@@ -306,6 +413,75 @@ def _invoke_command_compression(
         raise typer.Exit(code=2) from error
 
 
+def _ensure_workspace_ready(config, current_directory: Path) -> None:
+    asyncio.run(
+        ensure_workspace_initialized(
+            cwd=current_directory,
+            config=config,
+        )
+    )
+
+
+def _handle_missing_bootstrap_config_for_compress(
+    ctx: typer.Context,
+    instruction: str,
+    command: tuple[str, ...],
+    shell: bool,
+) -> None:
+    typer.echo(
+        "[ctxsift warning] No workspace config, global config, or ctxsift env config is set yet. "
+        "Run `ctxsift configure` first.",
+        err=True,
+    )
+    if command or shell:
+        result, exit_code = _invoke_raw_command_passthrough(
+            ctx=ctx,
+            current_directory=Path.cwd(),
+            shell=shell,
+        )
+        typer.echo(_raw_command_output(result), nl=False)
+        raise typer.Exit(code=exit_code)
+    raw_input = sys.stdin.read()
+    typer.echo(raw_input, nl=False)
+    raise typer.Exit(code=0)
+
+
+def _invoke_raw_command_passthrough(
+    ctx: typer.Context,
+    current_directory: Path,
+    shell: bool,
+):
+    command = tuple(_command_args(ctx.args))
+    if not command:
+        command_name = ctx.info_name or "ctxsift"
+        typer.echo(
+            f"`ctxsift {command_name}` requires a command after `--`.",
+            err=True,
+        )
+        raise typer.Exit(code=2)
+    try:
+        request = CommandExecutionRequest(
+            argv=command,
+            shell=shell,
+            cwd=current_directory,
+        )
+    except ValueError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+    try:
+        capture = asyncio.run(_run_capture(request))
+        return capture, capture.exit_code
+    except CommandValidationError as error:
+        typer.echo(str(error), err=True)
+        raise typer.Exit(code=2) from error
+
+
+def _raw_command_output(capture) -> str:
+    if capture.stdout and capture.stderr:
+        return f"{capture.stdout.rstrip()}\n{capture.stderr}"
+    return capture.stdout or capture.stderr
+
+
 def _command_args(extra_args: list[str]) -> list[str]:
     if not extra_args:
         return []
@@ -320,3 +496,26 @@ def _hash_or_none(text: str) -> str | None:
     from ctxsift.compression import sha256_text
 
     return sha256_text(text)
+
+
+def _render_daemon_statuses(statuses: list[DaemonStatus]) -> str:
+    if not statuses:
+        return "No ctxsift daemons."
+    return "\n".join(_render_daemon_status(status) for status in statuses)
+
+
+def _render_daemon_status(status: DaemonStatus) -> str:
+    healthy = "healthy" if status.healthy else "inactive"
+    parts = [
+        f"{status.role.value}",
+        healthy,
+        f"model={status.model}",
+        f"device={status.device}",
+    ]
+    if status.pid is not None:
+        parts.append(f"pid={status.pid}")
+    if status.port is not None:
+        parts.append(f"port={status.port}")
+    if status.detail:
+        parts.append(f"detail={status.detail}")
+    return " ".join(parts)

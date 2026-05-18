@@ -4,13 +4,17 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Literal
 
 from ctxsift.types import ExtractedSignal
 
 
 class BackendUnavailableError(RuntimeError):
     """Raised when a configured backend cannot be used."""
+
+
+class ModelOutputRejectedError(BackendUnavailableError):
+    """Raised when a backend runs but its output fails the compression contract."""
 
 
 @dataclass(frozen=True)
@@ -21,6 +25,8 @@ class ModelCompressionInput:
     raw_input: str
     extracted_signal: ExtractedSignal
     max_output_tokens: int
+    required_anchors: tuple[str, ...] = ()
+    evaluation_context: Literal["prod", "benchmark"] = "prod"
 
 
 @dataclass(frozen=True)
@@ -50,6 +56,14 @@ class ModelBackend(ABC):
     @abstractmethod
     async def compress(self, request: ModelCompressionInput) -> str:
         """Produce one compressed output string."""
+
+    async def preload(self) -> None:
+        """Warm the backend and ensure required model assets are locally available."""
+        return None
+
+    async def shutdown(self) -> None:
+        """Release heavy runtime state before process shutdown."""
+        return None
 
     @staticmethod
     def text_content(text: str) -> dict[str, Any]:

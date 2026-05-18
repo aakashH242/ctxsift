@@ -51,3 +51,22 @@ class EmbeddingBackend(ABC):
     @abstractmethod
     async def embed_documents(self, request: DocumentEmbeddingRequest) -> list[list[float]]:
         """Encode one or more retrieval documents."""
+
+    async def embed_queries(self, requests: list[QueryEmbeddingRequest]) -> list[list[float]]:
+        """Encode multiple retrieval queries."""
+        return [await self.embed_query(request) for request in requests]
+
+    async def embed_documents_batch(
+        self,
+        requests: list[DocumentEmbeddingRequest],
+    ) -> list[list[list[float]]]:
+        """Encode multiple document batches."""
+        return [await self.embed_documents(request) for request in requests]
+
+    async def preload(self) -> None:
+        """Warm the backend and ensure required model assets are locally available."""
+        return None
+
+    async def shutdown(self) -> None:
+        """Release heavy runtime state before process shutdown."""
+        return None
