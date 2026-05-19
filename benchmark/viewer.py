@@ -8,9 +8,11 @@ from datetime import UTC, datetime
 import html
 import json
 from pathlib import Path
+import re
 from typing import Any, Iterable, Sequence
 import webbrowser
 
+from benchmark.loader import load_cases
 from benchmark.scoring import final_benchmark_score, latency_factor_score, quality_core_score
 from benchmark.stats import percentile
 
@@ -22,6 +24,16 @@ class LoadedResult:
     warmup: dict[str, Any]
     summary: dict[str, Any]
     cases: list[dict[str, Any]]
+
+
+@dataclass(frozen=True, slots=True)
+class CaseReference:
+    instruction: str
+    expected_output: str
+
+
+_FIRST_PASS_PREVIEW_RE = re.compile(r"\bfirst_pass='([^']*)'")
+_REPAIR_PASS_PREVIEW_RE = re.compile(r"\brepair_pass='([^']*)'")
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -124,6 +136,23 @@ def load_results(input_path: Path | Sequence[Path]) -> list[LoadedResult]:
     return results
 
 
+def load_case_reference_index() -> dict[str, CaseReference]:
+    dataset_path = Path(__file__).resolve().with_name("dataset.jsonl")
+    if not dataset_path.exists():
+        return {}
+    try:
+        cases = load_cases(dataset_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return {}
+    return {
+        case.case_id: CaseReference(
+            instruction=case.instruction,
+            expected_output=case.scoring_target,
+        )
+        for case in cases
+    }
+
+
 def resolve_output_path(
     input_path: Path | Sequence[Path],
     requested_output: Path | None,
@@ -154,6 +183,34 @@ def _safe_str(value: Any, default: str = "n/a") -> str:
         return default
     text = str(value).strip()
     return text or default
+
+
+def _preview_text(value: Any, *, limit: int = 320) -> str:
+    text = _safe_str(value, default="")
+    if not text:
+        return ""
+    normalized = text.replace("\r\n", "\n").replace("\r", "\n")
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
+
+
+def _rejected_output_preview(error: str) -> str:
+    if not error:
+        return ""
+    previews: list[str] = []
+    for pattern in (_FIRST_PASS_PREVIEW_RE, _REPAIR_PASS_PREVIEW_RE):
+        match = pattern.search(error)
+        if not match:
+            continue
+        preview = _preview_text(match.group(1), limit=220)
+        if preview and preview not in previews:
+            previews.append(preview)
+    if not previews:
+        return ""
+    if len(previews) == 1:
+        return previews[0]
+    return "\n---\n".join(previews)
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -194,6 +251,8 @@ def _scenario_family(scenario: dict[str, Any]) -> str:
     scenario.get("device"),
   ]
   normalized = " ".join(str(value or "").casefold() for value in candidates)
+  if "remote" in normalized:
+    return "remote"
   if "gpu" in normalized or "cuda" in normalized:
     return "gpu"
   if "cpu" in normalized:
@@ -203,8 +262,9 @@ def _scenario_family(scenario: dict[str, Any]) -> str:
 
 def build_case_row(case: dict[str, Any]) -> dict[str, Any]:
     error = _safe_str(case.get("error") or "", default="")
+    case_id = _safe_str(case.get("case_id") or case.get("id"))
     return {
-        "caseId": _safe_str(case.get("case_id") or case.get("id")),
+        "caseId": case_id,
         "title": _safe_str(case.get("title") or case.get("prompt") or case.get("query")),
         "domain": _safe_str(case.get("domain"), default="general"),
         "inferenceMs": _as_float(case.get("inference_ms") or case.get("latency_ms")),
@@ -232,11 +292,43 @@ def build_case_row(case: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def build_scenario_row(result: LoadedResult, *, index: int, multi_source: bool) -> dict[str, Any]:
+def _failed_case_detail_key(scenario_key: str, case_id: str) -> str:
+    return f"{scenario_key}::{case_id}"
+
+
+def build_scenario_row(
+    result: LoadedResult,
+    *,
+    index: int,
+    multi_source: bool,
+    case_reference_index: dict[str, CaseReference],
+    failed_case_details: dict[str, dict[str, str]],
+) -> dict[str, Any]:
     scenario = result.scenario
     summary = result.summary
     warmup = result.warmup
-    cases = [build_case_row(case) for case in result.cases]
+    run_label = _source_run_label(result.source_path)
+    name = _safe_str(scenario.get("name") or scenario.get("id") or result.source_path.stem)
+    key = f"{run_label}::{name}::{index}"
+    cases: list[dict[str, Any]] = []
+    for case in result.cases:
+        row = build_case_row(case)
+        if row["status"] == "error":
+            case_id = row["caseId"]
+            reference = case_reference_index.get(case_id)
+            expected_output = _preview_text(case.get("expected_output"), limit=220)
+            if not expected_output and reference is not None:
+                expected_output = _preview_text(reference.expected_output, limit=220)
+            actual_output = _preview_text(case.get("output"), limit=320)
+            if not actual_output:
+                actual_output = _rejected_output_preview(row["error"])
+            detail_key = _failed_case_detail_key(key, case_id)
+            failed_case_details[detail_key] = {
+                "expectedOutput": expected_output,
+                "actualOutput": actual_output,
+            }
+            row["detailKey"] = detail_key
+        cases.append(row)
     inference_values = [row["inferenceMs"] for row in cases if row["inferenceMs"] > 0]
     preservation_values = [row["exactPreservationRatio"] for row in cases]
     quality_values = [row["summaryQualityRatio"] for row in cases]
@@ -292,9 +384,6 @@ def build_scenario_row(result: LoadedResult, *, index: int, multi_source: bool) 
         summary.get("quality_core"),
         (final_score / (100.0 * max(latency_factor, 1e-12))) if final_score > 0.0 else quality_core_score(case_scores),
     )
-    run_label = _source_run_label(result.source_path)
-    name = _safe_str(scenario.get("name") or scenario.get("id") or result.source_path.stem)
-    key = f"{run_label}::{name}::{index}"
     return {
         "key": key,
         "name": name,
@@ -335,8 +424,16 @@ def build_scenario_row(result: LoadedResult, *, index: int, multi_source: bool) 
 def build_dashboard_data(results: Sequence[LoadedResult], *, mode: str) -> dict[str, Any]:
     source_roots = {result.source_path.parent.as_posix() for result in results}
     multi_source = len(source_roots) > 1
+    case_reference_index = load_case_reference_index()
+    failed_case_details: dict[str, dict[str, str]] = {}
     scenario_rows = [
-        build_scenario_row(result, index=index, multi_source=multi_source)
+        build_scenario_row(
+            result,
+            index=index,
+            multi_source=multi_source,
+            case_reference_index=case_reference_index,
+            failed_case_details=failed_case_details,
+        )
         for index, result in enumerate(results)
     ]
     scenario_rows.sort(key=lambda item: (item["name"], item["runLabel"], item["track"]))
@@ -344,6 +441,7 @@ def build_dashboard_data(results: Sequence[LoadedResult], *, mode: str) -> dict[
         "mode": mode,
         "multiSource": multi_source,
         "scenarioCount": len(scenario_rows),
+        "failedCaseDetails": failed_case_details,
         "scenarios": scenario_rows,
     }
 
@@ -355,6 +453,7 @@ def render_html_report(
     mode: str = "standard",
 ) -> str:
     data = build_dashboard_data(results, mode=mode)
+    data_json = json.dumps(data).replace("</", "<\\/")
     template = """<!doctype html>
 <html lang="en">
 <head>
@@ -370,20 +469,23 @@ def render_html_report(
       --bg: #000000;
       --panel: #030608;
       --panel-strong: #071015;
-      --panel-soft: rgba(0, 255, 156, 0.08);
+      --panel-soft: rgba(255, 176, 32, 0.08);
       --text: #f2fff8;
       --muted: #7d9b8f;
-      --accent: #00ff9c;
-      --accent-strong: #73ffc7;
-      --accent-soft: rgba(0, 255, 156, 0.1);
+      --accent: #ffb020;
+      --accent-strong: #ffd36a;
+      --accent-soft: rgba(255, 176, 32, 0.12);
+      --success: #22c55e;
+      --success-strong: #7bf0a5;
+      --success-soft: rgba(34, 197, 94, 0.14);
       --warn: #ffd24a;
       --warn-soft: rgba(255, 210, 74, 0.12);
       --danger: #ff5b6b;
       --danger-soft: rgba(255, 91, 107, 0.14);
       --exact: #3bd4ff;
       --info: #3bd4ff;
-      --border: #123126;
-      --shadow: 0 0 0 1px rgba(18, 49, 38, 0.45);
+      --border: #3a2a0e;
+      --shadow: 0 0 0 1px rgba(58, 42, 14, 0.45);
       --radius: 12px;
       --mono: "Fira Code", "JetBrains Mono", "Cascadia Code", Consolas, monospace;
       --sans: "Fira Sans", "Segoe UI", sans-serif;
@@ -473,6 +575,19 @@ def render_html_report(
       font-size: 0.87rem;
     }
 
+    .tooltip-hint {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 8px;
+      padding: 1px 6px;
+      border: 1px dashed var(--border);
+      border-radius: 999px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.4;
+      text-transform: uppercase;
+    }
+
     .grid {
       display: grid;
       gap: 14px;
@@ -540,8 +655,13 @@ def render_html_report(
       display: flex;
       gap: 10px;
       justify-content: space-between;
-      align-items: end;
+      align-items: start;
       flex-wrap: wrap;
+    }
+
+    .compare-toolbar > div:first-child {
+      flex: 1 1 360px;
+      min-width: 0;
     }
 
     .compare-actions,
@@ -549,13 +669,41 @@ def render_html_report(
       display: flex;
       gap: 10px;
       flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .compare-toolbar-right {
+      display: flex;
+      gap: 10px;
+      align-items: start;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      margin-left: auto;
+      flex: 0 1 auto;
+    }
+
+    .compare-toolbar-right .control {
+      min-width: 160px;
+    }
+
+    .compare-body[hidden] {
+      display: none;
     }
 
     .compare-controls {
       display: grid;
       gap: 12px;
-      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      grid-template-columns: minmax(0, 1fr) 150px minmax(0, 1fr);
       align-items: end;
+    }
+
+    .compare-controls .control {
+      min-width: 0;
+    }
+
+    .compare-controls .control.compare-spacer {
+      visibility: hidden;
+      pointer-events: none;
     }
 
     .compare-head-grid {
@@ -649,9 +797,9 @@ def render_html_report(
     }
 
     .headtohead-value.is-better {
-      border-color: var(--accent);
-      background: var(--accent-soft);
-      color: var(--accent-strong);
+      border-color: var(--success);
+      background: var(--success-soft);
+      color: var(--success-strong);
     }
 
     .headtohead-value.is-worse {
@@ -698,7 +846,8 @@ def render_html_report(
     }
 
     select {
-      min-width: 220px;
+      min-width: 0;
+      width: 100%;
       padding: 8px 10px;
     }
 
@@ -752,7 +901,7 @@ def render_html_report(
       background: transparent;
     }
 
-    .badge.accent { background: var(--accent-soft); }
+    .badge.accent { background: var(--success-soft); }
     .badge.warn { background: var(--warn-soft); }
     .badge.danger { background: var(--danger-soft); }
 
@@ -826,7 +975,7 @@ def render_html_report(
       float: left;
     }
 
-    .stack-fill.success { background: rgba(34, 197, 94, 0.72); }
+    .stack-fill.success { background: color-mix(in srgb, var(--success) 72%, transparent); }
     .stack-fill.error { background: rgba(248, 81, 73, 0.75); }
     .stack-fill.exact {
       position: absolute;
@@ -887,7 +1036,7 @@ def render_html_report(
     }
 
     .click-row { cursor: pointer; }
-    .status-ok { color: var(--accent); }
+    .status-ok { color: var(--success); }
     .status-error { color: var(--danger); }
 
     .sort-button {
@@ -1235,7 +1384,7 @@ def render_html_report(
       bottom: 0;
     }
 
-    .distribution-segment.success { background: rgba(0, 255, 156, 0.72); }
+    .distribution-segment.success { background: color-mix(in srgb, var(--success) 72%, transparent); }
     .distribution-segment.error { background: rgba(255, 91, 107, 0.8); }
     .distribution-band {
       width: 4px;
@@ -1287,13 +1436,21 @@ def render_html_report(
     }
 
     #kpis,
-    .compare-panel,
     #standard-summary,
     #standard-analysis { display: none; }
 
     @media (max-width: 900px) {
       .shell { width: min(100vw - 18px, 100%); margin-top: 10px; }
       .hero, .panel, .compare-panel { border-radius: 4px; }
+      .compare-controls,
+      .compare-head-grid,
+      .headtohead-row { grid-template-columns: 1fr; }
+      .compare-toolbar-right {
+        width: 100%;
+        margin-left: 0;
+        justify-content: stretch;
+      }
+      .compare-controls .control.compare-spacer { display: none; }
       .bar-row, .stack-row, .domain-row { grid-template-columns: 1fr; }
       .meta-grid { justify-items: start; }
       .hit-row,
@@ -1331,24 +1488,31 @@ def render_html_report(
         <div class="compare-toolbar">
           <div>
             <h2>Head-to-Head</h2>
-            <div class="toolbar-note">Pick one track and two scenarios to compare score, latency, and quality metrics directly.</div>
+          </div>
+          <div class="compare-toolbar-right">
+            <div class="control">
+              <label>Track</label>
+              <div class="segmented-toggle" id="compare-track-toggle"></div>
+            </div>
+            <div class="compare-actions">
+              <button type="button" id="compare-collapse-toggle">Collapse</button>
+            </div>
           </div>
         </div>
-        <div class="compare-controls">
-          <div class="control">
-            <label>Track</label>
-            <div class="segmented-toggle" id="compare-track-toggle"></div>
+        <div class="compare-body" id="compare-body">
+          <div class="compare-controls">
+            <div class="control">
+              <label for="compare-left-select">Left model</label>
+              <select id="compare-left-select"></select>
+            </div>
+            <div class="control compare-spacer" aria-hidden="true"></div>
+            <div class="control">
+              <label for="compare-right-select">Right model</label>
+              <select id="compare-right-select"></select>
+            </div>
           </div>
-          <div class="control">
-            <label for="compare-left-select">Left model</label>
-            <select id="compare-left-select"></select>
-          </div>
-          <div class="control">
-            <label for="compare-right-select">Right model</label>
-            <select id="compare-right-select"></select>
-          </div>
+          <div id="head-to-head-summary"></div>
         </div>
-        <div id="head-to-head-summary"></div>
       </section>
 
     <section class="grid two-up mode-collective" id="collective-overview">
@@ -1389,7 +1553,7 @@ def render_html_report(
         </div>
         <div class="leaderboard-list" id="quality-stacks"></div>
         <div class="legend">
-          <span><i style="background: var(--accent);"></i>Success</span>
+          <span><i style="background: var(--success);"></i>Success</span>
           <span><i style="background: var(--danger);"></i>Error</span>
           <span><i style="background: var(--exact);"></i>Exact pass</span>
           <span><i style="background: rgba(179, 127, 255, 0.92);"></i>Preserve</span>
@@ -1513,13 +1677,16 @@ def render_html_report(
     </section>
   </div>
 
+  <script type="application/json" id="viewer-data">__DATA__</script>
   <script>
-    const data = __DATA__;
+    const data = JSON.parse(document.getElementById("viewer-data").textContent);
     const allScenarios = data.scenarios || [];
+    const failedCaseDetails = data.failedCaseDetails || {};
       const state = {
         activeScenarioKey: allScenarios[0]?.key ?? null,
         caseMode: "all",
         compareFamily: "cpu",
+        compareCollapsed: false,
         compareLeftKey: null,
         compareRightKey: null,
         latencyFamily: "cpu",
@@ -1559,6 +1726,46 @@ def render_html_report(
 
     function fmtScore(value) {
       return Number(value || 0).toFixed(2);
+    }
+
+    function renderFatalError(error) {
+      const shell = document.querySelector(".shell");
+      if (!shell) {
+        return;
+      }
+      const panel = document.createElement("section");
+      panel.className = "panel";
+      panel.style.borderColor = "var(--danger)";
+      panel.style.padding = "16px";
+      const title = document.createElement("div");
+      title.style.fontWeight = "700";
+      title.style.marginBottom = "8px";
+      title.textContent = "Viewer bootstrap failed";
+      const body = document.createElement("pre");
+      body.style.whiteSpace = "pre-wrap";
+      body.style.margin = "0";
+      body.style.color = "var(--danger)";
+      body.textContent = String(error && error.stack ? error.stack : error);
+      panel.append(title, body);
+      shell.prepend(panel);
+    }
+
+    function buildCaseTooltip(item) {
+      const detail = failedCaseDetails[item.detailKey || ""];
+      if (!detail) {
+        return "";
+      }
+      const sections = [];
+      if (detail.expectedOutput) {
+        sections.push(`Expected output:\n${detail.expectedOutput}`);
+      }
+      if (detail.actualOutput) {
+        sections.push(`Actual output:\n${detail.actualOutput}`);
+      }
+      if (!sections.length) {
+        return "";
+      }
+      return sections.join("\\n\\n");
     }
 
     function percentile(values, fraction) {
@@ -1709,7 +1916,7 @@ def render_html_report(
     }
 
     function availableFamilies() {
-      return ["cpu", "gpu"].filter((family) => allScenarios.some((scenario) => scenario.family === family));
+      return ["cpu", "gpu", "remote"].filter((family) => allScenarios.some((scenario) => scenario.family === family));
     }
 
     function normalizeFamily(family) {
@@ -2008,7 +2215,7 @@ def render_html_report(
         { label: "Success", key: "successRate", kind: "higher", format: fmtPct },
         { label: "Exact", key: "exactPassRate", kind: "higher", format: fmtPct },
         { label: "Errors", key: "errorCount", kind: "lower", format: fmtInt },
-        { label: "Case volume", key: "caseCount", kind: "higher", format: fmtInt },
+        { label: "Case volume", key: "caseCount", kind: "neutral", format: fmtInt },
       ];
     }
 
@@ -2060,7 +2267,21 @@ def render_html_report(
       }));
     }
 
+    function renderCompareCollapse() {
+      const toggle = document.getElementById("compare-collapse-toggle");
+      const body = document.getElementById("compare-body");
+      if (!toggle || !body) {
+        return;
+      }
+      body.hidden = state.compareCollapsed;
+      toggle.textContent = state.compareCollapsed ? "Expand" : "Collapse";
+      toggle.setAttribute("aria-expanded", String(!state.compareCollapsed));
+    }
+
     function compareWinnerClass(leftValue, rightValue, kind) {
+      if (kind === "neutral") {
+        return ["is-tie", "is-tie"];
+      }
       if (leftValue === rightValue) {
         return ["is-tie", "is-tie"];
       }
@@ -2077,16 +2298,10 @@ def render_html_report(
 
       const copy = document.createElement("div");
       copy.className = "compare-card-copy";
-      const kicker = document.createElement("div");
-      kicker.className = "model-head-kicker";
-      kicker.textContent = `${sideLabel} • ${scenarioLabel(scenario)}`;
       const title = document.createElement("div");
       title.className = "compare-card-title";
       title.textContent = displayModelName(scenario.model);
-      const meta = document.createElement("div");
-      meta.className = "compare-card-meta";
-      meta.textContent = `${scenario.track} • ${scenario.phase} • ${scenario.quantization} • ${scenario.device}`;
-      copy.append(kicker, title, meta);
+      copy.append(title);
 
       const score = document.createElement("div");
       score.className = "compare-card-score";
@@ -2171,6 +2386,10 @@ def render_html_report(
       root.replaceChildren(wrap);
     }
 
+    function renderScenarioPicker() {
+      return null;
+    }
+
     function renderKpis(scenarios) {
       const root = document.getElementById("kpis");
       root.replaceChildren(...computeKpis(scenarios).map(([label, value]) => {
@@ -2189,7 +2408,7 @@ def render_html_report(
 
     function renderTrackToggle(rootId, stateKey) {
       const root = document.getElementById(rootId);
-      const families = ["cpu", "gpu"];
+      const families = ["cpu", "gpu", "remote"];
       root.replaceChildren(...families.map((family) => {
         const button = document.createElement("button");
         button.type = "button";
@@ -2470,7 +2689,7 @@ def render_html_report(
         row.addEventListener("click", () => {
           state.activeScenarioKey = item.key;
           renderScenarioTable(scenarios);
-          renderScenarioSelector(getScenarioScope());
+          renderScenarioSelector();
           renderScenarioDetail();
         });
         row.addEventListener("keydown", (event) => {
@@ -2708,6 +2927,22 @@ def render_html_report(
         const askId = document.createElement("div");
         askId.className = "mono";
         askId.textContent = item.caseId;
+        if (item.status === "error" && item.detailKey) {
+          const hint = document.createElement("span");
+          hint.className = "tooltip-hint";
+          hint.textContent = "peek";
+          askId.append(hint);
+          askCell.addEventListener("mouseenter", () => {
+            if (askCell.dataset.tooltipLoaded === "true") {
+              return;
+            }
+            const tooltipText = buildCaseTooltip(item);
+            if (tooltipText) {
+              askCell.title = tooltipText;
+            }
+            askCell.dataset.tooltipLoaded = "true";
+          }, { once: true });
+        }
         const askTitle = document.createElement("div");
         askTitle.style.color = "var(--muted)";
         askTitle.textContent = item.title;
@@ -2729,6 +2964,7 @@ def render_html_report(
       ensureActiveScenario();
       ensureHeadToHeadSelection();
       renderSortableHeaders();
+      renderCompareCollapse();
       renderHeadToHead();
       renderCollectiveOverview();
       renderLatencyBars();
@@ -2738,25 +2974,35 @@ def render_html_report(
       renderScenarioDetail();
     }
 
-    document.getElementById("scenario-select").addEventListener("change", (event) => {
-      state.activeScenarioKey = event.target.value;
-      renderScenarioDetail();
-    });
+    try {
+      document.getElementById("scenario-select").addEventListener("change", (event) => {
+        state.activeScenarioKey = event.target.value;
+        renderScenarioDetail();
+      });
 
-    document.getElementById("compare-left-select").addEventListener("change", (event) => {
-      state.compareLeftKey = event.target.value;
-      ensureHeadToHeadSelection("left");
+      document.getElementById("compare-left-select").addEventListener("change", (event) => {
+        state.compareLeftKey = event.target.value;
+        ensureHeadToHeadSelection("left");
+        renderDashboard();
+      });
+
+      document.getElementById("compare-right-select").addEventListener("change", (event) => {
+        state.compareRightKey = event.target.value;
+        ensureHeadToHeadSelection("right");
+        renderDashboard();
+      });
+
+      document.getElementById("compare-collapse-toggle").addEventListener("click", () => {
+        state.compareCollapsed = !state.compareCollapsed;
+        renderCompareCollapse();
+      });
+
+      initSortableHeaders();
       renderDashboard();
-    });
-
-    document.getElementById("compare-right-select").addEventListener("change", (event) => {
-      state.compareRightKey = event.target.value;
-      ensureHeadToHeadSelection("right");
-      renderDashboard();
-    });
-
-    initSortableHeaders();
-    renderDashboard();
+    } catch (error) {
+      renderFatalError(error);
+      throw error;
+    }
   </script>
 </body>
 </html>
@@ -2765,7 +3011,7 @@ def render_html_report(
         template.replace("__SOURCE__", html.escape(_format_source_label(source_path)))
         .replace("__GENERATED__", html.escape(datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%SZ")))
         .replace("__MODE__", html.escape(mode))
-        .replace("__DATA__", json.dumps(data))
+        .replace("__DATA__", data_json)
     )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime
 import ast
 import os
@@ -12,7 +13,7 @@ import re
 from statistics import mean
 import sys
 import time
-from typing import Awaitable, Iterable, TypeVar
+from typing import Awaitable, Iterable, Mapping, TypeVar
 
 from benchmark.loader import load_manifest
 from benchmark.metrics import (
@@ -37,6 +38,7 @@ from benchmark.scoring import (
     quality_core_score,
     summary_quality_ratio,
 )
+from benchmark.semantic_quality import build_semantic_scorer
 from benchmark.schemas import (
     BenchmarkCase,
     BenchmarkScenario,
@@ -46,8 +48,9 @@ from benchmark.schemas import (
     WarmupMetrics,
 )
 from benchmark.stats import percentile
+from ctxsift.config import ConfigResolutionRequest, resolve_config
 from ctxsift.extraction import ExtractionContext, extract_signal
-from ctxsift.models import create_local_backend
+from ctxsift.models import create_compression_backend, create_local_backend
 from ctxsift.models.base import (
     BackendUnavailableError,
     ModelBackend,
@@ -58,7 +61,7 @@ from ctxsift.models.text_profile_common import (
     validate_instruction_aware_output,
     validation_flags,
 )
-from ctxsift.types import LocalModelConfig, LocalQuantizationMode
+from ctxsift.types import AppConfig, LocalModelConfig, LocalQuantizationMode
 from ctxsift.workspace import detect_workspace_context
 
 
@@ -74,7 +77,7 @@ _ANSI_RED = "\x1b[31m"
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the CLI parser for benchmark execution."""
-    parser = argparse.ArgumentParser(description="Run local ctxsift model benchmarks.")
+    parser = argparse.ArgumentParser(description="Run ctxsift model benchmarks.")
     parser.add_argument(
         "--dataset",
         default="benchmark/dataset.jsonl",
@@ -105,7 +108,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--phase",
         action="append",
         default=[],
-        help="Run only scenarios from the named phase. Can be passed multiple times.",
+        help=(
+            "Run only scenarios from the named phase. Can be passed multiple times. "
+            "With --remote, synthesized scenarios use phase=remote-screen."
+        ),
     )
     parser.add_argument(
         "--show-output",
@@ -129,6 +135,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=0,
         help="Run only the first N benchmark cases after any case-id filtering.",
     )
+    parser.add_argument(
+        "--remote",
+        action="store_true",
+        help="Run the benchmark against the configured remote LiteLLM backend instead of local models.",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=".env",
+        help="Env file to load before resolving remote benchmark config. Used only with --remote.",
+    )
     return parser
 
 
@@ -137,13 +153,23 @@ async def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     manifest = load_manifest(Path(args.dataset), Path(args.matrix))
+    remote_config = _remote_listing_config(manifest.scenarios, args.remote, args.list_scenarios)
+    if remote_config is None:
+        remote_config = _resolve_remote_benchmark_config(
+            env_file=Path(args.env_file),
+            enabled=args.remote,
+        )
+    scenarios_for_mode = _scenarios_for_mode(
+        manifest.scenarios,
+        remote_config=remote_config,
+    )
     cases = select_cases(
         manifest.cases,
         case_ids=set(args.case_id),
         max_cases=args.max_cases,
     )
     scenarios = select_scenarios(
-        manifest.scenarios,
+        scenarios_for_mode,
         names=set(args.scenario),
         phases=set(args.phase),
     )
@@ -153,13 +179,14 @@ async def main() -> int:
     if not scenarios:
         parser.error(
             build_scenario_filter_error(
-                manifest.scenarios,
+                scenarios_for_mode,
                 names=set(args.scenario),
                 phases=set(args.phase),
             )
         )
     if not cases:
         parser.error("No benchmark cases matched the requested filters.")
+    semantic_scorer = build_semantic_scorer(_benchmark_embedding_config(remote_config))
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     output_root = Path(args.output_dir)
     named_run_output_dir = output_root / build_run_directory_name(timestamp, args.name)
@@ -189,6 +216,8 @@ async def main() -> int:
             scenario,
             cases,
             show_output=args.show_output,
+            remote_config=remote_config,
+            semantic_scorer=semantic_scorer,
         )
         write_result_files(scenario_output_dir, result)
         print(f"Wrote {scenario.name} results to {scenario_output_dir}")
@@ -296,6 +325,8 @@ async def run_scenario(
     cases: tuple[BenchmarkCase, ...],
     *,
     show_output: bool = False,
+    remote_config: AppConfig | None = None,
+    semantic_scorer=None,
 ) -> ScenarioResult:
     """Run one benchmark scenario with one shared loaded backend."""
     workspace = detect_workspace_context()
@@ -303,7 +334,7 @@ async def run_scenario(
         cwd=Path(workspace.cwd),
         workspace_root=Path(workspace.workspace_root),
     )
-    backend = create_local_backend(_local_model_config(scenario))
+    backend = _create_benchmark_backend(scenario, remote_config)
     torch_module = torch_module_or_none()
     try:
         print("  warmup starting: loading model and running one probe request")
@@ -329,29 +360,19 @@ async def run_scenario(
         f"OMP_NUM_THREADS={warmup.omp_num_threads or 'null'} "
         f"MKL_NUM_THREADS={warmup.mkl_num_threads or 'null'}"
     )
-    semaphore = asyncio.Semaphore(max(1, scenario.concurrency))
-    case_results: list[CaseMetrics] = []
-    total_cases = len(cases)
-    for case_index, case in enumerate(cases, start=1):
-        _print_benchmark_line(
-            f"    [{case_index}/{total_cases}] starting {case.case_id} "
-            f"domain={case.domain} title={case.title}",
-            color=_ANSI_BLUE,
-        )
-        result = await _await_with_periodic_status(
-            f"case {case.case_id}",
-            _run_case(
-                case=case,
-                backend=backend,
-                scenario=scenario,
-                context=context,
-                semaphore=semaphore,
-                torch_module=torch_module,
-            ),
-            prefix="    ",
-        )
-        case_results.append(result)
-        _print_case_progress(result, case_index, total_cases, show_output=show_output)
+    case_results = await _run_scenario_cases(
+        scenario=scenario,
+        cases=cases,
+        backend=backend,
+        context=context,
+        torch_module=torch_module,
+        show_output=show_output,
+    )
+    case_results = await _apply_semantic_quality_scores(
+        cases=cases,
+        case_results=case_results,
+        semantic_scorer=semantic_scorer,
+    )
     summary = _summarize(case_results)
     print(
         "  summary "
@@ -387,6 +408,279 @@ def _local_model_config(scenario: BenchmarkScenario) -> LocalModelConfig:
         attn_implementation=scenario.attn_implementation,
         quantization=LocalQuantizationMode(scenario.quantization),
     )
+
+
+def _create_benchmark_backend(
+    scenario: BenchmarkScenario,
+    remote_config: AppConfig | None,
+) -> ModelBackend:
+    if remote_config is not None:
+        return create_compression_backend(_remote_config_for_scenario(remote_config, scenario))
+    return create_local_backend(_local_model_config(scenario))
+
+
+async def _run_scenario_cases(
+    *,
+    scenario: BenchmarkScenario,
+    cases: tuple[BenchmarkCase, ...],
+    backend: ModelBackend,
+    context: ExtractionContext,
+    torch_module: object | None,
+    show_output: bool,
+) -> list[CaseMetrics]:
+    if _is_remote_scenario(scenario):
+        return await _run_cases_concurrently(
+            scenario=scenario,
+            cases=cases,
+            backend=backend,
+            context=context,
+            torch_module=torch_module,
+            show_output=show_output,
+            concurrency=16,
+        )
+    return await _run_cases_sequentially(
+        scenario=scenario,
+        cases=cases,
+        backend=backend,
+        context=context,
+        torch_module=torch_module,
+        show_output=show_output,
+        concurrency=max(1, scenario.concurrency),
+    )
+
+
+async def _run_cases_sequentially(
+    *,
+    scenario: BenchmarkScenario,
+    cases: tuple[BenchmarkCase, ...],
+    backend: ModelBackend,
+    context: ExtractionContext,
+    torch_module: object | None,
+    show_output: bool,
+    concurrency: int,
+) -> list[CaseMetrics]:
+    semaphore = asyncio.Semaphore(concurrency)
+    case_results: list[CaseMetrics] = []
+    total_cases = len(cases)
+    for case_index, case in enumerate(cases, start=1):
+        _print_benchmark_line(
+            f"    [{case_index}/{total_cases}] starting {case.case_id} "
+            f"domain={case.domain} title={case.title}",
+            color=_ANSI_BLUE,
+        )
+        result = await _await_with_periodic_status(
+            f"case {case.case_id}",
+            _run_case(
+                case=case,
+                backend=backend,
+                scenario=scenario,
+                context=context,
+                semaphore=semaphore,
+                torch_module=torch_module,
+            ),
+            prefix="    ",
+        )
+        case_results.append(result)
+        _print_case_progress(result, case_index, total_cases, show_output=show_output)
+    return case_results
+
+
+async def _run_cases_concurrently(
+    *,
+    scenario: BenchmarkScenario,
+    cases: tuple[BenchmarkCase, ...],
+    backend: ModelBackend,
+    context: ExtractionContext,
+    torch_module: object | None,
+    show_output: bool,
+    concurrency: int,
+) -> list[CaseMetrics]:
+    total_cases = len(cases)
+    _print_benchmark_line(
+        f"    starting {total_cases} remote case(s) with concurrency={concurrency}",
+        color=_ANSI_BLUE,
+    )
+    semaphore = asyncio.Semaphore(concurrency)
+    tasks = [
+        asyncio.create_task(
+            _run_indexed_case(
+                index=index,
+                case=case,
+                backend=backend,
+                scenario=scenario,
+                context=context,
+                semaphore=semaphore,
+                torch_module=torch_module,
+            )
+        )
+        for index, case in enumerate(cases, start=1)
+    ]
+    indexed_results = await _await_with_periodic_status(
+        "remote case batch",
+        asyncio.gather(*tasks),
+        prefix="    ",
+    )
+    ordered = sorted(indexed_results, key=lambda item: item[0])
+    case_results = [result for _, result in ordered]
+    _print_remote_backend_error_summary(case_results)
+    for case_index, result in enumerate(case_results, start=1):
+        _print_case_progress(result, case_index, total_cases, show_output=show_output)
+    return case_results
+
+
+async def _run_indexed_case(
+    *,
+    index: int,
+    case: BenchmarkCase,
+    backend: ModelBackend,
+    scenario: BenchmarkScenario,
+    context: ExtractionContext,
+    semaphore: asyncio.Semaphore,
+    torch_module: object | None,
+) -> tuple[int, CaseMetrics]:
+    return (
+        index,
+        await _run_case(
+            case=case,
+            backend=backend,
+            scenario=scenario,
+            context=context,
+            semaphore=semaphore,
+            torch_module=torch_module,
+        ),
+    )
+
+
+def _resolve_remote_benchmark_config(
+    *,
+    env_file: Path,
+    enabled: bool,
+) -> AppConfig | None:
+    if not enabled:
+        return None
+    merged_env = dict(_load_env_file(env_file))
+    merged_env.update(os.environ)
+    resolved = resolve_config(
+        ConfigResolutionRequest(
+            cwd=Path.cwd(),
+            env=merged_env,
+        )
+    )
+    config = resolved.config
+    if not config.remote.base_url.strip():
+        raise SystemExit(
+            "Remote benchmark mode requires remote.base_url. "
+            f"Set CTXSIFT_LLM_BASE_URL in {env_file} or the current environment."
+        )
+    if not config.remote.model_name.strip():
+        raise SystemExit(
+            "Remote benchmark mode requires remote.model_name. "
+            f"Set CTXSIFT_LLM_MODEL in {env_file} or the current environment."
+        )
+    return config
+
+
+def _load_env_file(env_file: Path) -> Mapping[str, str]:
+    if not env_file.exists():
+        return {}
+    values: dict[str, str] = {}
+    for raw_line in env_file.read_text(encoding="utf-8").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export "):].strip()
+        if "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = _parse_env_value(value.strip())
+    return values
+
+
+def _parse_env_value(value: str) -> str:
+    if not value:
+        return ""
+    if value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _remote_benchmark_scenario(
+    scenario: BenchmarkScenario,
+    config: AppConfig | None,
+) -> BenchmarkScenario:
+    if config is None:
+        return scenario
+    model_name = scenario.model if _is_remote_scenario(scenario) else config.remote.model_name
+    phase = scenario.phase if _is_remote_scenario(scenario) else "remote-screen"
+    track = scenario.track if _is_remote_scenario(scenario) else "remote"
+    return BenchmarkScenario(
+        name=scenario.name,
+        track=track,
+        phase=phase,
+        model=model_name,
+        quantization="none",
+        device="remote",
+        gguf_filename=None,
+        dtype="remote",
+        attn_implementation="remote",
+        max_output_tokens=scenario.max_output_tokens,
+        concurrency=scenario.concurrency,
+        enabled=scenario.enabled,
+    )
+
+
+def _scenarios_for_mode(
+    scenarios: tuple[BenchmarkScenario, ...],
+    *,
+    remote_config: AppConfig | None,
+) -> tuple[BenchmarkScenario, ...]:
+    if remote_config is None:
+        return scenarios
+    explicit_remote = tuple(scenario for scenario in scenarios if _is_remote_scenario(scenario))
+    source = explicit_remote or scenarios
+    return tuple(_remote_benchmark_scenario(scenario, remote_config) for scenario in source)
+
+
+def _is_remote_scenario(scenario: BenchmarkScenario) -> bool:
+    normalized = " ".join(
+        [
+            scenario.track.strip().casefold(),
+            scenario.phase.strip().casefold(),
+            scenario.device.strip().casefold(),
+        ]
+    )
+    return "remote" in normalized
+
+
+def _remote_config_for_scenario(
+    config: AppConfig,
+    scenario: BenchmarkScenario,
+) -> AppConfig:
+    remote = config.remote.model_copy(update={"model_name": scenario.model})
+    return config.model_copy(update={"remote": remote})
+
+
+def _benchmark_embedding_config(remote_config: AppConfig | None):
+    if remote_config is not None:
+        return remote_config.embedding
+    resolved = resolve_config(ConfigResolutionRequest(cwd=Path.cwd(), env=os.environ))
+    return resolved.config.embedding
+
+
+def _remote_listing_config(
+    scenarios: tuple[BenchmarkScenario, ...],
+    remote_enabled: bool,
+    list_scenarios: bool,
+) -> AppConfig | None:
+    if not (remote_enabled and list_scenarios):
+        return None
+    if not any(_is_remote_scenario(scenario) for scenario in scenarios):
+        return None
+    return AppConfig()
 
 
 async def _warmup_backend(
@@ -498,6 +792,8 @@ async def _run_case(
             case_id=case.case_id,
             title=case.title,
             domain=case.domain,
+            instruction=case.instruction,
+            expected_output=case.scoring_target,
             inference_ms=elapsed_ms,
             cpu_rss_bytes=current_process_rss_bytes(),
             gpu_peak_bytes=gpu_peak_memory_bytes(torch_module),
@@ -514,6 +810,42 @@ async def _run_case(
             family=case.family,
             case_score=case_score,
         )
+
+
+async def _apply_semantic_quality_scores(
+    *,
+    cases: tuple[BenchmarkCase, ...],
+    case_results: list[CaseMetrics],
+    semantic_scorer,
+) -> list[CaseMetrics]:
+    if semantic_scorer is None or not case_results:
+        return case_results
+    semantic_scores = await semantic_scorer.score_cases(
+        cases,
+        [case_result.output for case_result in case_results],
+    )
+    updated_results: list[CaseMetrics] = []
+    for benchmark_case, case_result, semantic_score in zip(
+        cases,
+        case_results,
+        semantic_scores,
+        strict=True,
+    ):
+        updated_results.append(
+            replace(
+                case_result,
+                summary_quality_ratio=semantic_score,
+                case_score=case_benchmark_score(
+                    validation_status=case_result.validation_status,
+                    family=benchmark_case.family,
+                    anchor_score=case_result.exact_preservation_ratio,
+                    semantic_score=semantic_score,
+                    format_score=case_result.format_adherence_score,
+                    brevity_score=case_result.brevity_ratio,
+                ),
+            )
+        )
+    return updated_results
 
 
 def _model_request(
@@ -568,6 +900,44 @@ def _validation_flags_from_error(error: str) -> tuple[str, ...]:
             seen.add(item)
             flags.append(item)
     return tuple(flags)
+
+
+def _print_remote_backend_error_summary(case_results: list[CaseMetrics]) -> None:
+    error_counts: dict[str, int] = {}
+    for case_result in case_results:
+        if not case_result.error:
+            continue
+        if "LiteLLM remote backend request failed:" not in case_result.error:
+            continue
+        error_counts[case_result.error] = error_counts.get(case_result.error, 0) + 1
+    if not error_counts:
+        return
+    unique_error_count = len(error_counts)
+    total_error_count = sum(error_counts.values())
+    _print_benchmark_line(
+        f"    remote backend errors: {total_error_count} case(s), {unique_error_count} unique",
+        color=_ANSI_RED,
+    )
+    for error, count in sorted(
+        error_counts.items(),
+        key=lambda item: (-item[1], item[0]),
+    )[:3]:
+        _print_benchmark_line(
+            f"      x{count} {_preview_error_text(error)}",
+            color=_ANSI_RED,
+        )
+    if unique_error_count > 3:
+        _print_benchmark_line(
+            f"      ... {unique_error_count - 3} more unique remote backend error(s)",
+            color=_ANSI_RED,
+        )
+
+
+def _preview_error_text(error: str, limit: int = 220) -> str:
+    normalized = " ".join(error.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
 
 
 def _summarize(cases: list[CaseMetrics]) -> ScenarioSummary:
@@ -636,6 +1006,8 @@ def _failed_scenario_result(
             case_id=case.case_id,
             title=case.title,
             domain=case.domain,
+            instruction=case.instruction,
+            expected_output=case.scoring_target,
             inference_ms=0.0,
             cpu_rss_bytes=current_process_rss_bytes(),
             gpu_peak_bytes=None,
@@ -736,7 +1108,7 @@ async def _await_with_periodic_status(
     prefix: str,
     interval_seconds: float = 5.0,
 ) -> _AwaitableResult:
-    task = asyncio.create_task(awaitable)
+    task = asyncio.ensure_future(awaitable)
     started = time.perf_counter()
     while True:
         try:

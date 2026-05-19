@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ctxsift.compression_prompt import build_messages
 from ctxsift.models.base import (
     BackendUnavailableError,
     ModelBackend,
@@ -13,8 +12,13 @@ from ctxsift.models.base import (
     RemoteBackendOptions,
 )
 from ctxsift.models.text_profile_common import (
-    normalize_instruction_aware_output,
+    apply_soft_length_hint,
+    build_repair_messages,
+    build_standard_text_messages,
+    choose_preferred_candidate,
     recover_scaffold_prefixed_output,
+    should_attempt_repair,
+    normalize_instruction_aware_output,
     validate_instruction_aware_output,
     validation_flags,
 )
@@ -34,11 +38,56 @@ class LiteLLMRemoteBackend(ModelBackend):
         return f"litellm:{self.model_name}@{self._options.base_url}"
 
     async def compress(self, request: ModelCompressionInput) -> str:
+        first_pass = await self._generate_candidate(
+            request,
+            self._prepare_messages(request, build_standard_text_messages(request)),
+        )
+        first_validation = validate_instruction_aware_output(request, first_pass)
+        if not should_attempt_repair(first_validation):
+            return first_pass
+
+        repaired_output = await self._generate_candidate(
+            request,
+            self._prepare_messages(request, build_repair_messages(request, first_pass)),
+        )
+        preferred_candidate = choose_preferred_candidate(request, [first_pass, repaired_output])
+        if preferred_candidate is not None:
+            return preferred_candidate.output
+
+        repair_validation = validate_instruction_aware_output(request, repaired_output)
+        raise ModelOutputRejectedError(
+            "litellm output validation failed. "
+            f"first_pass_status={first_validation.status} "
+            f"first_pass_flags={list(validation_flags(first_validation))!r} "
+            f"first_pass={_preview_generation_output(first_pass)!r} "
+            f"repair_status={repair_validation.status} "
+            f"repair_flags={list(validation_flags(repair_validation))!r} "
+            f"repair_pass={_preview_generation_output(repaired_output)!r}"
+        )
+
+    async def _generate_candidate(
+        self,
+        request: ModelCompressionInput,
+        messages: list[dict[str, str]],
+    ) -> str:
+        text = await self._complete_text(request, messages)
+        normalized = normalize_instruction_aware_output(request, text)
+        return recover_scaffold_prefixed_output(
+            request,
+            normalized,
+            normalize_output=normalize_instruction_aware_output,
+        )
+
+    async def _complete_text(
+        self,
+        request: ModelCompressionInput,
+        messages: list[dict[str, str]],
+    ) -> str:
         acompletion = _load_litellm_acompletion()
         try:
             response = await acompletion(
                 model=self.model_name,
-                messages=build_messages(request),
+                messages=messages,
                 api_base=self._options.base_url,
                 api_key=self._options.api_key or None,
                 api_version=self._options.api_version or None,
@@ -56,21 +105,14 @@ class LiteLLMRemoteBackend(ModelBackend):
         text = _response_text(response)
         if not text:
             raise BackendUnavailableError("LiteLLM backend returned empty output.")
-        normalized = normalize_instruction_aware_output(request, text)
-        recovered = recover_scaffold_prefixed_output(
-            request,
-            normalized,
-            normalize_output=normalize_instruction_aware_output,
-        )
-        validation = validate_instruction_aware_output(request, recovered)
-        if validation.status == "rejected":
-            raise ModelOutputRejectedError(
-                "litellm output validation failed. "
-                f"status={validation.status} "
-                f"flags={list(validation_flags(validation))!r} "
-                f"output={_preview_generation_output(recovered)!r}"
-            )
-        return recovered
+        return text
+
+    def _prepare_messages(
+        self,
+        request: ModelCompressionInput,
+        messages: list[dict[str, str]],
+    ) -> list[dict[str, str]]:
+        return apply_soft_length_hint(messages, request)
 
 
 def _response_text(response: Any) -> str:
@@ -104,9 +146,13 @@ def _reasoning_effort(reasoning_mode: str) -> str | None:
 
 def _load_litellm_acompletion():
     try:
+        import litellm
         from litellm import acompletion
     except ImportError as error:  # pragma: no cover - depends on local environment
         raise BackendUnavailableError("LiteLLM is not installed.") from error
+    # LiteLLM prints a generic "Give Feedback / Get Help" banner on exceptions.
+    # Keep that suppressed and let ctxsift surface the actual error text itself.
+    litellm.suppress_debug_info = True
     return acompletion
 
 

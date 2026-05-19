@@ -37,7 +37,7 @@
     "device": "cpu"
   },
       {
-    "name": "cpu-qwen2.5-0.5b-instruct-128k-no-quant",
+    "name": "cpu-qwen2.5-coder-0.5b-instruct-128k-no-quant",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF",
@@ -45,7 +45,24 @@
     "quantization": "none",
     "device": "cpu"
   },
-
+          {
+    "name": "cpu-qwen2.5-0.5b-instruct-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+    "gguf_filename": "qwen2.5-0.5b-instruct-q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+          {
+    "name": "cpu-qwen3.5-0.8b-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "unsloth/Qwen3.5-0.8B-GGUF",
+    "gguf_filename": "Qwen3.5-0.8B-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
   {
     "name": "cpu-gemma3-270m-it-no-quant",
     "track": "cpu",
@@ -55,66 +72,24 @@
     "quantization": "none",
     "device": "cpu"
   },
-  {
-    "name": "cpu-qwen2.5-coder-0.5b-instruct-128k-no-quant",
+      {
+    "name": "cpu-kiwi-1.0-0.7b-no-quant",
     "track": "cpu",
     "phase": "cpu-screen",
-    "model": "unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF",
-    "gguf_filename": "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf",
+    "model": "mradermacher/Kiwi-1.0-0.7B-32k-Instruct-GGUF",
+    "gguf_filename": "Kiwi-1.0-0.7B-32k-Instruct.Q8_0.gguf",
     "quantization": "none",
     "device": "cpu"
   },
 
+
     {
-      "name": "gpu-granite-3.3-2b-bnb8",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "ibm-granite/granite-3.3-2b-instruct",
-      "quantization": "bnb-8bit",
-      "device": "cuda"
-    },
-    {
-      "name": "gpu-granite-3.3-2b-bnb8-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "ibm-granite/granite-3.3-2b-instruct",
-      "quantization": "bnb-8bit",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
-      "name": "gpu-granite-3.3-2b-no-quant",
+      "name": "gpu-granite-3.3-2b-instruct-no-quant",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "ibm-granite/granite-3.3-2b-instruct",
       "quantization": "none",
       "device": "cuda"
-    },
-    {
-      "name": "gpu-granite-3.3-2b-no-quant-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "ibm-granite/granite-3.3-2b-instruct",
-      "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
-      "name": "gpu-qwen2.5-1.5b-bnb8",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "Qwen/Qwen2.5-1.5B-Instruct",
-      "quantization": "bnb-8bit",
-      "device": "cuda"
-    },
-    {
-      "name": "gpu-qwen2.5-1.5b-bnb8-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "Qwen/Qwen2.5-1.5B-Instruct",
-      "quantization": "bnb-8bit",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
     },
     {
       "name": "gpu-qwen2.5-1.5b-no-quant",
@@ -125,98 +100,20 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-qwen2.5-1.5b-no-quant-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "Qwen/Qwen2.5-1.5B-Instruct",
-      "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
-      "name": "gpu-qwen3-1.7b-bnb8",
-      "track": "gpu",
-      "phase": "gpu-second-wave",
-      "model": "Qwen/Qwen3-1.7B",
-      "quantization": "bnb-8bit",
-      "device": "cuda"
-    },
-    {
-      "name": "gpu-qwen3-1.7b-bnb8-sdpa",
-      "track": "gpu",
-      "phase": "gpu-second-wave",
-      "model": "Qwen/Qwen3-1.7B",
-      "quantization": "bnb-8bit",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
       "name": "gpu-qwen3-1.7b-no-quant",
       "track": "gpu",
-      "phase": "gpu-second-wave",
+      "phase": "gpu-screen",
       "model": "Qwen/Qwen3-1.7B",
       "quantization": "none",
       "device": "cuda"
-    },
-    {
-      "name": "gpu-qwen3-1.7b-no-quant-sdpa",
-      "track": "gpu",
-      "phase": "gpu-second-wave",
-      "model": "Qwen/Qwen3-1.7B",
-      "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
-      "name": "gpu-qwen3.5-2b-bnb8",
-      "track": "gpu",
-      "phase": "gpu-second-wave",
-      "model": "Qwen/Qwen3.5-2B",
-      "quantization": "bnb-8bit",
-      "device": "cuda"
-    },
-    {
-      "name": "gpu-qwen3.5-2b-bnb8-sdpa",
-      "track": "gpu",
-      "phase": "gpu-second-wave",
-      "model": "Qwen/Qwen3.5-2B",
-      "quantization": "bnb-8bit",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
     },
     {
       "name": "gpu-qwen3.5-2b-no-quant",
       "track": "gpu",
-      "phase": "gpu-second-wave",
+      "phase": "gpu-screen",
       "model": "Qwen/Qwen3.5-2B",
       "quantization": "none",
       "device": "cuda"
-    },
-    {
-      "name": "gpu-qwen3.5-2b-no-quant-sdpa",
-      "track": "gpu",
-      "phase": "gpu-second-wave",
-      "model": "Qwen/Qwen3.5-2B",
-      "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
-      "name": "gpu-smollm2-1.7b-bnb8",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
-      "quantization": "bnb-8bit",
-      "device": "cuda"
-    },
-    {
-      "name": "gpu-smollm2-1.7b-bnb8-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
-      "quantization": "bnb-8bit",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
     },
     {
       "name": "gpu-qwen3.5-0.8b-no-quant",
@@ -227,15 +124,6 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-qwen3.5-0.8b-no-quant-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "Qwen/Qwen3.5-0.8B",
-      "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
       "name": "gpu-smollm2-1.7b-no-quant",
       "track": "gpu",
       "phase": "gpu-screen",
@@ -244,30 +132,76 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-smollm2-1.7b-no-quant-sdpa",
+      "name": "gpu-gemma4-e2b-it-no-quant",
       "track": "gpu",
       "phase": "gpu-screen",
-      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
-      "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
-    },
-    {
-      "name": "gpu-lfm2.5-1.2B-instruct-no-quant",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "LiquidAI/LFM2.5-1.2B-Instruct",
+      "model": "google/gemma-4-E2B-it",
       "quantization": "none",
       "device": "cuda"
     },
     {
-      "name": "gpu-lfm2.5-1.2B-instruct-no-quant-sdpa",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "LiquidAI/LFM2.5-1.2B-Instruct",
+      "name": "remote-gpt-4.1-mini",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-4.1-mini",
       "quantization": "none",
-      "device": "cuda",
-      "attn_implementation": "sdpa"
+      "device": "remote"
+    },
+    {
+      "name": "remote-gpt-4.1",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-4.1",
+      "quantization": "none",
+      "device": "remote"
+    },
+    {
+      "name": "remote-gpt-5.4-mini",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-5.4-mini",
+      "quantization": "none",
+      "device": "remote"
+    },
+        {
+      "name": "remote-gpt-5.4-nano",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-5.4-nano",
+      "quantization": "none",
+      "device": "remote"
+    },
+        {
+      "name": "remote-gpt-5-mini",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-5-mini",
+      "quantization": "none",
+      "device": "remote"
+    },
+        {
+      "name": "remote-gpt-5-nano",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-5-nano",
+      "quantization": "none",
+      "device": "remote"
+    },
+        {
+      "name": "remote-gpt-4o-mini",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-4o-mini",
+      "quantization": "none",
+      "device": "remote"
+    },
+        {
+      "name": "remote-gpt-4o",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-4o",
+      "quantization": "none",
+      "device": "remote"
     }
   ]
 }

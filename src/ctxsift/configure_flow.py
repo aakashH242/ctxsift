@@ -8,6 +8,8 @@ from pydantic import TypeAdapter
 import typer
 
 from ctxsift.config_store import ConfigScope
+from ctxsift.models.hf_hub_cache import default_hf_cache_dir
+from ctxsift.models.quantized_model_cache import default_quantized_cache_root
 from ctxsift.types import (
     AppConfig,
     ReasoningMode,
@@ -169,8 +171,9 @@ def _local_config_for_mode(current: AppConfig, compression_mode: str):
         )
     else:
         local_gguf_filename = None
+    _render_model_cache_note(current.local.model_cache_path)
     local_model_cache_path = typer.prompt(
-        "Local model cache path override (leave blank for default cache)",
+        "Local model cache path override",
         default=current.local.model_cache_path or "",
         show_default=bool(current.local.model_cache_path),
     )
@@ -358,3 +361,15 @@ def _cuda_available() -> bool:
     except ImportError:
         return False
     return bool(torch.cuda.is_available())
+
+
+def _render_model_cache_note(configured_path: str | None) -> None:
+    configured = (configured_path or "").strip()
+    if configured:
+        typer.echo(f"Current local model cache root: {configured}")
+        typer.echo("Leave blank only if you want to clear the override and go back to the defaults.")
+        return
+    typer.echo("Local model cache root controls where downloaded local model artifacts are cached.")
+    typer.echo(f"Default Hugging Face cache: {default_hf_cache_dir()}")
+    typer.echo(f"Default quantized model cache: {default_quantized_cache_root()}")
+    typer.echo("Leave blank to keep using those defaults, or enter one directory to override them.")

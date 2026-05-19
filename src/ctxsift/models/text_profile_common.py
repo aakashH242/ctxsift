@@ -66,13 +66,13 @@ BULLET_LINE_RE = re.compile(r"^\s*(?:[-*]|\d+\.)\s+")
 SHORT_TAG_RE = re.compile(r"<[^>\n]{1,16}>")
 WHITESPACE_RE = re.compile(r"[ \t]+")
 MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
-MULTIMODAL_LEAK_RE = re.compile(
-    r"(<(?:image|video|audio)\b[^>]*>|^(?:image|video|audio|vision)\s*:)",
-    re.IGNORECASE | re.MULTILINE,
-)
 ROLE_TOKEN_LEAK_RE = re.compile(r"<\|(?:system|user|assistant)\|>", re.IGNORECASE)
 CONTROL_TOKEN_LEAK_RE = re.compile(
-    r"(<\|[^>\n]+\|>|</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text|think|response)>|\[(?:/)?INST\])",
+    r"(<\|[^>\n]+\|>|</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text|think|response)>|</?turn\|>|\[(?:/)?INST\])",
+    re.IGNORECASE,
+)
+CONTROL_TOKEN_CLEAN_RE = re.compile(
+    r"(<\|[^>\n]+\|>|</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text|think|response)>|</?turn\|>|\[(?:/)?INST\])",
     re.IGNORECASE,
 )
 CPU_PROMPT_LABEL_RE = re.compile(
@@ -88,7 +88,7 @@ BENCHMARK_SCAFFOLD_RE = re.compile(
     re.IGNORECASE,
 )
 
-InstructionOutputMode = Literal["plain-text", "structured", "exact-lines"]
+InstructionOutputMode = Literal["plain-text", "structured", "exact-lines", "exact-format"]
 ValidationStatus = Literal["accepted", "soft_accepted", "rejected"]
 
 
@@ -127,6 +127,7 @@ def build_user_prompt(request: ModelCompressionInput) -> str:
     sections = [
         f"Instruction:\n{request.instruction}",
         output_form_section(request),
+        selection_discipline_section(request),
         build_anchor_section(request),
         f"Raw output:\n{request.raw_input}",
     ]
@@ -143,6 +144,7 @@ def build_cpu_protection_user_prompt(request: ModelCompressionInput) -> str:
     sections = [
         f"Instruction:\n{request.instruction}",
         cpu_prompt_output_form_section(request),
+        selection_discipline_section(request),
         build_cpu_signal_section(request),
         f"Raw output:\n{request.raw_input}",
     ]
@@ -192,6 +194,7 @@ def build_repair_messages(
     sections.extend(
         [
             output_form_section(request),
+            selection_discipline_section(request),
             build_anchor_section(request),
             f"Raw output:\n{request.raw_input}",
             "Rewrite the answer so it follows the instruction carefully and preserves the required tokens.",
@@ -225,6 +228,7 @@ def build_cpu_protection_repair_messages(
     sections.extend(
         [
             build_cpu_signal_section(request),
+            selection_discipline_section(request),
             f"Raw output:\n{request.raw_input}",
             "Rewrite the answer so it follows the instruction exactly and preserves the required tokens.",
         ]
@@ -266,12 +270,19 @@ def output_form_section(request: ModelCompressionInput) -> str:
             "- copy quoted or extracted lines exactly from the raw output\n"
             "- do not summarize unless the instruction also asks for it"
         )
+    if _requests_exact_format(instruction):
+        return (
+            "Output form:\n"
+            "- return only the requested value, command, identifier, or lines\n"
+            "- no prose, labels, bullets, headings, code fences, or surrounding context\n"
+            "- if the instruction implies one exact span, output only that span and nothing else"
+        )
     if _requests_structured_output(instruction):
         return (
             "Output form:\n"
             "- follow the requested structure exactly\n"
-            "- bullets, headings, markdown, or code blocks are allowed only because the instruction asked for them\n"
-            "- do not add extra sections that were not requested"
+            "- return only the requested json, yaml, table, or bullet structure\n"
+            "- do not add prose before or after the structured output"
         )
     return (
         "Output form:\n"
@@ -289,6 +300,19 @@ def soft_length_hint_section(request: ModelCompressionInput) -> str:
     )
 
 
+def selection_discipline_section(request: ModelCompressionInput) -> str:
+    """Add one compact reminder when the instruction has strict include/exclude rules."""
+    instruction = request.instruction.casefold()
+    if not _requests_strict_selection(instruction):
+        return ""
+    return (
+        "Selection discipline:\n"
+        "- include only items that satisfy the instruction\n"
+        "- omit related but out-of-scope items even if they look useful\n"
+        "- if one short reason is requested, give only that reason"
+    )
+
+
 def cpu_output_form_section(request: ModelCompressionInput) -> str:
     """Backward-compatible CPU alias for shared output-form guidance."""
     return output_form_section(request)
@@ -299,6 +323,8 @@ def instruction_output_mode(instruction: str) -> InstructionOutputMode:
     normalized = instruction.casefold()
     if _requests_exact_lines(normalized):
         return "exact-lines"
+    if _requests_exact_format(normalized):
+        return "exact-format"
     if _requests_structured_output(normalized):
         return "structured"
     return "plain-text"
@@ -307,7 +333,11 @@ def instruction_output_mode(instruction: str) -> InstructionOutputMode:
 def cpu_prompt_output_form_section(request: ModelCompressionInput) -> str:
     """Return CPU output-form guidance only when the instruction explicitly needs it."""
     instruction = request.instruction.casefold()
-    if _requests_exact_lines(instruction) or _requests_structured_output(instruction):
+    if (
+        _requests_exact_lines(instruction)
+        or _requests_exact_format(instruction)
+        or _requests_structured_output(instruction)
+    ):
         return output_form_section(request)
     return ""
 
@@ -431,7 +461,10 @@ def normalize_instruction_aware_output(request: ModelCompressionInput, text: str
     cleaned = text.strip()
     if not cleaned:
         return ""
-    if mode == "exact-lines":
+    cleaned = strip_known_control_tokens(request, cleaned)
+    if not cleaned:
+        return ""
+    if mode in {"exact-lines", "exact-format"}:
         return collapse_outer_blank_lines(cleaned)
     cleaned = strip_reasoning_blocks(cleaned, "think", "response")
     cleaned = strip_edge_tags(cleaned)
@@ -481,8 +514,6 @@ def validate_instruction_aware_output(request: ModelCompressionInput, text: str)
         hard_fail_reasons.append("role_token_leakage")
     if _has_unrepaired_control_token_leak(request, cleaned):
         hard_fail_reasons.append("control_token_leakage")
-    if has_multimodal_leakage(cleaned):
-        hard_fail_reasons.append("multimodal_leakage")
     if _has_unrepaired_schema_echo(request, cleaned):
         hard_fail_reasons.append("schema_echo")
     if _has_unrepaired_cpu_prompt_echo(request, cleaned):
@@ -508,6 +539,9 @@ def validate_instruction_aware_output(request: ModelCompressionInput, text: str)
     if mode == "plain-text":
         if not is_plain_text_contract(cleaned):
             quality_flags.append("plain_text_style_mismatch")
+    elif mode == "exact-format":
+        if not _looks_like_exact_format_output(cleaned):
+            quality_flags.append("exact_format_style_mismatch")
     elif mode == "structured":
         if not has_requested_structure(cleaned):
             quality_flags.append("structured_output_mismatch")
@@ -658,6 +692,22 @@ def strip_edge_tags(text: str) -> str:
         cleaned = updated
 
 
+def strip_known_control_tokens(request: ModelCompressionInput, text: str) -> str:
+    """Strip known model control tokens unless they are part of the raw input itself."""
+    raw_input = request.raw_input
+
+    def _replace(match: re.Match[str]) -> str:
+        token = match.group(0)
+        if token in raw_input:
+            return token
+        return " "
+
+    cleaned = CONTROL_TOKEN_CLEAN_RE.sub(_replace, text)
+    cleaned = WHITESPACE_RE.sub(" ", cleaned)
+    cleaned = re.sub(r"\n[ \t]+", "\n", cleaned)
+    return cleaned.strip()
+
+
 def strip_heading(text: str) -> str:
     """Strip one leading summary-style heading."""
     return LEADING_HEADING_RE.sub("", text, count=1).strip()
@@ -707,11 +757,6 @@ def is_plain_text_contract(text: str) -> bool:
 def has_structured_schema_leakage(text: str) -> bool:
     """Return whether output still looks like echoed schema labels."""
     return any(STRUCTURED_LABEL_RE.match(line) for line in text.splitlines() if line.strip())
-
-
-def has_multimodal_leakage(text: str) -> bool:
-    """Return whether output still looks like multimodal formatting leakage."""
-    return MULTIMODAL_LEAK_RE.search(text) is not None
 
 
 def has_role_token_leakage(text: str) -> bool:
@@ -810,6 +855,19 @@ def _requests_exact_lines(instruction: str) -> bool:
     )
 
 
+def _requests_exact_format(instruction: str) -> bool:
+    return any(
+        token in instruction
+        for token in (
+            "output exactly the requested value or lines",
+            "exact match or regex-constrained output required",
+            "no prose, bullets, backticks, or extra whitespace",
+            "return only the requested value",
+            "return only the requested command",
+        )
+    )
+
+
 def _requests_structured_output(instruction: str) -> bool:
     return any(
         token in instruction
@@ -822,10 +880,41 @@ def _requests_structured_output(instruction: str) -> bool:
             "table",
             "json",
             "yaml",
+            "return only the requested structured output",
             "heading",
             "headings",
         )
     )
+
+
+def _requests_strict_selection(instruction: str) -> bool:
+    return any(
+        token in instruction
+        for token in (
+            "return only",
+            "include only",
+            "output only",
+            "exclude ",
+            "omit ",
+            "do not include",
+            "security-sensitive changed files",
+        )
+    )
+
+
+def _looks_like_exact_format_output(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return False
+    if "```" in stripped:
+        return False
+    if LEADING_HEADING_RE.match(stripped):
+        return False
+    if any(BULLET_LINE_RE.match(line) for line in stripped.splitlines() if line.strip()):
+        return False
+    if stripped.count("\n") > 4:
+        return False
+    return True
 
 
 def _first_non_empty(*value_groups: list[str]) -> str:
@@ -931,6 +1020,7 @@ def _normalize_verbatim_line(line: str) -> str:
 
 
 def _strip_prompt_wrapper_lines(request: ModelCompressionInput, text: str) -> str:
+    mode = instruction_output_mode(request.instruction)
     raw_lines = {line.strip().casefold() for line in request.raw_input.splitlines() if line.strip()}
     normalized_raw_lines = {_normalized_guidance_line(line) for line in request.raw_input.splitlines() if line.strip()}
     cleaned_lines: list[str] = []
@@ -954,7 +1044,7 @@ def _strip_prompt_wrapper_lines(request: ModelCompressionInput, text: str) -> st
             continue
         if inside_wrapper_block:
             continue
-        if STRUCTURED_LABEL_RE.match(stripped) or CPU_PROMPT_LABEL_RE.match(stripped):
+        if _is_prompt_wrapper_label(request, stripped, mode=mode) or CPU_PROMPT_LABEL_RE.match(stripped):
             inside_wrapper_block = True
             continue
         if (lowered in _guidance_lines() or _is_soft_length_guidance_line(lowered)) and lowered not in normalized_raw_lines:
@@ -983,10 +1073,11 @@ def _trim_to_first_raw_line(request: ModelCompressionInput, text: str) -> str:
 
 
 def _has_unrepaired_schema_echo(request: ModelCompressionInput, text: str) -> bool:
+    mode = instruction_output_mode(request.instruction)
     suspect_lines = [
         line.strip()
         for line in text.splitlines()
-        if line.strip() and STRUCTURED_LABEL_RE.match(line)
+        if line.strip() and _is_prompt_wrapper_label(request, line.strip(), mode=mode)
     ]
     if not suspect_lines:
         return False
@@ -1025,6 +1116,31 @@ def _has_generic_prompt_guidance_echo(request: ModelCompressionInput, text: str)
         if (candidate in guidance_lines or _is_soft_length_guidance_line(candidate)) and candidate not in raw_lines:
             return True
     return False
+
+
+def _is_prompt_wrapper_label(
+    request: ModelCompressionInput,
+    line: str,
+    *,
+    mode: InstructionOutputMode | None = None,
+) -> bool:
+    normalized_mode = mode or instruction_output_mode(request.instruction)
+    stripped = line.strip()
+    if not STRUCTURED_LABEL_RE.match(stripped):
+        return False
+    lowered = stripped.casefold()
+    if normalized_mode != "structured":
+        return True
+    return lowered in {
+        "domains:",
+        "traceback:",
+        "symbols:",
+        "commands:",
+        "packages:",
+        "preserve exactly:",
+        "raw output:",
+        "task:",
+    }
 
 
 def _guidance_lines() -> set[str]:

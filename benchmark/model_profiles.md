@@ -333,7 +333,6 @@ Why:
 #### Cleanup rules
 
 - same as generic cleanup
-- aggressively reject multimodal formatting leakage
 
 #### Validation focus
 

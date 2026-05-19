@@ -297,18 +297,6 @@ def test_qwen35_profile_uses_generic_cleanup() -> None:
     assert normalize_qwen35_output("Summary:\n- first\n\n\n- second") == "first\nsecond"
 
 
-def test_qwen35_profile_rejects_multimodal_leakage() -> None:
-    request = ModelCompressionInput(
-        instruction="Summarize failures",
-        raw_input="Build failed",
-        extracted_signal=ExtractedSignal(),
-        max_output_tokens=64,
-    )
-
-    assert is_valid_qwen35_output(request, "<image>diagram</image>") is False
-    assert is_valid_qwen35_output(request, "Image: screenshot attached") is False
-
-
 def test_smollm2_profile_matches_smollm2_model_names() -> None:
     assert matches_smollm2_model_name("HuggingFaceTB/SmolLM2-1.7B-Instruct") is True
     assert matches_smollm2_model_name("smollm2-360m") is True
@@ -1488,7 +1476,7 @@ def test_transformers_backend_rejects_invalid_qwen35_output(
 ) -> None:
     class InvalidTokenizer(FakeTokenizer):
         def decode(self, tokens, skip_special_tokens: bool) -> str:
-            return "Image: screenshot attached"
+            return "<|assistant|> leaked role token"
 
     class FakeAutoModel:
         @staticmethod

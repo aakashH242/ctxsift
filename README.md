@@ -3,12 +3,13 @@
 Command outputs and state recollection are the biggest source of token overuse. 
 
 Agents consume raw command outputs for most tasks. But often, LLMs don't need entire outputs to be able to 
-answer something or figure out a situation. This not only increases token usage but also affects time taken. 
+answer something or figure out a situation. This not only increases token usage but also affects time taken responses. 
 It compounds in complex, multistep tasks where rounds of context compaction cause the agent to re-read and re-run
-commands to get back to speed with latest code state.
+commands to get back to speed with latest code state. Just compressing command outputs is not enough - it shifts the
+token tax to these recollection moments. 
 
-**CtxSift** is a skill that helps agents sift through the repeated noise and find the real signals needed for every task.
-It compresses tool outputs and caches them so that agents can look them up when needing context.
+**CtxSift** is a skill that helps agents sift through the repeated noise and find the real signals needed for each task.
+It compresses tool outputs and caches them so that agents can do a look-up when needing context or recollecting.
 
 ---
 
@@ -24,11 +25,15 @@ It compresses tool outputs and caches them so that agents can look them up when 
   - Windows: [Visual Studio](https://visualstudio.microsoft.com/downloads/) or [MinGW-w64](https://www.mingw-w64.org/downloads/)
   - MacOS: [Xcode](https://developer.apple.com/xcode/)
 
+
 ### Install
 
 CtxSift uses a LLM to compress tool outputs. This can be a model running locally or hosted remotely.
 You can choose the installation path best suited to your environment. When using local models, you can override the default
 model - see the [supported models](#local-model-support) section for further details. 
+
+> ❗ We recommend at least 4 GB of RAM when using remote models for compression. For local compression, 8+ GB of RAM is recommended.  
+> Optionally, a GPU with at least 6 GB of VRAM can improve your experience.
 
 ```bash 
 # Install the base package - inference runs on CPU
@@ -77,22 +82,50 @@ Embeddings are separate: CtxSift currently uses a local Sentence Transformers-co
 | Remote compression | Off by default                                                                             | Used only when remote mode is configured | Becomes active when `remote.base_url` and `remote.model_name` are set. Usually also needs an API key, depending on the provider. Requires `ctxsift[remote]` because remote compression goes through LiteLLM. This replaces local compression, but not local embeddings. |
 | Embeddings for recall | [microsoft/harrier-oss-v1-0.6b](https://huggingface.co/microsoft/harrier-oss-v1-0.6b)      | Used for storing and recalling records | This path is used regardless of whether compression is local or remote. The model must be compatible with Sentence Transformers. |
 
-### Recommended Models
+### Changing Models
 
-For CPU-based environments, you can configure any GGUF-quantized text-generation models supported by `llama.cpp`. Based on our [benchmarks](benchmark), we recommend the following.
+For CPU-based environments, you can configure any GGUF-quantized text-generation models supported by `llama.cpp`. 
+For GPU-based environments, any text-generation models from HuggingFace can be used. The choice is endless, based on your hardware.
+
+We have [benchmarked](benchmark) a few models to help you get started. You can view the benchmark results by opening the HTML file [here](benchmark/results/viewer.html) in your browser.
+You can also run the benchmark to see how a model not listed here will perform. Learn more about it [here](benchmark/README.md).
+
+**CPU models** — GGUF quantized models running on CPU via built-in llama.cpp engine. Sorted by average inference time, fastest first.
+
+| Name                                                                                                          | Avg. Inference (s) | Score | Comments |
+|---------------------------------------------------------------------------------------------------------------|---|---|---|
+| [granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) (default)                   | 4.17 | 49.12 | The built-in default. Responds quickly and gets the job done for most everyday compression tasks. |
+| [gemma-3-270m-it-GGUF](https://huggingface.co/unsloth/gemma-3-270m-it-GGUF)                                   | 4.78 | 49.43 | Tiny 270M model from Google. Nearly as fast as Granite with a similar quality ceiling — a solid alternative. |
+| [Qwen2.5-Coder-0.5B-Instruct-128K-GGUF](https://huggingface.co/unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF) | 6.71 | 54.8 | A step up in quality over the two faster models above, with only a modest increase in wait time. Good pick if you want noticeably better results without going much slower. |
+| [Qwen2-500M-Instruct-GGUF](https://huggingface.co/lmstudio-community/Qwen2-500M-Instruct-GGUF)                | 7.81 | 43.60 | Slower than similar-sized alternatives and the weakest score in this group. Not recommended. |
+| [Qwen3.5-0.8B-GGUF](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF)                                         | 8.26 | 60.20 | Best overall CPU model. Highest score with zero rejected outputs. Recommended default for CPU. |
+| [SmolLM2-360M-Instruct-GGUF](https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF)                       | 8.37 | 54.34 | Impressive for a 360M model. Runs at roughly the same speed as Qwen3.5-0.8B but with a lower quality ceiling. |
+| [Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF)                                             | 19.74 | 57.77 | Good quality but 2–3× slower than Qwen3.5-0.8B for a lower score. The newer Qwen3.5 variant is a better pick. |
+| [Kiwi-1.0-0.7B-32k-Instruct-GGUF](https://huggingface.co/mradermacher/Kiwi-1.0-0.7B-32k-Instruct-GGUF)        | 29.10 | 38.73 | Slowest and lowest scoring CPU model tested. Not recommended. |
+
+**GPU models** — full-precision Transformers models running on CUDA. Sorted by average inference time, fastest first. Tested on an RTX 3060 Ti (8 GiB).
+
+| Name | Avg. Inference (s) | Score | Comments |
+|---|---|---|---|
+| [LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) | 1.94 | 61.45 | Fastest GPU model with strong quality. Excellent speed-to-quality ratio — a great first choice for GPU setups. |
+| [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | 3.78 | 54.38 | Fast but quality trails other 1–2B GPU models. Fine for setups where throughput matters more than peak accuracy. |
+| [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) | 4.80 | 57.57 | Solid all-rounder at 1.7B. Good quality at moderate speed. |
+| [granite-3.3-2b-instruct](https://huggingface.co/ibm-granite/granite-3.3-2b-instruct) | 6.34 | 61.16 | IBM's 2B reasoning model. Particularly reliable at preserving exact values and producing structured outputs like JSON or bullet lists. |
+| [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | 12.71 | 58.19 | Smaller model that runs slower on GPU than the others. Reasonable quality — best used when VRAM is very tight. |
+| [gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) | 162.52 | 67.49 | Highest score of all GPU models, but extremely slow — over 2 minutes average per case on an RTX 3060 Ti. Only practical if quality is the sole priority and speed does not matter. |
 
 
-For GPU-based environments, any text-generation models from HuggingFace can be configured. The choice is endless, based on your hardware but here are a few we suggest.
+To learn more about the benchmark based on which, we recommend alternate models, please [see here](benchmark/README.md).
 
-
-
+---
 
 ## How it works
 
 CtxSift has two core operations that the skill injects into an agent's workflow.
 
 1. **Compress**: CtxSift intercepts the raw tool outputs and passes them through another LLM to extract only what the agent requires. These compressed records are cached for recall.
-    The agent specifies its needs via an instruction in either of the ways belows.  
+    
+    The agent specifies its needs via an instruction in either of the ways belows.
     **Pipe mode** — pipe any command output with a natural language instruction:
     ```bash
     pytest -q | ctxsift compress "show only failing tests, useful traceback lines, and files involved"
@@ -101,7 +134,8 @@ CtxSift has two core operations that the skill injects into an agent's workflow.
     ```bash
     ctxsift compress "summarize build errors and point out specific misbehaving files" -- npm run build
     ```
-2. **Recall**: When recollecting current state or recovering after a context compaction event, the agent discovers the latest relevant state in the cached compressed outputs. This helps reduce large file inspection commands which consume token quickly. 
+2. **Recall**: Mostly after a context compaction event, agents rediscover the current state by inspecting large files which can negate tokens saved by compression. Recall lets agents 
+
     The agent recalls using the below commands.
     ```bash
     # Base call    
@@ -130,7 +164,8 @@ CtxSift has two core operations that the skill injects into an agent's workflow.
 
 > See [.env.example](.env.example) for more details on each setting.
 
-After your initial setup, you can change CtxSift's settings per your requirements. Configuration can be applied using the CLI or by setting environment variables in your workspace.
+CtxSift is built to run with minimal configuration overhead but, power users can change CtxSift's settings as they wish. 
+Configuration can be applied using the CLI or by setting environment variables in your workspace.
 There are two types of settings - global and local. Global settings are common to all workspaces and used by default.
 Workspace settings are local to a workspace and override global configuration. The CLI can be used to set both global and workspace configurations.
 Environment variables only affect the current workspace and override the workspace configuration. All environment variables have their corresponding CLI knob.
@@ -145,8 +180,6 @@ On Linux this is typically `~/.config/ctxsift/config.toml`. On Windows, CtxSift 
 returned by `platformdirs`, which is typically `%LOCALAPPDATA%\ctxsift\ctxsift\config.toml`.
 
 Workspace settings are separate from the global file and live alongside the workspace itself: in `.git/ctxsift/config.toml` for Git repositories, or `.ctxsift/config.toml` in the workspace root when the folder is not a Git repo.
-
-### Config Options
 
 The config CLI shows workspace-native settings by default. Use the `--global` flag to reference the global settings.
 
@@ -164,11 +197,9 @@ ctxsift config set local.device auto --global
 `ctxsift config set` changes one key at a time. The most useful keys and their corresponding environment variables are grouped below by what they control.
 
 <details>
-<summary><strong>Common configuration</strong></summary>
+<summary><strong>Compress configuration</strong></summary>
 
-Use these when you want to change behavior that applies no matter which compression model you use. This is where you control how long CtxSift waits, how many retries it makes, how large compressed outputs are allowed to be, and whether the workspace DB lives somewhere custom.
-
-Nothing in this section is required for a normal setup. These are all optional overrides on top of sensible defaults.
+These knobs control how the compress command behaves. These always apply no matter which compression model you use.
 
 ```bash
 # Limit compressed output size (env var: CTXSIFT_MAX_OUTPUT_TOKENS)
@@ -179,9 +210,6 @@ ctxsift config set timeout_ms 120000
 
 # Retry remote or bounded operations twice (env var: CTXSIFT_RETRIES)
 ctxsift config set retries 2
-
-# Store the database in a custom location (env var: CTXSIFT_DB_PATH)
-ctxsift config set db_path .ctxsift/ctxsift.db
 ```
 
 </details>
@@ -189,9 +217,11 @@ ctxsift config set db_path .ctxsift/ctxsift.db
 <details>
 <summary><strong>Remote configuration</strong></summary>
 
-Use remote configuration when you want CtxSift to send compression requests to a hosted model through LiteLLM instead of running a local model. In practice, the important settings are the provider base URL, the model name, and usually an API key. API version and reasoning mode are only needed for providers that care about them.
+Set remote configuration when you want CtxSift to send compression requests to a hosted model through LiteLLM instead of running a local model. 
+The important settings are the provider base URL, the model name, and usually an API key. 
+API version and reasoning mode are only needed for providers that care about them. Please note that `reasoning_mode`
+does not control reasoning effort - it indicates if a model supports reasoning or not.
 
-If you are using remote compression, `remote.base_url` and `remote.model_name` are required. `remote.api_key` is usually required by hosted providers, but that depends on the provider you are talking to. `remote.api_version` is only needed for providers that require one, and `remote.reasoning_mode` is optional.
 
 ```bash
 # Point ctxsift at a LiteLLM-compatible endpoint (env var: CTXSIFT_LLM_BASE_URL)
@@ -212,20 +242,24 @@ ctxsift config set remote.reasoning_mode auto
 
 If remote mode is enabled, CtxSift expects LiteLLM to be installed. If it is missing, `ctxsift doctor` and `ctxsift configure` will warn and remote compression will not work until you install `ctxsift[remote]`.
 
-Remote mode only replaces the compression side of the pipeline. It does **not** globally disable daemon support. When `remote.base_url` is set, CtxSift stops using the local **compression daemon** because compression requests now go out through LiteLLM instead. But if `daemon.enabled=true`, the **embedding daemon** can still be used for recall and vector indexing. In other words: remote compression disables the local compression-daemon path, not the entire daemon subsystem.
-
 </details>
 
 <details>
 <summary><strong>Local configuration</strong></summary>
 
-Use local configuration when you want compression to run on your own machine. This is where you choose the local model, the device it should run on, the dtype, and advanced attention settings if you need to tune performance or compatibility.
+You can control the local inference settings when you want compression to run on your own machine. 
+This is where you choose the local model, the device it should run on, the dtype, and advanced attention settings if you need to tune performance or compatibility.
 
-CPU and GPU local compression do not take exactly the same model input. CPU local compression uses embedded `llama.cpp`, so `local.model` should be a Hugging Face GGUF repo id and `local.gguf_filename` should be one concrete `.gguf` file from that repo. CUDA local compression uses Transformers, so `local.model` should be a normal Hugging Face text-generation model id and `local.gguf_filename` is ignored.
+CPU and GPU local compression do not take exactly the same model input. 
+CPU local compression uses embedded `llama.cpp`, so `local.model` should be a Hugging Face GGUF repo id and 
+`local.gguf_filename` should be one concrete `.gguf` file from that repo. 
+CUDA local compression uses Transformers, so `local.model` should be a normal Hugging Face text-generation model id and `local.gguf_filename` is ignored.
 
-`local.llama_context_window` is a CPU-only llama.cpp knob. It controls the runtime context window used for GGUF models on the llama.cpp path. If you do not set it, CtxSift uses its built-in default of `8192`. GPU Transformers compression does not currently have a matching CtxSift config key.
+`local.llama_context_window` is a CPU-only llama.cpp knob. It controls the runtime context window used for GGUF models 
+on the llama.cpp path. If you do not set it, CtxSift uses its built-in default of `8192`. GPU Transformers compression does not currently have a matching CtxSift config key.
 
-If you stay on local compression, you do not have to set any of these manually because CtxSift already has defaults. Change them only when you want a different model, need to force CPU or CUDA behavior, or want to tune compatibility and performance. The default `local.device` is `auto`, but a GGUF-style CPU config still stays on the `llama.cpp` path until you actually switch to a CUDA/Transformers-style model choice.
+You do not have to set any of these manually because CtxSift already has defaults. Change them only when you want a 
+different model, need to force CPU or CUDA behavior, or want to tune compatibility and performance. 
 
 ```bash
 # Pick a different local compression model (env var: CTXSIFT_LOCAL_MODEL)
@@ -256,7 +290,9 @@ ctxsift config set local.llama_context_window 16384
 Quantization is only relevant for local GPU Transformers models and is off by default. It trades some quality or compatibility for lower memory usage, which is useful when the model you want does not fit comfortably in VRAM. CPU local compression now uses llama.cpp with GGUF models instead of the old Transformers-plus-Quanto path. However, for smaller models, quantization hurts accuracy and performance, as per our [benchmark](benchmark). 
 Start conservative unless you already know your runtime supports a more aggressive setup.
 
-Everything in this section is conditional. You only need quantization settings when you are using local compression and the chosen model is too heavy to run comfortably without them. `local.model_cache_path` is only useful when you want explicit control over where quantized checkpoints are stored.
+Everything in this section is conditional. You only need quantization settings when you are using local compression 
+and the chosen model is too heavy to run comfortably without them. `local.model_cache_path` is useful when you 
+want explicit control over where quantized checkpoints are stored.
 
 ```bash
 # No quantization (env var: CTXSIFT_LOCAL_QUANTIZATION)
@@ -277,9 +313,12 @@ ctxsift config set local.model_cache_path D:/model-cache
 <details>
 <summary><strong>Embeddings, recall, daemon, and retention configuration</strong></summary>
 
-These settings control retrieval quality, shared daemon behavior, and how long old records are kept. Most users can leave them alone, but they are useful when you want to tune recall quality, switch embedding models, change how aggressively the daemons stay warm, or shorten and extend history retention.
+These settings control retrieval quality, shared daemon behavior, and how long old records are kept. 
+Most users can leave them alone, but they are useful when you want to tune recall quality, switch embedding models, 
+change how aggressively the daemons stay warm, or shorten and extend history retention.
 
-These are almost entirely optional tuning knobs. The embedding model and daemon settings already have defaults, and recall works without manual changes. Retention is also optional unless you want records kept for a shorter or longer period than the default 30 days.
+These are almost entirely optional tuning knobs. The embedding model and daemon settings already have defaults, 
+and recall works without manual changes. Retention is also optional unless you want records kept for a shorter or longer period than the default 30 days.
 
 ```bash
 # Use a different embedding model (env var: CTXSIFT_EMBEDDING_MODEL)
@@ -311,6 +350,7 @@ ctxsift config set retention.max_age_days 30
 
 </details>
 
+---
 
 ## Quantization And Flash Attention Support
 
@@ -338,11 +378,9 @@ uv add "ctxsift[gpu,quant]"
 ```
 
 ### Flash Attention
- 
-Attention backend selection changes how the model computes attention during inference. 
-Flash Attention is mostly a throughput and memory-efficiency knob for supported CUDA runs.
 
-It does not apply to CPU `llama.cpp` runs. CtxSift controls it through `local.attn_implementation` or `CTXSIFT_LOCAL_ATTN_IMPLEMENTATION`.
+Flash Attention is mostly a throughput and memory-efficiency knob for supported CUDA runs.
+It does not apply to CPU runs. CtxSift controls it through `local.attn_implementation` or `CTXSIFT_LOCAL_ATTN_IMPLEMENTATION`.
 
 CtxSift currently supports these attention modes for local GPU compression:
 
@@ -350,8 +388,10 @@ CtxSift currently supports these attention modes for local GPU compression:
 - `sdpa`: PyTorch scaled-dot-product attention; usually the most conservative and broadly compatible option
 - `flash_attention_2`: the optimized Flash Attention path; can improve throughput and reduce memory use on supported CUDA setups
 
-One practical constraint: `flash_attention_2` depends on the optional Flash Attention package and is not universally 
+One practical constraint: `flash_attention_2` depends on the Flash Attention package and is not universally 
 available across platforms. On Windows in particular, `auto` or `sdpa` is usually the safer recommendation.
+
+---
 
 ## Daemons
 
@@ -373,6 +413,17 @@ ctxsift daemon stop
 ctxsift daemon status --all
 ctxsift daemon stop --all
 ```
+
+---
+
+## Acknowledgement
+
+CtxSift was inspired by the original [Distill](https://github.com/samuelfaj/distill) project by samuelfaj. 
+That work helped shape the initial direction here and motivated extending the idea toward local execution, file re-reads, and read-after-compression state recovery.
+
+Thanks as well to the open-source tooling that makes this project practical: Hugging Face for providing opensource models, llama.cpp for efficient local inference on CPU, LiteLLM for their package to support a hundred providers and the broader libraries and communities around local LLM workflows that make projects like this possible.
+
+---
 
 ## License
 

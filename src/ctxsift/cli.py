@@ -10,6 +10,7 @@ from typing import Annotated
 import typer
 from pydantic import ValidationError
 
+from ctxsift.agent_skills import install_agent_skills, prompt_for_agent_skill_install
 from ctxsift.compression import compress_input
 from ctxsift.config import (
     ConfigResolutionRequest,
@@ -95,12 +96,14 @@ def configure(
             cwd=current_directory,
         )
     )
+    agent_skill_plan = None
     try:
         updated_config = prompt_for_config(resolved.config)
         selected_scope = prompt_for_save_scope(
             workspace_path=Path(workspace.workspace_config_path),
             global_path=global_paths.write_path,
         )
+        agent_skill_plan = prompt_for_agent_skill_install(Path(workspace.workspace_root))
         effective_write_ignore = _resolve_configure_write_ignore(
             current_directory=current_directory,
             config=updated_config,
@@ -116,6 +119,16 @@ def configure(
     except (ValueError, ValidationError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=2) from error
+    agent_skill_results = install_agent_skills(
+        agent_skill_plan,
+        workspace_root=Path(workspace.workspace_root),
+    )
+    typer.echo(f"Updated {saved.scope.value} config at {saved.write_path}")
+    for install_result in agent_skill_results:
+        if install_result.ok:
+            typer.echo(install_result.detail)
+        else:
+            typer.echo(f"[ctxsift warning] {install_result.detail}", err=True)
     setup_result = asyncio.run(
         run_configure_setup(
             cwd=current_directory,
@@ -123,7 +136,6 @@ def configure(
             write_ignore=effective_write_ignore,
         )
     )
-    typer.echo(f"Updated {saved.scope.value} config at {saved.write_path}")
     if setup_result.workspace.created:
         typer.echo(f"Initialized workspace database at {setup_result.workspace.db_path}")
     if setup_result.workspace.ignore_detail:

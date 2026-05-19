@@ -6,6 +6,15 @@ from os import PathLike
 from pathlib import Path
 
 
+def default_hf_cache_dir() -> Path:
+    """Return the effective default Hugging Face cache root for artifact downloads."""
+    try:
+        from huggingface_hub import constants as hub_constants
+    except ImportError:
+        return Path.home() / ".cache" / "huggingface" / "hub"
+    return Path(hub_constants.HF_HUB_CACHE).expanduser()
+
+
 def resolve_cached_hf_file(
     *,
     repo_id: str,

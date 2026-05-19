@@ -51,6 +51,11 @@ def resolve_quantized_model_cache(
     )
 
 
+def default_quantized_cache_root() -> Path:
+    """Return the effective default root used for persisted quantized checkpoints."""
+    return _cache_root(None)
+
+
 def has_persisted_quantized_model(cache: QuantizedModelCache) -> bool:
     """Return whether a saved quantized checkpoint is present."""
     return (

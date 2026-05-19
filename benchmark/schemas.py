@@ -72,6 +72,8 @@ class CaseMetrics:
     case_id: str
     title: str
     domain: str
+    instruction: str
+    expected_output: str
     inference_ms: float
     cpu_rss_bytes: int | None
     gpu_peak_bytes: int | None
