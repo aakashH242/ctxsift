@@ -1,0 +1,237 @@
+---
+title: Recall
+description: How ctxsift recall searches stored compressed records to recover state without re-running commands.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+`ctxsift recall` lets an agent search everything it has compressed before. Instead of re-reading log files, re-running expensive commands, or reopening the whole conversation history, the agent asks a natural language question and gets back the most relevant compressed records.
+
+This is the payoff for compressing in the first place. The bigger token win is not just making one command smaller — it is making state recovery cheaper when the agent needs to get back up to speed after a context compaction event.
+
+---
+
+## Basic usage
+
+```bash
+ctxsift recall "auth test failure"
+```
+
+This searches all records in the current workspace for anything related to that query and returns the top results, each with a score, a freshness label, and the compressed output.
+
+---
+
+## What a result looks like
+
+Each recall result is printed as a self-contained block:
+
+```
+[42] fresh score=187
+captured 3 minutes ago
+Instruction: show only failing tests and the files involved
+Command: pytest -q
+Exit code: 1
+Files: tests/test_auth.py, src/auth/tokens.py
+Matched: fts, instruction, file_paths, vector
+Summary:
+FAILED tests/test_auth.py::test_login_requires_token - AssertionError
+FAILED tests/test_auth.py::test_refresh_token_expired - AssertionError
+2 failed, 18 passed
+```
+
+| Field | What it means |
+|---|---|
+| `[42]` | Record ID — unique to this workspace |
+| `fresh` | Freshness status — see [Freshness](/docs/concepts/freshness/) |
+| `score=187` | Hybrid relevance score — higher is more relevant |
+| `captured N ago` | When the record was created |
+| `Instruction` | The instruction you gave when you ran compress |
+| `Command` | The original command, if command capture mode was used |
+| `Exit code` | The exit code captured with the command, if available |
+| `Files` | Files referenced in the compressed output |
+| `Matched` | Which fields matched your query — explains why this result surfaced |
+| `Summary` | The compressed output |
+
+---
+
+## Options
+
+```bash
+ctxsift recall [OPTIONS] QUERY
+```
+
+| Option | Description |
+|---|---|
+| `QUERY` | Natural language query describing what you are looking for |
+| `--files` | Boost and filter results by one or more file paths |
+| `--limit` | Maximum number of results to return (default: 10) |
+
+---
+
+## File-boosted recall with `--files`
+
+```bash
+ctxsift recall "auth test failure" --files tests/test_auth.py src/auth/tokens.py
+```
+
+When you pass `--files`, recall prioritizes records that reference those files. If any records match both the query and the file list, only those are returned. If no records match the file filter, recall falls back to returning the query-only results — so you never get an empty response because of an overly specific filter.
+
+This is particularly useful when you want to recover state related to a specific file you are currently editing.
+
+```bash
+# Find anything related to the database layer in the auth module
+ctxsift recall "connection errors" --files src/db/connection.py
+
+# Find prior build failures for a specific output file
+ctxsift recall "build failed" --files dist/bundle.js
+
+# Recover state related to a test file after compaction
+ctxsift recall "test failure" --files tests/api/test_users.py
+```
+
+---
+
+## Limiting results
+
+```bash
+ctxsift recall "docker networking" --limit 5
+```
+
+By default recall returns up to 10 results. Use `--limit` to narrow it down when you only want the single most relevant record, or to widen it when you want a broader survey of stored state.
+
+---
+
+## How recall actually works
+
+Understanding the mechanics helps you write better queries and interpret the results. Recall is not a simple text search — it runs three processes in parallel and fuses them.
+
+### Step 1 — Lexical search (FTS5)
+
+CtxSift runs a full-text search using SQLite's FTS5 engine across six fields in every stored record:
+
+| Field searched | What it contains |
+|---|---|
+| `instruction` | The original instruction you gave when compressing |
+| `compressed_output` | The compressed text itself |
+| `command` | The shell command that was captured |
+| `file_paths` | Every file path referenced in the output |
+| `extracted_terms` | Symbols, test IDs, package names extracted at compress time |
+| `fts` (combined) | Full-text index across all stored content |
+
+Each field is weighted differently. `extracted_terms` and `file_paths` have the highest weight because they contain precise anchors (test names, file paths) that are unlikely to match by accident.
+
+### Step 2 — Semantic vector search
+
+CtxSift embeds your query using the same embedding model that was used when the records were stored, then searches the sqlite-vec index for records with the closest embedding distance to your query.
+
+This finds records that are **semantically similar** even when they do not share exact words. For example, `"token refresh bug"` can match a record whose compressed output says `"AssertionError: JWT expiry logic failed"` — because the embedding space captures meaning, not just keywords.
+
+<Aside type="note">
+Vector search degrades gracefully. If the embedding backend is unavailable, recall continues with lexical search only and prints a warning. You still get results — they just will not include semantic matches.
+</Aside>
+
+### Step 3 — Hybrid fusion with Reciprocal Rank Fusion (RRF)
+
+The lexical and vector results are merged using Reciprocal Rank Fusion (RRF). The idea: instead of comparing raw scores from two different systems (which use different scales), RRF uses the **rank position** of each result in each list. A result ranked 1st in both lexical and vector search gets a much higher final score than one that ranked 10th in one and wasn't in the other at all.
+
+After fusion, the score is adjusted by several bonuses:
+
+| Factor | Effect on score |
+|---|---|
+| Record is `fresh` | +6% |
+| Record is `stale_changed` | −7% |
+| Record is `stale_deleted` | −12% |
+| Each matched field (up to 5) | +2% each |
+| `--files` filter match | +9% |
+| Exact file name hit in query | +8% |
+| Exact symbol name hit in query | +7% |
+| Exact test ID hit in query | +7% |
+
+The final score is scaled to an integer (the `score=N` in the output). Higher is better.
+
+### Score thresholds
+
+Results below a minimum score threshold are filtered out. If no results meet the strong threshold, recall falls back to a weak threshold and returns at most 1 result rather than nothing. This means recall almost always gives you something useful, even for a vague query — but the quality indicator is the score itself.
+
+---
+
+## The `Matched` field explained
+
+Each result shows which fields contributed to its ranking:
+
+```
+Matched: fts, instruction, file_paths, vector
+```
+
+| Value | Means |
+|---|---|
+| `fts` | Hit the full-text search index |
+| `instruction` | Your query matched text in the original instruction |
+| `compressed_output` | Your query matched the compressed text |
+| `command` | Your query matched the stored command |
+| `file_paths` | Your query matched one of the referenced file paths |
+| `extracted_terms` | Your query matched a stored symbol, test ID, or package name |
+| `vector` | The record was returned by semantic embedding search |
+
+More matched fields → higher score. A result with `fts, instruction, file_paths, extracted_terms, vector` matched from every angle and is almost certainly the right one.
+
+---
+
+## Freshness labels
+
+Every result is annotated with a freshness status based on whether the files referenced in the record still exist and still match what was captured.
+
+| Status | What it means | How to use it |
+|---|---|---|
+| `fresh` | Files exist and have not changed since capture | Trust it — the stored state is still current |
+| `stale_changed` | A referenced file has changed since capture | Use as a clue, not ground truth — the file changed but the pattern may still apply |
+| `stale_deleted` | A referenced file was deleted | Historical record — useful for understanding what was there |
+| `unverifiable` | No file references were stored with this record | Pipe-mode records often land here — judge by content, not freshness |
+| `unknown` | No git or file metadata was available at capture time | Be conservative |
+
+CtxSift checks freshness by combining three signals in priority order: git status, SHA-256 file hash comparison, and file modification time.
+
+See [Freshness](/docs/concepts/freshness/) for the full freshness mechanics.
+
+---
+
+## When to use recall
+
+Recall is most useful in these situations:
+
+**After context compaction** — the agent has lost its working memory and needs to recover what it was doing. Instead of re-running the last 10 commands:
+
+```bash
+ctxsift recall "what was I working on"
+ctxsift recall "last failing tests" --files tests/
+ctxsift recall "build errors"
+```
+
+**Before re-running an expensive command** — check if a fresh result already exists:
+
+```bash
+ctxsift recall "npm install output" --limit 1
+```
+
+**When referencing a specific file** — recover all prior context related to that file:
+
+```bash
+ctxsift recall "errors" --files src/auth/tokens.py
+```
+
+**Before reading a large log** — check if a compressed version already exists:
+
+```bash
+ctxsift recall "deployment log" --limit 3
+```
+
+---
+
+## What recall does not do
+
+- Recall does not re-run commands. It only searches records that were already compressed and stored.
+- Recall does not search across workspaces. Each workspace has its own database.
+- Recall does not modify records. Running recall never changes what is stored.
+- Recall does not return the original raw output — only the compressed version that was stored.
+
+If there are no matching records, recall prints `No recall results.` — the solution is to run `ctxsift compress` on the relevant command first.

@@ -1,0 +1,288 @@
+---
+title: Configure
+description: Set up CtxSift's model provider, runtime settings, and workspace config in one guided command.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+Run the guided setup once to get everything working:
+
+```bash
+ctxsift configure
+```
+
+This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill. You only need to run it once per setup.
+
+After running it, verify everything is reachable:
+
+```bash
+ctxsift doctor
+```
+
+---
+
+## How config works
+
+CtxSift resolves settings from four layers, in order:
+
+```text
+Environment variable > Workspace config > Global config > Default
+```
+
+**Global config** applies to all workspaces on the machine. Stored at:
+- Linux/macOS: `~/.config/ctxsift/config.toml`
+- Windows: `%LOCALAPPDATA%\ctxsift\ctxsift\config.toml`
+
+**Workspace config** overrides global for one repo. Stored at:
+- `.git/ctxsift/config.toml` inside Git repos
+- `.ctxsift/config.toml` for non-Git workspaces
+
+**Environment variables** override everything for the current shell or process. Useful in CI and per-run overrides.
+
+To see what CtxSift is actually resolving (secrets redacted):
+
+```bash
+ctxsift config show           # workspace-aware resolved config
+ctxsift config show --global  # global config file only
+```
+
+To write one key at a time:
+
+```bash
+ctxsift config set <key> <value>           # writes to workspace config
+ctxsift config set <key> <value> --global  # writes to global config
+```
+
+---
+
+## Compression model
+
+CtxSift uses two separate model roles: one for **compression** and one for **embeddings** (recall). They are configured independently.
+
+### Local CPU (default)
+
+CPU mode uses embedded `llama.cpp` with a GGUF model. You supply a Hugging Face GGUF repo id and one concrete `.gguf` filename from that repo.
+
+| Key | Default | Env var |
+|---|---|---|
+| `local.model` | `ibm-granite/granite-4.0-350m-GGUF` | `CTXSIFT_LOCAL_MODEL` |
+| `local.gguf_filename` | `granite-4.0-350m-Q8_0.gguf` | `CTXSIFT_LOCAL_GGUF_FILENAME` |
+| `local.llama_context_window` | `8192` (built-in) | `CTXSIFT_LOCAL_LLAMA_CONTEXT_WINDOW` |
+| `local.device` | `auto` | `CTXSIFT_LOCAL_DEVICE` |
+
+<Aside type="note">
+`local.gguf_filename` is **required** when `local.device` is `cpu`. CtxSift will validate this and fail with a clear error if it is missing.
+</Aside>
+
+```bash
+ctxsift config set local.model unsloth/Qwen3.5-0.8B-GGUF --global
+ctxsift config set local.gguf_filename Qwen3.5-0.8B-Q8_0.gguf --global
+```
+
+See [Local models](/docs/guides/local-models/) for benchmarked CPU picks.
+
+### Local CUDA
+
+CUDA mode uses Transformers. Supply a standard Hugging Face text-generation model id. `gguf_filename` is ignored on this path.
+
+| Key | Default | Env var |
+|---|---|---|
+| `local.model` | `ibm-granite/granite-4.0-350m-GGUF` | `CTXSIFT_LOCAL_MODEL` |
+| `local.device` | `auto` | `CTXSIFT_LOCAL_DEVICE` |
+| `local.dtype` | `auto` | `CTXSIFT_LOCAL_DTYPE` |
+| `local.attn_implementation` | `auto` | `CTXSIFT_LOCAL_ATTN_IMPLEMENTATION` |
+| `local.quantization` | `none` | `CTXSIFT_LOCAL_QUANTIZATION` |
+| `local.model_cache_path` | _(empty)_ | `CTXSIFT_MODEL_CACHE_PATH` |
+
+```bash
+ctxsift config set local.model LiquidAI/LFM2.5-1.2B-Instruct --global
+ctxsift config set local.device cuda --global
+```
+
+**`local.dtype`** — Accepted values: `auto`, `float32`, `float16`, `bfloat16`. Leave at `auto` unless you have a specific compatibility reason.
+
+**`local.attn_implementation`** — Accepted values: `auto`, `sdpa`, `flash_attention_2`.
+- `auto`: CtxSift picks the safest supported backend automatically
+- `sdpa`: most conservative, broadly compatible
+- `flash_attention_2`: better throughput on supported CUDA GPUs; requires the `flash-attn` package. **Not available on Windows in most setups.**
+
+**`local.quantization`** — Only applies to CUDA/Transformers. CPU llama.cpp models ignore this — quantization is baked into the `.gguf` file itself.
+- `none`: load at full precision (default)
+- `bnb-8bit`: 8-bit BitsAndBytes; good first step when VRAM is tight
+- `bnb-4bit-fp4` / `bnb-4bit-nf4`: more aggressive; lower memory, more quality risk
+
+Requires `ctxsift[gpu,quant]` for bnb modes.
+
+**`local.model_cache_path`** — When set, CtxSift saves quantized checkpoints here to speed up cold starts. Leave empty to use the default Hugging Face cache.
+
+### Remote compression
+
+Set `remote.base_url` to switch from local to a hosted provider via LiteLLM.
+
+| Key | Default | Env var |
+|---|---|---|
+| `remote.base_url` | _(empty — local mode)_ | `CTXSIFT_LLM_BASE_URL` |
+| `remote.model_name` | _(empty)_ | `CTXSIFT_LLM_MODEL` |
+| `remote.api_key` | _(empty)_ | `CTXSIFT_LLM_API_KEY` |
+| `remote.api_version` | _(empty)_ | `CTXSIFT_LLM_API_VERSION` |
+| `remote.reasoning_mode` | `auto` | `CTXSIFT_LLM_REASONING_MODE` |
+
+```bash
+ctxsift config set remote.base_url https://api.openai.com/v1 --global
+ctxsift config set remote.model_name gpt-4o-mini --global
+ctxsift config set remote.api_key YOUR_KEY --global
+```
+
+<Aside type="caution">
+Remote mode requires `ctxsift[remote]`. If LiteLLM is not installed, `ctxsift doctor` will warn you and remote compression will not work.
+</Aside>
+
+**`remote.reasoning_mode`** — Accepted values: `auto`, `true`, `false`. This does **not** control reasoning effort — it tells CtxSift whether the model supports reasoning tokens so it can adjust its prompt structure. Leave at `auto` for most providers.
+
+Remote mode replaces local compression but **not** local embeddings. Recall still runs through the embedding model regardless of which compression path is active.
+
+---
+
+## General compression settings
+
+These apply to all compression regardless of local or remote mode.
+
+| Key | Default | Env var |
+|---|---|---|
+| `max_output_tokens` | `512` | `CTXSIFT_MAX_OUTPUT_TOKENS` |
+| `timeout_ms` | `90000` | `CTXSIFT_TIMEOUT_MS` |
+| `retries` | `1` | `CTXSIFT_RETRIES` |
+
+```bash
+ctxsift config set max_output_tokens 768
+ctxsift config set timeout_ms 120000
+```
+
+---
+
+## Embeddings
+
+Recall uses a local Sentence Transformers-compatible embedding model. This runs independently of the compression path — even when compression is remote, embeddings stay local.
+
+| Key | Default | Env var |
+|---|---|---|
+| `embedding.model` | `microsoft/harrier-oss-v1-0.6b` | `CTXSIFT_EMBEDDING_MODEL` |
+| `embedding.backend` | `auto` | `CTXSIFT_EMBEDDING_BACKEND` |
+| `embedding.device` | `auto` | `CTXSIFT_EMBEDDING_DEVICE` |
+| `embedding.dtype` | `auto` | `CTXSIFT_EMBEDDING_DTYPE` |
+| `embedding.attn_implementation` | `auto` | `CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION` |
+| `embedding.max_length` | `32768` | `CTXSIFT_EMBEDDING_MAX_LENGTH` |
+
+**`embedding.backend`** — `auto` prefers ONNX Runtime for the default Harrier model on CPU when available, otherwise falls back to Torch.
+
+**`embedding.model`** — Must be a Sentence Transformers-compatible model. Switching models changes the embedding dimension, which can require reinitializing the vector store for a workspace.
+
+Advanced embedding prompt overrides (leave empty unless you know what they do):
+
+| Key | Env var |
+|---|---|
+| `embedding.query_prompt_name` | `CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME` |
+| `embedding.query_prompt` | `CTXSIFT_EMBEDDING_QUERY_PROMPT` |
+| `embedding.document_prompt_name` | `CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME` |
+
+---
+
+## Recall
+
+These control how many candidates are fetched and scored during a recall search.
+
+| Key | Default | Env var | Notes |
+|---|---|---|---|
+| `recall.default_limit` | `10` | `CTXSIFT_RECALL_DEFAULT_LIMIT` | Max results shown when `--limit` is not passed |
+| `recall.lexical_candidate_limit` | `50` | `CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT` | BM25 candidates before hybrid fusion |
+| `recall.vector_candidate_limit` | `50` | `CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT` | Vector candidates before hybrid fusion |
+| `recall.max_vector_distance` | `0.75` | `CTXSIFT_RECALL_MAX_VECTOR_DISTANCE` | Smaller = stricter semantic filtering |
+
+Higher candidate limits improve recall quality but cost more SQLite and vector search work. The defaults are tuned for typical session sizes.
+
+---
+
+## Daemon
+
+CtxSift serves local models through background daemons — one per effective runtime signature. They auto-start on first use, stay warm across workspaces with matching config, and shut down after idle.
+
+| Key | Default | Env var |
+|---|---|---|
+| `daemon.enabled` | `true` | `CTXSIFT_DAEMON_ENABLED` |
+| `daemon.idle_timeout_seconds` | `600` | `CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS` |
+| `daemon.startup_timeout_ms` | `15000` | `CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS` |
+| `daemon.embedding_batch_window_ms` | `20` | `CTXSIFT_DAEMON_EMBEDDING_BATCH_WINDOW_MS` |
+| `daemon.embedding_max_batch_size` | `16` | `CTXSIFT_DAEMON_EMBEDDING_MAX_BATCH_SIZE` |
+
+When `daemon.enabled` is `false`, CtxSift falls back to in-process model loading — slower cold starts and no cross-workspace model reuse.
+
+```bash
+ctxsift daemon status
+ctxsift daemon stop --all
+```
+
+---
+
+## Retention
+
+Controls how long compressed records are kept before background cleanup removes them.
+
+| Key | Default | Env var |
+|---|---|---|
+| `retention.max_age_days` | `30` | `CTXSIFT_RETENTION_MAX_AGE_DAYS` |
+
+---
+
+## Quick reference
+
+All env vars at a glance:
+
+```bash
+# General
+CTXSIFT_MAX_OUTPUT_TOKENS=512
+CTXSIFT_TIMEOUT_MS=90000
+CTXSIFT_RETRIES=1
+
+# Remote
+CTXSIFT_LLM_BASE_URL=
+CTXSIFT_LLM_MODEL=
+CTXSIFT_LLM_API_KEY=
+CTXSIFT_LLM_API_VERSION=
+CTXSIFT_LLM_REASONING_MODE=auto
+
+# Local compression
+CTXSIFT_LOCAL_MODEL=ibm-granite/granite-4.0-350m-GGUF
+CTXSIFT_LOCAL_GGUF_FILENAME=granite-4.0-350m-Q8_0.gguf
+CTXSIFT_LOCAL_LLAMA_CONTEXT_WINDOW=8192
+CTXSIFT_LOCAL_DEVICE=auto
+CTXSIFT_LOCAL_DTYPE=auto
+CTXSIFT_LOCAL_ATTN_IMPLEMENTATION=auto
+CTXSIFT_LOCAL_QUANTIZATION=none
+CTXSIFT_MODEL_CACHE_PATH=
+
+# Embeddings
+CTXSIFT_EMBEDDING_MODEL=microsoft/harrier-oss-v1-0.6b
+CTXSIFT_EMBEDDING_BACKEND=auto
+CTXSIFT_EMBEDDING_DEVICE=auto
+CTXSIFT_EMBEDDING_DTYPE=auto
+CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION=auto
+CTXSIFT_EMBEDDING_MAX_LENGTH=32768
+
+# Recall
+CTXSIFT_RECALL_DEFAULT_LIMIT=10
+CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT=50
+CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT=50
+CTXSIFT_RECALL_MAX_VECTOR_DISTANCE=0.75
+
+# Daemon
+CTXSIFT_DAEMON_ENABLED=true
+CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS=600
+CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS=15000
+CTXSIFT_DAEMON_EMBEDDING_BATCH_WINDOW_MS=20
+CTXSIFT_DAEMON_EMBEDDING_MAX_BATCH_SIZE=16
+
+# Retention
+CTXSIFT_RETENTION_MAX_AGE_DAYS=30
+```
+
+See [`.env.example`](https://github.com/aakashh242/ctxsift/blob/main/.env.example) in the repo root for the full annotated version.

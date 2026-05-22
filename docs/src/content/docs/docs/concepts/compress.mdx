@@ -1,0 +1,176 @@
+---
+title: Compress
+description: How ctxsift compress turns raw command output into a short, retrieval-friendly record.
+---
+import { Aside } from '@astrojs/starlight/components';
+
+`ctxsift compress` is the entry point for turning noisy command output into a compact, cached record that the agent can look up later with `ctxsift recall`.
+
+It does three things in one command:
+1. Runs a model against your instruction and the raw output to produce a compressed record
+2. Extracts structured signals (files, errors, test ids, symbols) that power later recall
+3. Stores and indexes the result so `recall` can find it semantically and lexically
+
+---
+
+## Two invocation modes
+
+### Pipe mode
+
+Pipe any command's output directly into `ctxsift compress`:
+
+```bash
+pytest -q | ctxsift compress "show only failing tests and the files involved"
+```
+
+```bash
+pnpm build 2>&1 | ctxsift compress --intent summary "summarize build errors and point out misbehaving files"
+```
+
+```bash
+cat large-log-file.txt | ctxsift compress --intent recall "extract error lines and affected service names"
+```
+
+Pipe mode reads stdin as the raw input. CtxSift does not know the exit code, duration, or stderr separately in this mode.
+
+### Command capture mode
+
+Let CtxSift run the command itself using `--` as a separator:
+
+```bash
+ctxsift compress --intent summary "summarize build errors" -- pnpm build
+```
+
+```bash
+ctxsift compress --intent exact-lines "return only the failing test ids" -- pytest -q
+```
+
+Command capture mode runs the command as a subprocess and captures stdout, stderr, exit code, and duration as separate fields. It also captures git metadata (HEAD, branch, dirty state) from the current workspace. All of this is stored with the record and used for freshness tracking during recall.
+
+<Aside type="tip">
+Prefer command capture mode when the exit code or stderr matter to the agent, or when you want freshness tracking tied to git state. Use pipe mode for quick one-liners or when the output is already available.
+</Aside>
+
+---
+
+## The `--intent` flag
+
+The `--intent` flag tells CtxSift what output contract the model should follow. It changes the prompt, the validation rules applied to the output, and how the benchmark scores the result.
+
+| Intent | What it produces | Use when |
+|---|---|---|
+| `summary` | Plain-text prose summary | You want a readable narrative of what happened |
+| `recall` | Plain-text summary optimized for later retrieval | You want to store a record and find it again later |
+| `exact-lines` | Exact lines quoted from the raw input | You need specific lines pulled verbatim (e.g. test ids, error lines) |
+| `exact-format` | Output in the exact format the instruction specifies | You need a specific structural shape (e.g. one key per line, numbered list) |
+| `json` | Valid JSON | You need machine-readable output |
+| `yaml` | Valid YAML | You need structured configuration or key-value output |
+| `table` | Markdown table | You need comparison or tabular data |
+| `bullet-list` | Markdown bullet list | You need a scannable list of items |
+
+```bash
+# Return exact lines from the output — great for test ids, file paths
+ctxsift compress --intent exact-lines "return only the failing pytest test ids" -- pytest -q
+
+# Return a JSON structure
+ctxsift compress --intent json "extract each error as {file, line, message}" -- tsc --noEmit
+
+# Return a bullet list
+ctxsift compress --intent bullet-list "list all packages that failed to install" -- pnpm install
+```
+
+If `--intent` is not passed, CtxSift defaults to `summary`.
+
+---
+
+## What CtxSift preserves
+
+CtxSift is built for coding agents, so the compression target is not generic prose quality. Before the model runs, CtxSift deterministically extracts structured signals from the raw output:
+
+| Signal type | Examples |
+|---|---|
+| File paths | `src/auth/tokens.py`, `tests/test_users.py` |
+| Traceback frames | `File "app/db.py", line 42, in connect` |
+| Test IDs | `tests/api/test_users.py::test_create_user_requires_email` |
+| Package names | `requests`, `pydantic`, `torch` |
+| Symbols | function names, class names, method names |
+| Commands | `pnpm build`, `pytest -q`, `docker compose up` |
+| Exit code lines | `exited with code 1`, `exit status 2` |
+| Warnings and errors | lines matching error and warning patterns |
+
+These extracted signals are passed directly into the model prompt as structured context — so the model does not have to discover them itself — and are also stored separately for lexical recall search (BM25).
+
+The system prompt explicitly instructs the model to **preserve exact filenames, symbols, error codes, test names, line numbers, and commands verbatim**. This is the key difference from generic summarization: a correct compress output should be runnable or referenceable, not just readable.
+
+---
+
+## Exact-cache: why the same input never compresses twice
+
+CtxSift builds an exact cache key from:
+
+- SHA-256 of the raw input
+- normalized instruction (case-folded, whitespace-collapsed)
+- compression intent
+- model id and prompt version
+- `max_output_tokens`
+- CtxSift version
+- workspace root
+
+If you run the same command with the same instruction on the same input again, the stored result is returned immediately without calling the model. This means:
+
+- no redundant model calls during re-runs
+- consistent output for the same input regardless of when you run it
+- recall always returns the same compressed form for the same raw output
+
+---
+
+## What gets stored
+
+Every compression run that goes through the model stores a record containing:
+
+- the compressed output
+- the original instruction and normalized form
+- SHA-256 of the raw input
+- referenced files (with SHA-256 checksums and existence flags at capture time)
+- extracted terms (files, test ids, symbols — used for FTS5 lexical recall)
+- a vector embedding of the record (used for semantic recall)
+- command metadata in capture mode: command, exit code, duration, stdout/stderr hashes
+- git metadata in capture mode: HEAD, branch, dirty state
+- model provider, model name, and prompt version
+
+The record is immediately indexed in both FTS5 (lexical) and sqlite-vec (vector) so `recall` can find it from the next command.
+
+---
+
+## Backend fallback behavior
+
+If the configured backend (local or remote) is unavailable when compress runs, CtxSift does **not** silently fail or block. It returns the raw output with a warning header and does not store the result:
+
+```
+[ctxsift warning] Local compression failed: <error>. Returning uncompressed output and skipping storage.
+```
+
+This means the agent still gets output it can work with, and the failure is visible. It also means the record is not stored — the agent will not be able to recall it later. Check `ctxsift doctor` to diagnose the backend issue.
+
+---
+
+## Options
+
+```bash
+ctxsift compress [OPTIONS] INSTRUCTION [-- COMMAND [ARGS]...]
+```
+
+| Option | Description |
+|---|---|
+| `--intent` | Output contract: `summary`, `recall`, `exact-lines`, `exact-format`, `json`, `yaml`, `table`, `bullet-list`. Default: `summary` |
+| `--max-output-tokens` | Override the max compressed output size for this run |
+| `INSTRUCTION` | Natural-language instruction for the model |
+| `-- COMMAND` | Optional: run this command and capture its output instead of reading stdin |
+
+---
+
+## What happens next
+
+After a compress run, the record is immediately available to `ctxsift recall`. The agent does not need to do anything to make it searchable.
+
+See [Recall](/docs/concepts/recall/) for how to find it again.

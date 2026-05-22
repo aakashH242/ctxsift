@@ -1,0 +1,80 @@
+---
+title: Environment Variables
+description: Reference of all CTXSIFT_* environment variable overrides.
+---
+
+Environment variables override both global and workspace `config.toml` settings for the current terminal process session.
+
+---
+
+## Complete environment variable reference
+
+### General
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_MAX_OUTPUT_TOKENS` | `max_output_tokens` | Limit output token length. |
+| `CTXSIFT_TIMEOUT_MS` | `timeout_ms` | Request timeout duration in milliseconds. |
+| `CTXSIFT_RETRIES` | `retries` | Request retry count. |
+
+### Local compression
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_LOCAL_MODEL` | `local.model` | Hugging Face model repository ID. |
+| `CTXSIFT_LOCAL_GGUF_FILENAME` | `local.gguf_filename` | GGUF filename (required for CPU llama.cpp). |
+| `CTXSIFT_LOCAL_LLAMA_CONTEXT_WINDOW` | `local.llama_context_window` | CPU context window size. |
+| `CTXSIFT_LOCAL_DEVICE` | `local.device` | Execution device: `auto`, `cpu`, `cuda`, `mps`. |
+| `CTXSIFT_LOCAL_DTYPE` | `local.dtype` | GPU model precision: `auto`, `float16`, `bfloat16`. |
+| `CTXSIFT_LOCAL_ATTN_IMPLEMENTATION` | `local.attn_implementation` | Attention implementation: `sdpa`, `flash_attention_2`. |
+| `CTXSIFT_LOCAL_QUANTIZATION` | `local.quantization` | Quantization: `none`, `bnb-8bit`, `bnb-4bit-fp4`, `bnb-4bit-nf4`. |
+| `CTXSIFT_MODEL_CACHE_PATH` | `local.model_cache_path` | Custom quantized model storage path. |
+
+### Remote compression
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_LLM_BASE_URL` | `remote.base_url` | LiteLLM-compatible provider API base URL. |
+| `CTXSIFT_LLM_MODEL` | `remote.model_name` | Remote model name identifier (e.g. `gpt-4o-mini`). |
+| `CTXSIFT_LLM_API_KEY` | `remote.api_key` | API Key for remote authentication. |
+| `CTXSIFT_LLM_API_VERSION` | `remote.api_version` | Optional provider API version string. |
+| `CTXSIFT_LLM_REASONING_MODE` | `remote.reasoning_mode` | Reasoning settings: `auto`, `true`, `false`. |
+
+### Embeddings
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_EMBEDDING_MODEL` | `embedding.model` | Sentence Transformers model ID. |
+| `CTXSIFT_EMBEDDING_BACKEND` | `embedding.backend` | Execution engine: `auto`, `onnx`, `torch`. |
+| `CTXSIFT_EMBEDDING_DEVICE` | `embedding.device` | Embedding hardware device: `auto`, `cpu`, `cuda`. |
+| `CTXSIFT_EMBEDDING_DTYPE` | `embedding.dtype` | Embedding model precision. |
+| `CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION` | `embedding.attn_implementation` | Attention mechanism backend. |
+| `CTXSIFT_EMBEDDING_MAX_LENGTH` | `embedding.max_length` | Maximum sequence context limit. |
+| `CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME`| `embedding.query_prompt_name`| Preset query prompt template. |
+| `CTXSIFT_EMBEDDING_QUERY_PROMPT` | `embedding.query_prompt` | Custom query prompt prefix string. |
+| `CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME`| `embedding.document_prompt_name`| Preset document prompt template. |
+
+### Recall search
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_RECALL_DEFAULT_LIMIT` | `recall.default_limit` | Default number of recall results returned. |
+| `CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT`| `recall.lexical_candidate_limit`| Max lexical candidate matches queried. |
+| `CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT` | `recall.vector_candidate_limit` | Max semantic vector candidate matches queried. |
+| `CTXSIFT_RECALL_MAX_VECTOR_DISTANCE` | `recall.max_vector_distance` | Cosine distance similarity filter limit. |
+
+### Daemons
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_DAEMON_ENABLED` | `daemon.enabled` | Enable background serving: `true`, `false`. |
+| `CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS` | `daemon.idle_timeout_seconds` | Shutdown inactivity window in seconds. |
+| `CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS` | `daemon.startup_timeout_ms` | Maximum boot wait time in milliseconds. |
+| `CTXSIFT_DAEMON_EMBEDDING_BATCH_WINDOW_MS`| `daemon.embedding_batch_window_ms`| Requests grouping latency window. |
+| `CTXSIFT_DAEMON_EMBEDDING_MAX_BATCH_SIZE`| `daemon.embedding_max_batch_size`| Limit of grouped embedding requests. |
+
+### Retention
+
+| Variable | Config Key | Meaning / Usage |
+|---|---|---|
+| `CTXSIFT_RETENTION_MAX_AGE_DAYS` | `retention.max_age_days` | Number of days to keep compressed records. |

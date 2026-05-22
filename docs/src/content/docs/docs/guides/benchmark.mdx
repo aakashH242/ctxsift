@@ -1,0 +1,179 @@
+---
+title: Benchmark Guide
+description: What the CtxSift benchmark measures, how scoring works, and how to read the results without guessing.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+> [Open the latest benchmark](/benchmark-viewer.html)
+
+CtxSift includes a dedicated benchmark because this project is not doing generic summarization. The actual task is narrower and stricter: take noisy command output and return the part an agent asked for, without dropping anchors, breaking format, or wasting tokens.
+
+The current corpus contains **280** cases built from realistic CLI output, stack traces, build failures, CI logs, linter output, and extraction-heavy prompts. Each case includes a raw input block, an instruction, a target output, and validation rules. That makes the suite much closer to real coding-agent use than a normal summary benchmark.
+
+---
+
+## What it measures
+
+The benchmark is checking whether a model can stay useful under constraints. In practice that means preserving exact tokens when they matter, staying semantically close to the intended answer, obeying the requested output shape, and staying brief enough to be worth storing.
+
+The dataset is split into six families:
+
+| Family | What it tests |
+|---|---|
+| `summary` | Short, useful summaries of noisy output |
+| `recall` | Compression that preserves exact anchors for later search and reuse |
+| `explanation` | Brief, grounded explanations of what failed |
+| `instruction_following` | Tight adherence to inclusion, exclusion, and length rules |
+| `structured` | JSON, YAML, bullet lists, and markdown tables |
+| `exact_format` | Bare values or exact lines with no extra prose |
+
+The benchmark also spans multiple output modes such as plain text, bullet lists, JSON, YAML, tables, single-line output, regex-constrained output, and exact extracted lines. A model can sound correct and still fail the task if it ignores the requested shape.
+
+---
+
+## Scoring
+
+Each case produces four component scores:
+
+| Component | Meaning |
+|---|---|
+| **Preserve** | Required anchors stayed intact |
+| **Quality** | The answer stayed close to the intended result |
+| **Format** | The output matched the requested shape |
+| **Brevity** | The output stayed near the allowed budget |
+
+Each case is then validated as `accepted`, `soft_accepted`, or `rejected`. Rejections are reserved for hard failures such as empty output, control-token leakage, prompt echoing, broken structured output, or returning prose when the task asked for an exact value.
+
+The final score is based on per-case scores first, then rolled up into a scenario score:
+
+```text
+quality_core = 0.80 * mean(case_scores) + 0.20 * p10(case_scores)
+
+latency_factor = clamp(0.85, 1.00, (2000ms / observed_ms)^0.15)
+
+final_score = 100 * quality_core * latency_factor
+```
+
+This means the benchmark rewards strong average quality, but it also punishes unstable models with weak tail behavior. Latency matters, but only as a mild penalty.
+
+<Aside type="note">
+The 2000 ms latency target is neutral. Faster than that does not earn a bonus. Slower than that applies a capped penalty of up to 15%.
+</Aside>
+
+The weights also change by family. `recall` rows care more about exact anchors, while `exact_format` rows care much more about output shape.
+
+| Family | Anchor | Semantic | Format | Brevity |
+|---|---:|---:|---:|---:|
+| `recall` | 0.45 | 0.25 | 0.20 | 0.10 |
+| `summary` | 0.25 | 0.40 | 0.20 | 0.15 |
+| `explanation` | 0.20 | 0.50 | 0.20 | 0.10 |
+| `structured` | 0.20 | 0.30 | 0.40 | 0.10 |
+| `instruction_following` | 0.20 | 0.30 | 0.40 | 0.10 |
+| `exact_format` | 0.15 | 0.10 | 0.70 | 0.05 |
+
+---
+
+## Reading results
+
+When you open the viewer, the most useful fields are the headline score, the acceptance breakdown, and the latency pair.
+
+| Metric | How to read it |
+|---|---|
+| **Final score** | Best single comparison number |
+| **Quality core** | Output quality before the latency penalty |
+| **Accepted / Soft / Rejected** | Reliability signal |
+| **Average / P95 latency** | Normal speed and tail speed |
+| **Preserve / Quality / Format / Brevity** | Shows why the model scored the way it did |
+
+Latency should be compared carefully. CPU-to-CPU runs on the same machine are fair. GPU-to-GPU runs on the same machine are fair. Remote latency is more volatile because provider load and network path matter. Quality numbers travel better across tracks than raw speed does.
+
+The scenario matrix lives in `benchmark/matrix.json` and defines the three main tracks used in the repo:
+
+| Track | Backend |
+|---|---|
+| `cpu` | Local GGUF models through embedded `llama.cpp` |
+| `gpu` | Local Transformers models on CUDA |
+| `remote` | Hosted models through LiteLLM-compatible APIs |
+
+---
+
+## Running it
+
+<Aside type="tip">
+Use score as the main signal. Use latency as a secondary signal unless you are comparing runs from the same machine and setup.
+</Aside>
+
+### List all scenarios
+
+```bash
+uv run python -m benchmark.runner --list-scenarios
+```
+
+### Run one scenario
+
+```bash
+uv run python -m benchmark.runner --scenario cpu-granite-4.0-350m-no-quant
+```
+
+### Run a full screening phase
+
+```bash
+uv run python -m benchmark.runner --phase cpu-screen
+```
+
+### Run a smaller subset for a quick smoke test
+
+```bash
+uv run python -m benchmark.runner --scenario gpu-lfm2.5-1.2b-instruct-no-quant --max-cases 50
+```
+
+### Run selected case IDs only
+
+```bash
+uv run python -m benchmark.runner --scenario cpu-granite-4.0-350m-no-quant --case-id pytest-01 --case-id kubectl-09
+```
+
+### Print model output during the run
+
+```bash
+uv run python -m benchmark.runner --scenario gpu-qwen3.5-0.8b-no-quant --show-output
+```
+
+### Name the run yourself
+
+```bash
+uv run python -m benchmark.runner --scenario gpu-qwen2.5-1.5b-no-quant --name smoke
+```
+
+If you do not provide `--name`, each scenario gets its own timestamped folder under `benchmark/results/`.
+
+For remote scenarios, use the same dataset and scoring rules through the configured LiteLLM backend:
+
+```bash
+uv run python -m benchmark.runner --remote --env-file .env --scenario remote-gpt-4o-mini
+```
+
+The runner loads the env file first, resolves the standard remote configuration, and executes the selected remote scenario with concurrent requests to keep wall-clock time reasonable.
+
+To inspect results in the local dashboard:
+
+```bash
+uv run python -m benchmark.viewer --open ./benchmark/results/
+```
+
+If you want the latest generated snapshot directly, open the static viewer page here:
+
+[Open the latest snapshot](/benchmark-viewer.html)
+
+```bash
+uv run python -m benchmark.viewer --open ./benchmark/results/remote-gpt-5.4-mini-20260518T065257Z
+```
+
+You can also point the viewer at one run folder instead of the full tree:
+
+```bash
+uv run python -m benchmark.viewer --open ./benchmark/results/remote-gpt-5.4-mini-20260518T065257Z
+```
+
+The viewer is the fastest way to compare models side by side, inspect acceptance counts, and see how quality and latency shift across CPU, GPU, and remote runs.
