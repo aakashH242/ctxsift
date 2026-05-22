@@ -8,7 +8,7 @@
 Command outputs and state recollection are the biggest source of token overuse. 
 
 Agents consume raw command outputs for most tasks. But often, LLMs don't need entire outputs to be able to 
-answer something or figure out a situation. This not only increases token usage but also affects time taken responses. 
+answer something or figure out a situation. This not only increases token usage but also affects speed of responses. 
 It compounds in complex, multistep tasks where rounds of context compaction cause the agent to re-read and re-run
 commands to get back to speed with latest code state. Just compressing command outputs is not enough - it shifts the
 token tax to these recollection moments. 
