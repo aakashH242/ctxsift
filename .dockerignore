@@ -1,0 +1,16 @@
+.git
+.github
+.venv
+.vscode
+**/__pycache__
+**/.DS_Store
+**/.mypy_cache
+**/.pytest_cache
+**/.ruff_cache
+**/*.pyc
+**/*.pyo
+docs/.astro
+docs/dist
+docs/node_modules
+benchmark/results/**
+!benchmark/results/viewer.html

@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ctxsift.acceleration import gemma_attention_choice
-from ctxsift.compression_prompt import build_text_messages
+from ctxsift.compression.prompt import build_text_messages
 from ctxsift.models.base import BackendUnavailableError, ModelBackend, ModelCompressionInput
 from ctxsift.models.quantized_model_cache import (
     cached_model_source,
@@ -102,7 +102,9 @@ class TransformersGemmaBackend(ModelBackend):
                     torch_dtype=torch_dtype,
                     attention_backend=None,
                 )
-            except Exception as fallback_error:  # pragma: no cover - exercised through fallback behavior
+            except (
+                Exception
+            ) as fallback_error:  # pragma: no cover - exercised through fallback behavior
                 raise BackendUnavailableError(str(fallback_error)) from fallback_error
 
     def _generate_text(self, runtime: GemmaTextRuntime, request: ModelCompressionInput) -> str:
@@ -185,7 +187,6 @@ def _create_text_runtime(
     model = _load_model(
         auto_model=auto_model,
         model_name=model_name,
-        config=config,
         load_options=load_options,
         cache=cache,
     )
@@ -193,6 +194,21 @@ def _create_text_runtime(
         model.to(resolved_device.torch_device)
     model.eval()
     tokenizer = auto_tokenizer.from_pretrained(model_name, padding_side="left")
+    if cache is not None and not has_persisted_quantized_model(cache):
+        try:
+            persist_quantized_model_cache(
+                cache,
+                model=model,
+                tokenizer=tokenizer,
+                model_name=model_name,
+                config=config,
+            )
+        except Exception as error:
+            logging.getLogger(__name__).warning(
+                "Failed to persist quantized checkpoint to %s: %s",
+                cache.model_dir,
+                error,
+            )
     input_device = _runtime_input_device(model, resolved_device.torch_device)
     return GemmaTextRuntime(model=model, tokenizer=tokenizer, input_device=input_device)
 
@@ -200,7 +216,6 @@ def _create_text_runtime(
 def _load_model(
     auto_model: Any,
     model_name: str,
-    config: LocalModelConfig,
     load_options: Any,
     cache: Any,
 ) -> Any:
@@ -216,22 +231,7 @@ def _load_model(
                 cache.model_dir,
                 error,
             )
-    model = auto_model.from_pretrained(model_name, **load_options.model_kwargs)
-    if cache is not None:
-        try:
-            persist_quantized_model_cache(
-                cache,
-                model=model,
-                model_name=model_name,
-                config=config,
-            )
-        except Exception as error:
-            logging.getLogger(__name__).warning(
-                "Failed to persist quantized checkpoint to %s: %s",
-                cache.model_dir,
-                error,
-            )
-    return model
+    return auto_model.from_pretrained(model_name, **load_options.model_kwargs)
 
 
 def _cached_model_kwargs(model_kwargs: dict[str, Any]) -> dict[str, Any]:
@@ -242,16 +242,16 @@ def _cached_model_kwargs(model_kwargs: dict[str, Any]) -> dict[str, Any]:
 
 def _runtime_input_device(model: Any, fallback_device: str) -> str:
     embedding_device = _input_embedding_device(model)
-    if embedding_device not in {None, "meta"}:
+    if embedding_device is not None and embedding_device != "meta":
         return embedding_device
     hf_device_map = getattr(model, "hf_device_map", None)
     if isinstance(hf_device_map, dict):
         for device in hf_device_map.values():
             normalized_device = _normalize_runtime_device(device)
-            if normalized_device not in {None, "disk", "meta"}:
+            if normalized_device is not None and normalized_device not in {"disk", "meta"}:
                 return normalized_device
     model_device = _normalize_runtime_device(getattr(model, "device", None))
-    if model_device not in {None, "meta"}:
+    if model_device is not None and model_device != "meta":
         return model_device
     return fallback_device
 

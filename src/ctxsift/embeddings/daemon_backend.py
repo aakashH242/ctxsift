@@ -26,7 +26,9 @@ class DaemonEmbeddingBackend(EmbeddingBackend):
 
     provider_name = "sentence_transformers"
 
-    def __init__(self, config: EmbeddingConfig, daemon: DaemonConfig, timeout_ms: int = 90000) -> None:
+    def __init__(
+        self, config: EmbeddingConfig, daemon: DaemonConfig, timeout_ms: int = 90000
+    ) -> None:
         self._config = config
         self._daemon = daemon
         self._timeout_ms = timeout_ms

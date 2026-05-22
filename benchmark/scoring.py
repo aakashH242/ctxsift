@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 import json
 import re
-from typing import Sequence
+from typing import Any, Sequence
 
 from benchmark.stats import percentile
 from ctxsift.models.base import ModelCompressionInput
@@ -16,10 +16,13 @@ from ctxsift.models.text_profile_common import (
     validate_instruction_aware_output,
 )
 
+yaml_module: Any | None
 try:  # pragma: no cover - optional dependency in some environments
-    import yaml
+    import yaml as _yaml
 except ImportError:  # pragma: no cover - optional dependency in some environments
-    yaml = None
+    yaml_module = None
+else:  # pragma: no cover - optional dependency in some environments
+    yaml_module = _yaml
 
 
 _TOKEN_RE = re.compile(r"[A-Za-z0-9_./:-]+")
@@ -390,14 +393,14 @@ def _json_shape_score(output: str, expected_output: str) -> float:
 
 
 def _yaml_shape_score(output: str, expected_output: str) -> float:
-    if yaml is None:
+    if yaml_module is None:
         return _fallback_yaml_shape_score(output, expected_output)
     try:
-        actual = yaml.safe_load(output)
+        actual = yaml_module.safe_load(output)
     except Exception:
         return 0.0
     try:
-        expected = yaml.safe_load(expected_output)
+        expected = yaml_module.safe_load(expected_output)
     except Exception:
         return 1.0
     return _shape_similarity(expected, actual)

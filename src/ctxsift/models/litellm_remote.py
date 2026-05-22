@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from ctxsift.models.base import (
@@ -13,6 +14,7 @@ from ctxsift.models.base import (
 )
 from ctxsift.models.text_profile_common import (
     apply_soft_length_hint,
+    build_validation_failure_message,
     build_repair_messages,
     build_standard_text_messages,
     choose_preferred_candidate,
@@ -20,7 +22,6 @@ from ctxsift.models.text_profile_common import (
     should_attempt_repair,
     normalize_instruction_aware_output,
     validate_instruction_aware_output,
-    validation_flags,
 )
 
 
@@ -56,13 +57,13 @@ class LiteLLMRemoteBackend(ModelBackend):
 
         repair_validation = validate_instruction_aware_output(request, repaired_output)
         raise ModelOutputRejectedError(
-            "litellm output validation failed. "
-            f"first_pass_status={first_validation.status} "
-            f"first_pass_flags={list(validation_flags(first_validation))!r} "
-            f"first_pass={_preview_generation_output(first_pass)!r} "
-            f"repair_status={repair_validation.status} "
-            f"repair_flags={list(validation_flags(repair_validation))!r} "
-            f"repair_pass={_preview_generation_output(repaired_output)!r}"
+            build_validation_failure_message(
+                "litellm",
+                first_validation,
+                first_pass,
+                repair_validation,
+                repaired_output,
+            )
         )
 
     async def _generate_candidate(
@@ -150,14 +151,24 @@ def _load_litellm_acompletion():
         from litellm import acompletion
     except ImportError as error:  # pragma: no cover - depends on local environment
         raise BackendUnavailableError("LiteLLM is not installed.") from error
-    # LiteLLM prints a generic "Give Feedback / Get Help" banner on exceptions.
-    # Keep that suppressed and let ctxsift surface the actual error text itself.
-    litellm.suppress_debug_info = True
+    _configure_litellm_runtime(litellm)
     return acompletion
 
 
-def _preview_generation_output(text: str, limit: int = 160) -> str:
-    normalized = " ".join(text.split())
-    if len(normalized) <= limit:
-        return normalized
-    return normalized[: limit - 3] + "..."
+def _configure_litellm_runtime(litellm_module: Any) -> None:
+    # LiteLLM prints a generic "Give Feedback / Get Help" banner on exceptions.
+    # Keep that suppressed and let ctxsift surface the actual error text itself.
+    litellm_module.suppress_debug_info = True
+    _install_logging_worker_filter(logging.getLogger("LiteLLM"))
+
+
+def _install_logging_worker_filter(logger: logging.Logger) -> None:
+    if getattr(logger, "_ctxsift_logging_worker_filter_installed", False):
+        return
+    logger.addFilter(_LiteLLMLoggingWorkerErrorFilter())
+    logger._ctxsift_logging_worker_filter_installed = True  # type: ignore[attr-defined]
+
+
+class _LiteLLMLoggingWorkerErrorFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return not record.getMessage().startswith("LoggingWorker error:")

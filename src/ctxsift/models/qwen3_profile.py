@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from ctxsift.models.base import ModelCompressionInput
 from ctxsift.models.text_profile_common import (
+    LEAKED_REASONING_TAGS,
     build_standard_text_messages,
     deterministic_generation_kwargs,
     normalize_profile_output,
@@ -33,9 +34,11 @@ def generation_kwargs(tokenizer: object, max_output_tokens: int) -> dict[str, in
 def normalize_output(request: ModelCompressionInput | str, text: str | None = None) -> str:
     """Apply Qwen3-specific cleanup to generated text."""
     if text is None:
-        without_reasoning = strip_reasoning_blocks(str(request), "think")
+        without_reasoning = strip_reasoning_blocks(str(request), *LEAKED_REASONING_TAGS)
         return normalize_plain_output(without_reasoning)
-    without_reasoning = strip_reasoning_blocks(text, "think")
+    if isinstance(request, str):
+        raise TypeError("request context is required when text is provided")
+    without_reasoning = strip_reasoning_blocks(text, *LEAKED_REASONING_TAGS)
     return normalize_profile_output(request, without_reasoning)
 
 

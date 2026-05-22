@@ -2,6 +2,7 @@
 
 import asyncio
 from types import SimpleNamespace
+from typing import Any
 
 import numpy as np
 import pytest
@@ -34,7 +35,7 @@ class FakeSentenceTransformerModel:
 def test_embedding_backend_uses_custom_default_prompt_for_harrier() -> None:
     model = FakeSentenceTransformerModel()
     backend = SentenceTransformersBackend(EmbeddingConfig(model="microsoft/harrier-oss-v1-0.6b"))
-    backend._model = model
+    setattr(backend, "_model", model)
 
     result = asyncio.run(
         backend.embed_query(QueryEmbeddingRequest(text="AuthError in login", max_length=1024))
@@ -54,7 +55,7 @@ def test_embedding_backend_prefers_explicit_prompt_name_override() -> None:
             query_prompt="Instruct: ignored\nQuery: ",
         )
     )
-    backend._model = model
+    setattr(backend, "_model", model)
 
     asyncio.run(backend.embed_query(QueryEmbeddingRequest(text="BillingError", max_length=1024)))
 
@@ -64,8 +65,10 @@ def test_embedding_backend_prefers_explicit_prompt_name_override() -> None:
 
 def test_embedding_backend_skips_default_prompt_for_non_harrier_models() -> None:
     model = FakeSentenceTransformerModel()
-    backend = SentenceTransformersBackend(EmbeddingConfig(model="sentence-transformers/all-MiniLM-L6-v2"))
-    backend._model = model
+    backend = SentenceTransformersBackend(
+        EmbeddingConfig(model="sentence-transformers/all-MiniLM-L6-v2")
+    )
+    setattr(backend, "_model", model)
 
     asyncio.run(backend.embed_query(QueryEmbeddingRequest(text="plain query", max_length=256)))
 
@@ -76,12 +79,15 @@ def test_embedding_backend_skips_default_prompt_for_non_harrier_models() -> None
 def test_embedding_backend_forces_cpu_when_cuda_unavailable(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr("ctxsift.embeddings.sentence_transformers_backend.torch", SimpleNamespace(
-        cuda=SimpleNamespace(is_available=lambda: False),
-        float32="float32",
-        float16="float16",
-        bfloat16="bfloat16",
-    ))
+    monkeypatch.setattr(
+        "ctxsift.embeddings.sentence_transformers_backend.torch",
+        SimpleNamespace(
+            cuda=SimpleNamespace(is_available=lambda: False),
+            float32="float32",
+            float16="float16",
+            bfloat16="bfloat16",
+        ),
+    )
     backend = SentenceTransformersBackend(
         EmbeddingConfig(
             model="microsoft/harrier-oss-v1-0.6b",
@@ -95,7 +101,7 @@ def test_embedding_backend_forces_cpu_when_cuda_unavailable(
 def test_embedding_backend_prefers_onnx_for_harrier_on_cpu_when_available(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     class FakeSentenceTransformer:
         def __init__(self, model_name, **kwargs):
@@ -125,7 +131,7 @@ def test_embedding_backend_prefers_onnx_for_harrier_on_cpu_when_available(
 def test_embedding_backend_falls_back_to_torch_when_onnx_load_fails(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    attempts: list[dict[str, object]] = []
+    attempts: list[dict[str, Any]] = []
 
     class FakeSentenceTransformer:
         def __init__(self, model_name, **kwargs):
@@ -155,7 +161,7 @@ def test_embedding_backend_falls_back_to_torch_when_onnx_load_fails(
 def test_embedding_backend_enables_flash_attention_on_gpu_torch_path(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    captured: dict[str, object] = {}
+    captured: dict[str, Any] = {}
 
     class FakeSentenceTransformer:
         def __init__(self, model_name, **kwargs):
@@ -165,12 +171,15 @@ def test_embedding_backend_enables_flash_attention_on_gpu_torch_path(
         def get_sentence_embedding_dimension(self) -> int:
             return 3
 
-    monkeypatch.setattr("ctxsift.embeddings.sentence_transformers_backend.torch", SimpleNamespace(
-        cuda=SimpleNamespace(is_available=lambda: True),
-        float32="float32",
-        float16="float16",
-        bfloat16="bfloat16",
-    ))
+    monkeypatch.setattr(
+        "ctxsift.embeddings.sentence_transformers_backend.torch",
+        SimpleNamespace(
+            cuda=SimpleNamespace(is_available=lambda: True),
+            float32="float32",
+            float16="float16",
+            bfloat16="bfloat16",
+        ),
+    )
     monkeypatch.setattr(
         "ctxsift.embeddings.sentence_transformers_backend.embedding_attention_choice",
         lambda device, configured_value: "flash_attention_2",

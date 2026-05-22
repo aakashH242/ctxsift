@@ -5,7 +5,12 @@ from __future__ import annotations
 import hashlib
 import json
 
-from ctxsift.daemon.types import CompressionRuntimeSignature, DaemonRole, EmbeddingRuntimeSignature, RuntimeSignature
+from ctxsift.daemon.types import (
+    CompressionRuntimeSignature,
+    DaemonRole,
+    EmbeddingRuntimeSignature,
+    RuntimeSignature,
+)
 from ctxsift.models.local_runtime import required_gguf_filename, resolve_local_runtime
 from ctxsift.types import EmbeddingConfig, LocalModelConfig
 

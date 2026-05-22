@@ -29,7 +29,9 @@ class FakeLocalBackend:
 def test_preload_configured_models_warms_embedding_and_downloads_cpu_gguf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend())
+    monkeypatch.setattr(
+        model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend()
+    )
     monkeypatch.setattr(
         model_preload,
         "preload_gguf_artifact",
@@ -48,7 +50,9 @@ def test_preload_configured_models_warms_embedding_and_downloads_cpu_gguf(
 def test_preload_configured_models_skips_local_model_in_remote_mode(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend())
+    monkeypatch.setattr(
+        model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend()
+    )
     monkeypatch.setattr(model_preload, "create_local_backend", lambda config: FakeLocalBackend())
 
     config = AppConfig.model_validate(
@@ -99,7 +103,9 @@ def test_preload_configured_models_returns_warning_results_on_failures(
 def test_preload_configured_models_uses_transformers_path_for_local_gpu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend())
+    monkeypatch.setattr(
+        model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend()
+    )
     monkeypatch.setattr(model_preload, "create_local_backend", lambda config: FakeLocalBackend())
     monkeypatch.setattr(
         model_preload,
@@ -134,16 +140,18 @@ def test_resolve_or_download_hf_file_prefers_cached_artifact(
     calls: list[tuple[str, str, str | None]] = []
 
     hub_module = types.ModuleType("huggingface_hub")
-    hub_module.try_to_load_from_cache = lambda repo_id, filename, cache_dir=None: cached_file
+    setattr(
+        hub_module, "try_to_load_from_cache", lambda repo_id, filename, cache_dir=None: cached_file
+    )
 
     def fake_hf_hub_download(*, repo_id: str, filename: str, cache_dir: str | None = None) -> str:
         calls.append((repo_id, filename, cache_dir))
         return str(tmp_path / "downloaded.gguf")
 
-    hub_module.hf_hub_download = fake_hf_hub_download
+    setattr(hub_module, "hf_hub_download", fake_hf_hub_download)
 
     constants_module = types.ModuleType("huggingface_hub.constants")
-    constants_module._CACHED_NO_EXIST = object()
+    setattr(constants_module, "_CACHED_NO_EXIST", object())
 
     monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
     monkeypatch.setitem(sys.modules, "huggingface_hub.constants", constants_module)

@@ -36,9 +36,7 @@ def test_factory_uses_local_backend_when_remote_base_url_is_empty() -> None:
 
 
 def test_factory_uses_in_process_local_backend_when_daemon_is_disabled() -> None:
-    backend = create_compression_backend(
-        AppConfig.model_validate({"daemon": {"enabled": False}})
-    )
+    backend = create_compression_backend(AppConfig.model_validate({"daemon": {"enabled": False}}))
 
     assert isinstance(backend, LlamaCppBackend)
 

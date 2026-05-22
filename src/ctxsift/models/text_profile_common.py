@@ -4,10 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import re
-from typing import Callable, Literal
+from typing import Callable, Literal, overload
 
+from ctxsift.compression.intent import (
+    CompressionIntent,
+    StructuredIntentKind,
+    canonical_mode_for_intent,
+    intent_prefers_recall_wording,
+    structured_kind_for_intent,
+)
 from ctxsift.models.base import ModelCompressionInput
-
 
 DEFAULT_SYSTEM_PROMPT = """You compress coding command output for later recall.
 
@@ -53,6 +59,7 @@ SCHEMA_LABELS = (
     "raw output",
     "task",
 )
+REASONING_TAG_PATTERN = r"(?:think|thinking|thought|response)"
 
 LEADING_HEADING_RE = re.compile(
     r"^(?:summary|result|failure summary|output summary)\s*:\s*",
@@ -68,11 +75,11 @@ WHITESPACE_RE = re.compile(r"[ \t]+")
 MULTI_NEWLINE_RE = re.compile(r"\n{3,}")
 ROLE_TOKEN_LEAK_RE = re.compile(r"<\|(?:system|user|assistant)\|>", re.IGNORECASE)
 CONTROL_TOKEN_LEAK_RE = re.compile(
-    r"(<\|[^>\n]+\|>|</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text|think|response)>|</?turn\|>|\[(?:/)?INST\])",
+    rf"(<\|[^>\n]+\|>|</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text)>|</?\|?{REASONING_TAG_PATTERN}\|?>|</?turn\|>|\[(?:/)?INST\])",
     re.IGNORECASE,
 )
 CONTROL_TOKEN_CLEAN_RE = re.compile(
-    r"(<\|[^>\n]+\|>|</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text|think|response)>|</?turn\|>|\[(?:/)?INST\])",
+    rf"(</?(?:s|bos|eos|pad|unk|im_start|im_end|start_of_turn|end_of_turn|end_of_text)>|</?\|?{REASONING_TAG_PATTERN}\|?>|</?turn\|>)",
     re.IGNORECASE,
 )
 CPU_PROMPT_LABEL_RE = re.compile(
@@ -83,10 +90,13 @@ CODE_BLOCK_RE = re.compile(r"^\s*```", re.MULTILINE)
 HEADING_LINE_RE = re.compile(r"^\s{0,3}#{1,6}\s+\S", re.MULTILINE)
 TABLE_LINE_RE = re.compile(r"^\s*\|.+\|\s*$", re.MULTILINE)
 YAMLISH_LINE_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_-]*:\s+\S", re.MULTILINE)
+YAML_KEY_LINE_RE = re.compile(r"^\s*[A-Za-z_][A-Za-z0-9_-]*:\s*$")
+YAML_LIST_ITEM_RE = re.compile(r"^\s*-\s+\S")
 BENCHMARK_SCAFFOLD_RE = re.compile(
     r"^(?:here(?:'s| is)|below is)\b.*(?:instruction|output form|rewritten answer|requested output form|summary of the instruction)",
     re.IGNORECASE,
 )
+LEAKED_REASONING_TAGS = ("think", "thinking", "thought", "response")
 
 InstructionOutputMode = Literal["plain-text", "structured", "exact-lines", "exact-format"]
 ValidationStatus = Literal["accepted", "soft_accepted", "rejected"]
@@ -167,9 +177,9 @@ def apply_soft_length_hint(
             content = message.get("content", "").strip()
             message["content"] = f"{content}\n\n{hint}" if content else hint
             return updated_messages
-    updated_messages[-1]["content"] = (
-        f"{updated_messages[-1].get('content', '').strip()}\n\n{hint}".strip()
-    )
+    updated_messages[-1][
+        "content"
+    ] = f"{updated_messages[-1].get('content', '').strip()}\n\n{hint}".strip()
     return updated_messages
 
 
@@ -178,7 +188,9 @@ def build_repair_messages(
     invalid_output: str,
 ) -> list[dict[str, str]]:
     """Build one shared repair prompt for invalid first-pass model output."""
-    missing_anchors = [anchor for anchor in anchors_from_request(request) if anchor not in invalid_output]
+    missing_anchors = [
+        anchor for anchor in anchors_from_request(request) if anchor not in invalid_output
+    ]
     sections = [
         "Your previous answer was invalid for recall-oriented compression.",
         "Previous answer:",
@@ -211,7 +223,9 @@ def build_cpu_protection_repair_messages(
     invalid_output: str,
 ) -> list[dict[str, str]]:
     """Build a CPU-mode repair prompt that preserves requested output structure."""
-    missing_anchors = [anchor for anchor in cpu_anchors_from_request(request) if anchor not in invalid_output]
+    missing_anchors = [
+        anchor for anchor in cpu_anchors_from_request(request) if anchor not in invalid_output
+    ]
     sections = [
         "Your previous answer was invalid for CPU protection mode.",
         "Previous answer:",
@@ -262,27 +276,34 @@ def build_cpu_signal_section(request: ModelCompressionInput) -> str:
 
 def output_form_section(request: ModelCompressionInput) -> str:
     """Describe the allowed output form in an instruction-aware way."""
-    instruction = request.instruction.casefold()
-    if _requests_exact_lines(instruction):
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
+    structured_kind = structured_kind_for_request(request)
+    if mode == "exact-lines":
         return (
             "Output form:\n"
             "- return the exact requested lines or quoted excerpts only\n"
             "- copy quoted or extracted lines exactly from the raw output\n"
             "- do not summarize unless the instruction also asks for it"
         )
-    if _requests_exact_format(instruction):
+    if mode == "exact-format":
         return (
             "Output form:\n"
             "- return only the requested value, command, identifier, or lines\n"
             "- no prose, labels, bullets, headings, code fences, or surrounding context\n"
             "- if the instruction implies one exact span, output only that span and nothing else"
         )
-    if _requests_structured_output(instruction):
+    if mode == "structured":
         return (
             "Output form:\n"
             "- follow the requested structure exactly\n"
-            "- return only the requested json, yaml, table, or bullet structure\n"
+            f"- return only the requested {_structured_output_label(structured_kind)}\n"
             "- do not add prose before or after the structured output"
+        )
+    if intent_prefers_recall_wording(request.intent):
+        return (
+            "Output form:\n"
+            "- return a concise plain-text recall summary optimized for later retrieval\n"
+            "- avoid headings, bullets, markdown, or extra sections unless the instruction asks for them"
         )
     return (
         "Output form:\n"
@@ -303,7 +324,14 @@ def soft_length_hint_section(request: ModelCompressionInput) -> str:
 def selection_discipline_section(request: ModelCompressionInput) -> str:
     """Add one compact reminder when the instruction has strict include/exclude rules."""
     instruction = request.instruction.casefold()
-    if not _requests_strict_selection(instruction):
+    if request.intent not in {
+        CompressionIntent.EXACT_LINES,
+        CompressionIntent.EXACT_FORMAT,
+        CompressionIntent.JSON,
+        CompressionIntent.YAML,
+        CompressionIntent.TABLE,
+        CompressionIntent.BULLET_LIST,
+    } and not _requests_strict_selection(instruction):
         return ""
     return (
         "Selection discipline:\n"
@@ -330,14 +358,24 @@ def instruction_output_mode(instruction: str) -> InstructionOutputMode:
     return "plain-text"
 
 
+def resolved_mode_from_intent(
+    intent: CompressionIntent | None,
+    instruction: str,
+) -> InstructionOutputMode:
+    """Resolve the canonical output mode from explicit intent with heuristic fallback."""
+    if intent is not None:
+        return canonical_mode_for_intent(intent)
+    return instruction_output_mode(instruction)
+
+
+def structured_kind_for_request(request: ModelCompressionInput) -> StructuredIntentKind | None:
+    """Return the requested structured subtype when the intent specifies one."""
+    return structured_kind_for_intent(request.intent)
+
+
 def cpu_prompt_output_form_section(request: ModelCompressionInput) -> str:
     """Return CPU output-form guidance only when the instruction explicitly needs it."""
-    instruction = request.instruction.casefold()
-    if (
-        _requests_exact_lines(instruction)
-        or _requests_exact_format(instruction)
-        or _requests_structured_output(instruction)
-    ):
+    if resolved_mode_from_intent(request.intent, request.instruction) != "plain-text":
         return output_form_section(request)
     return ""
 
@@ -457,16 +495,18 @@ def anchor_hit_count(request: ModelCompressionInput, text: str) -> int:
 
 def normalize_instruction_aware_output(request: ModelCompressionInput, text: str) -> str:
     """Normalize output without destroying instruction-required structure."""
-    mode = instruction_output_mode(request.instruction)
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
     cleaned = text.strip()
     if not cleaned:
         return ""
+    if has_unterminated_reasoning_block(cleaned):
+        return collapse_outer_blank_lines(cleaned)
+    cleaned = strip_reasoning_blocks(cleaned, *LEAKED_REASONING_TAGS)
     cleaned = strip_known_control_tokens(request, cleaned)
     if not cleaned:
         return ""
     if mode in {"exact-lines", "exact-format"}:
         return collapse_outer_blank_lines(cleaned)
-    cleaned = strip_reasoning_blocks(cleaned, "think", "response")
     cleaned = strip_edge_tags(cleaned)
     cleaned = cleaned.strip()
     if not cleaned:
@@ -482,10 +522,18 @@ def normalize_cpu_protection_output(request: ModelCompressionInput, text: str) -
     normalized = normalize_instruction_aware_output(request, text)
     if not normalized:
         return ""
-    instruction = request.instruction.casefold()
-    if _requests_exact_lines(instruction) or _requests_structured_output(instruction):
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
+    if mode in {"exact-lines", "structured"}:
         return normalized
     return strip_cpu_prompt_labels(normalized)
+
+
+@overload
+def normalize_profile_output(request_or_text: str, text: None = None) -> str: ...
+
+
+@overload
+def normalize_profile_output(request_or_text: ModelCompressionInput, text: str) -> str: ...
 
 
 def normalize_profile_output(
@@ -495,10 +543,14 @@ def normalize_profile_output(
     """Normalize profile output with optional backward-compatible request context."""
     if text is None:
         return normalize_plain_output(str(request_or_text))
+    if isinstance(request_or_text, str):
+        raise TypeError("request context is required when text is provided")
     return normalize_instruction_aware_output(request_or_text, text)
 
 
-def validate_instruction_aware_output(request: ModelCompressionInput, text: str) -> TextValidationResult:
+def validate_instruction_aware_output(
+    request: ModelCompressionInput, text: str
+) -> TextValidationResult:
     """Validate one normalized output against the shared instruction-first contract."""
     cleaned = text.strip()
     if not cleaned:
@@ -510,6 +562,8 @@ def validate_instruction_aware_output(request: ModelCompressionInput, text: str)
         )
 
     hard_fail_reasons: list[str] = []
+    if has_unterminated_reasoning_block(cleaned):
+        hard_fail_reasons.append("unterminated_reasoning_block")
     if has_role_token_leakage(cleaned):
         hard_fail_reasons.append("role_token_leakage")
     if _has_unrepaired_control_token_leak(request, cleaned):
@@ -520,6 +574,15 @@ def validate_instruction_aware_output(request: ModelCompressionInput, text: str)
         hard_fail_reasons.append("prompt_scaffold_echo")
     if _has_generic_prompt_guidance_echo(request, cleaned):
         hard_fail_reasons.append("prompt_scaffold_echo")
+
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
+    structured_kind = structured_kind_for_request(request)
+    if mode == "exact-lines" and _has_obvious_exact_lines_breakage(cleaned):
+        hard_fail_reasons.append("exact_lines_contract_breakage")
+    if mode == "exact-format" and _has_obvious_exact_format_breakage(cleaned):
+        hard_fail_reasons.append("exact_format_contract_breakage")
+    if mode == "structured" and _has_obvious_structured_breakage(cleaned, structured_kind):
+        hard_fail_reasons.append("structured_contract_breakage")
 
     hits = anchor_hit_count(request, cleaned)
     if hard_fail_reasons:
@@ -535,7 +598,6 @@ def validate_instruction_aware_output(request: ModelCompressionInput, text: str)
     if anchors and hits < len(anchors):
         quality_flags.append("missing_exact_anchors")
 
-    mode = instruction_output_mode(request.instruction)
     if mode == "plain-text":
         if not is_plain_text_contract(cleaned):
             quality_flags.append("plain_text_style_mismatch")
@@ -543,7 +605,7 @@ def validate_instruction_aware_output(request: ModelCompressionInput, text: str)
         if not _looks_like_exact_format_output(cleaned):
             quality_flags.append("exact_format_style_mismatch")
     elif mode == "structured":
-        if not has_requested_structure(cleaned):
+        if not has_requested_structure(cleaned, structured_kind):
             quality_flags.append("structured_output_mismatch")
     else:
         if not looks_like_verbatim_excerpt(request, cleaned):
@@ -596,11 +658,15 @@ def choose_preferred_candidate(
 ) -> RankedCandidate | None:
     """Return the highest-ranked non-rejected candidate, if any."""
     ranked_candidates = [
-        RankedCandidate(output=candidate, validation=validate_instruction_aware_output(request, candidate))
+        RankedCandidate(
+            output=candidate, validation=validate_instruction_aware_output(request, candidate)
+        )
         for candidate in candidates
         if candidate.strip()
     ]
-    usable = [candidate for candidate in ranked_candidates if candidate.validation.status != "rejected"]
+    usable = [
+        candidate for candidate in ranked_candidates if candidate.validation.status != "rejected"
+    ]
     if not usable:
         return None
     return min(
@@ -634,7 +700,9 @@ def is_valid_cpu_protection_output(request: ModelCompressionInput, text: str) ->
     return validate_instruction_aware_output(request, text).status != "rejected"
 
 
-def deterministic_generation_kwargs(tokenizer: object, max_output_tokens: int) -> dict[str, int | bool]:
+def deterministic_generation_kwargs(
+    tokenizer: object, max_output_tokens: int
+) -> dict[str, int | bool]:
     """Return one conservative deterministic generation config."""
     kwargs: dict[str, int | bool] = {
         "do_sample": False,
@@ -663,7 +731,7 @@ def strip_reasoning_blocks(text: str, *tag_names: str) -> str:
     cleaned = text
     for tag_name in tag_names:
         pattern = re.compile(
-            rf"<{re.escape(tag_name)}>\s*.*?\s*</{re.escape(tag_name)}>",
+            rf"<\|?{re.escape(tag_name)}\|?>\s*.*?\s*</\|?{re.escape(tag_name)}\|?>",
             re.IGNORECASE | re.DOTALL,
         )
         cleaned = pattern.sub("", cleaned)
@@ -778,23 +846,29 @@ def has_cpu_prompt_scaffold_leakage(text: str) -> bool:
     return any(CPU_PROMPT_LABEL_RE.match(line) for line in text.splitlines() if line.strip())
 
 
-def has_requested_structure(text: str) -> bool:
+def has_requested_structure(text: str, structured_kind: StructuredIntentKind | None = None) -> bool:
     """Return whether the output contains one requested structured form."""
     stripped = text.strip()
     if not stripped:
         return False
+    lines = [line for line in text.splitlines() if line.strip()]
+    if structured_kind == "json":
+        return _looks_like_json_output(stripped)
+    if structured_kind == "yaml":
+        return _looks_like_yaml_output(lines)
+    if structured_kind == "table":
+        return _looks_like_table_output(lines)
+    if structured_kind == "bullet-list":
+        return _looks_like_bullet_list_output(lines)
     if stripped.startswith("```") and stripped.endswith("```"):
         return True
-    if (stripped.startswith("{") and stripped.endswith("}")) or (
-        stripped.startswith("[") and stripped.endswith("]")
-    ):
+    if _looks_like_json_output(stripped):
         return True
-    lines = [line for line in text.splitlines() if line.strip()]
-    if any(BULLET_LINE_RE.match(line) for line in lines):
+    if _looks_like_bullet_list_output(lines):
         return True
     if any(HEADING_LINE_RE.match(line) for line in lines):
         return True
-    if any(TABLE_LINE_RE.match(line) for line in lines):
+    if _looks_like_table_output(lines):
         return True
     yaml_line_count = sum(1 for line in lines if YAMLISH_LINE_RE.match(line))
     return yaml_line_count >= 2
@@ -808,9 +882,7 @@ def looks_like_verbatim_excerpt(request: ModelCompressionInput, text: str) -> bo
 def _verbatim_excerpt_ratio(request: ModelCompressionInput, text: str) -> float:
     """Return how much of the output lines match raw-input lines verbatim."""
     output_lines = [
-        normalized
-        for line in text.splitlines()
-        if (normalized := _normalize_verbatim_line(line))
+        normalized for line in text.splitlines() if (normalized := _normalize_verbatim_line(line))
     ]
     if not output_lines:
         return 0.0
@@ -835,6 +907,35 @@ def validation_flags(validation: TextValidationResult) -> tuple[str, ...]:
     if validation.status == "rejected":
         return validation.hard_fail_reasons
     return validation.quality_flags
+
+
+def build_validation_failure_message(
+    backend_name: str,
+    first_validation: TextValidationResult,
+    first_pass: str,
+    repair_validation: TextValidationResult,
+    repaired_output: str,
+) -> str:
+    """Build one readable backend failure message from validation outcomes."""
+    if any(
+        "unterminated_reasoning_block" in validation_flags(validation)
+        for validation in (first_validation, repair_validation)
+    ):
+        return (
+            f"{backend_name} output validation failed: model did not stop thinking "
+            "before reaching the output limit. "
+            f"first_pass={_preview_generation_output(first_pass)!r} "
+            f"repair_pass={_preview_generation_output(repaired_output)!r}"
+        )
+    return (
+        f"{backend_name} output validation failed. "
+        f"first_pass_status={first_validation.status} "
+        f"first_pass_flags={list(validation_flags(first_validation))!r} "
+        f"first_pass={_preview_generation_output(first_pass)!r} "
+        f"repair_status={repair_validation.status} "
+        f"repair_flags={list(validation_flags(repair_validation))!r} "
+        f"repair_pass={_preview_generation_output(repaired_output)!r}"
+    )
 
 
 def _requests_exact_lines(instruction: str) -> bool:
@@ -902,6 +1003,18 @@ def _requests_strict_selection(instruction: str) -> bool:
     )
 
 
+def _structured_output_label(structured_kind: StructuredIntentKind | None) -> str:
+    if structured_kind == "json":
+        return "valid JSON only"
+    if structured_kind == "yaml":
+        return "YAML only"
+    if structured_kind == "table":
+        return "the requested Markdown table only"
+    if structured_kind == "bullet-list":
+        return "the requested bullet list only"
+    return "structured output only"
+
+
 def _looks_like_exact_format_output(text: str) -> bool:
     stripped = text.strip()
     if not stripped:
@@ -917,6 +1030,123 @@ def _looks_like_exact_format_output(text: str) -> bool:
     return True
 
 
+def _has_obvious_exact_lines_breakage(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if "```" in stripped:
+        return True
+    if LEADING_HEADING_RE.match(stripped):
+        return True
+    if any(BULLET_LINE_RE.match(line) for line in stripped.splitlines() if line.strip()):
+        return True
+    if _has_reasoning_prose_leakage(stripped):
+        return True
+    return False
+
+
+def _has_obvious_exact_format_breakage(text: str) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if _has_reasoning_prose_leakage(stripped):
+        return True
+    if "```" in stripped:
+        return True
+    if LEADING_HEADING_RE.match(stripped):
+        return True
+    if any(BULLET_LINE_RE.match(line) for line in stripped.splitlines() if line.strip()):
+        return True
+    if TABLE_LINE_RE.search(stripped):
+        return True
+    if YAMLISH_LINE_RE.search(stripped):
+        return True
+    if stripped.count("\n") > 4:
+        return True
+    return False
+
+
+def _has_obvious_structured_breakage(
+    text: str,
+    structured_kind: StructuredIntentKind | None,
+) -> bool:
+    stripped = text.strip()
+    if not stripped:
+        return True
+    if _has_reasoning_prose_leakage(stripped):
+        return True
+    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    if structured_kind == "bullet-list":
+        return not lines or any(not BULLET_LINE_RE.match(line) for line in lines)
+    if structured_kind == "table":
+        return not lines or any(not TABLE_LINE_RE.match(line) for line in lines)
+    if structured_kind == "yaml":
+        return not lines or any(not _looks_like_yaml_content_line(line) for line in lines)
+    return not has_requested_structure(stripped, structured_kind)
+
+
+def _has_reasoning_prose_leakage(text: str) -> bool:
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    if not lines:
+        return False
+    first_line = lines[0].casefold()
+    if first_line.startswith(("okay,", "ok,", "okay ", "let's ", "lets ", "first,", "first ")):
+        return True
+    if first_line.startswith(("the user wants", "i need to", "i should", "here's", "here is")):
+        return True
+    if "the user wants me to" in first_line:
+        return True
+    return False
+
+
+def has_unterminated_reasoning_block(text: str) -> bool:
+    """Return whether output started a reasoning wrapper but never closed it."""
+    return any(
+        _has_unterminated_reasoning_tag(text, tag_name) for tag_name in LEAKED_REASONING_TAGS
+    )
+
+
+def _has_unterminated_reasoning_tag(text: str, tag_name: str) -> bool:
+    open_pattern = re.compile(rf"<\|?{re.escape(tag_name)}\|?>", re.IGNORECASE)
+    close_pattern = re.compile(rf"</\|?{re.escape(tag_name)}\|?>", re.IGNORECASE)
+    return len(open_pattern.findall(text)) > len(close_pattern.findall(text))
+
+
+def _preview_generation_output(text: str, limit: int = 160) -> str:
+    normalized = " ".join(text.split())
+    if len(normalized) <= limit:
+        return normalized
+    return normalized[: limit - 3] + "..."
+
+
+def _looks_like_json_output(text: str) -> bool:
+    stripped = text.strip()
+    return (stripped.startswith("{") and stripped.endswith("}")) or (
+        stripped.startswith("[") and stripped.endswith("]")
+    )
+
+
+def _looks_like_yaml_output(lines: list[str]) -> bool:
+    yaml_line_count = sum(1 for line in lines if _looks_like_yaml_content_line(line))
+    return yaml_line_count >= 2
+
+
+def _looks_like_table_output(lines: list[str]) -> bool:
+    return any(TABLE_LINE_RE.match(line) for line in lines)
+
+
+def _looks_like_bullet_list_output(lines: list[str]) -> bool:
+    return any(BULLET_LINE_RE.match(line) for line in lines)
+
+
+def _looks_like_yaml_content_line(line: str) -> bool:
+    return (
+        YAMLISH_LINE_RE.match(line) is not None
+        or YAML_KEY_LINE_RE.match(line) is not None
+        or YAML_LIST_ITEM_RE.match(line) is not None
+    )
+
+
 def _first_non_empty(*value_groups: list[str]) -> str:
     for values in value_groups:
         for value in values:
@@ -926,9 +1156,15 @@ def _first_non_empty(*value_groups: list[str]) -> str:
     return ""
 
 
-def _candidate_rank(request: ModelCompressionInput, candidate: RankedCandidate) -> tuple[int, int, int, int]:
+def _candidate_rank(
+    request: ModelCompressionInput, candidate: RankedCandidate
+) -> tuple[int, int, int, int]:
     status_rank = 0 if candidate.validation.status == "accepted" else 1
-    concise_rank = len(candidate.output) if instruction_output_mode(request.instruction) == "plain-text" else 0
+    concise_rank = (
+        len(candidate.output)
+        if resolved_mode_from_intent(request.intent, request.instruction) == "plain-text"
+        else 0
+    )
     return (
         status_rank,
         -candidate.validation.anchor_hits,
@@ -949,7 +1185,9 @@ def _benchmark_recovery_candidates(
         _strip_prompt_wrapper_lines(request, text),
         _trim_to_first_anchor(text, anchors_from_request(request)),
         _trim_to_first_raw_line(request, text),
-        _trim_to_first_anchor(_strip_prompt_wrapper_lines(request, text), anchors_from_request(request)),
+        _trim_to_first_anchor(
+            _strip_prompt_wrapper_lines(request, text), anchors_from_request(request)
+        ),
         _trim_to_first_raw_line(request, _strip_prompt_wrapper_lines(request, text)),
     ):
         normalized = normalize_output(request, candidate)
@@ -977,17 +1215,21 @@ def _prod_recovery_candidates(
     return candidates or [text]
 
 
-def _scaffold_recovery_rank(request: ModelCompressionInput, text: str) -> tuple[int, int, int, int, int]:
-    scaffold_penalty = int(_has_unrepaired_schema_echo(request, text)) + int(
-        _has_unrepaired_cpu_prompt_echo(request, text)
-    ) + int(_has_generic_prompt_guidance_echo(request, text))
+def _scaffold_recovery_rank(
+    request: ModelCompressionInput, text: str
+) -> tuple[int, int, int, int, int]:
+    scaffold_penalty = (
+        int(_has_unrepaired_schema_echo(request, text))
+        + int(_has_unrepaired_cpu_prompt_echo(request, text))
+        + int(_has_generic_prompt_guidance_echo(request, text))
+    )
     leading_penalty = int(_looks_like_scaffold_lead(text))
-    mode = instruction_output_mode(request.instruction)
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
     mode_bonus = 0
     if mode == "exact-lines":
         mode_bonus = -int(_verbatim_excerpt_ratio(request, text) * 1000)
     elif mode == "structured":
-        mode_bonus = -int(has_requested_structure(text))
+        mode_bonus = -int(has_requested_structure(text, structured_kind_for_request(request)))
     else:
         mode_bonus = -int(is_plain_text_contract(text))
     return (
@@ -1020,9 +1262,11 @@ def _normalize_verbatim_line(line: str) -> str:
 
 
 def _strip_prompt_wrapper_lines(request: ModelCompressionInput, text: str) -> str:
-    mode = instruction_output_mode(request.instruction)
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
     raw_lines = {line.strip().casefold() for line in request.raw_input.splitlines() if line.strip()}
-    normalized_raw_lines = {_normalized_guidance_line(line) for line in request.raw_input.splitlines() if line.strip()}
+    normalized_raw_lines = {
+        _normalized_guidance_line(line) for line in request.raw_input.splitlines() if line.strip()
+    }
     cleaned_lines: list[str] = []
     inside_wrapper_block = False
     for line in text.splitlines():
@@ -1044,10 +1288,14 @@ def _strip_prompt_wrapper_lines(request: ModelCompressionInput, text: str) -> st
             continue
         if inside_wrapper_block:
             continue
-        if _is_prompt_wrapper_label(request, stripped, mode=mode) or CPU_PROMPT_LABEL_RE.match(stripped):
+        if _is_prompt_wrapper_label(request, stripped, mode=mode) or CPU_PROMPT_LABEL_RE.match(
+            stripped
+        ):
             inside_wrapper_block = True
             continue
-        if (lowered in _guidance_lines() or _is_soft_length_guidance_line(lowered)) and lowered not in normalized_raw_lines:
+        if (
+            lowered in _guidance_lines() or _is_soft_length_guidance_line(lowered)
+        ) and lowered not in normalized_raw_lines:
             inside_wrapper_block = True
             continue
         if BENCHMARK_SCAFFOLD_RE.match(stripped):
@@ -1060,12 +1308,14 @@ def _trim_to_first_anchor(text: str, anchors: list[str]) -> str:
     matches = [text.find(anchor) for anchor in anchors if anchor and text.find(anchor) >= 0]
     if not matches:
         return text
-    return text[min(matches):].strip()
+    return text[min(matches) :].strip()
 
 
 def _trim_to_first_raw_line(request: ModelCompressionInput, text: str) -> str:
     candidates = [line.strip() for line in request.raw_input.splitlines() if line.strip()]
-    indexed = [(text.find(line), line) for line in candidates if len(line) >= 8 and text.find(line) >= 0]
+    indexed = [
+        (text.find(line), line) for line in candidates if len(line) >= 8 and text.find(line) >= 0
+    ]
     if not indexed:
         return text
     position, line = min(indexed, key=lambda item: item[0])
@@ -1073,7 +1323,7 @@ def _trim_to_first_raw_line(request: ModelCompressionInput, text: str) -> str:
 
 
 def _has_unrepaired_schema_echo(request: ModelCompressionInput, text: str) -> bool:
-    mode = instruction_output_mode(request.instruction)
+    mode = resolved_mode_from_intent(request.intent, request.instruction)
     suspect_lines = [
         line.strip()
         for line in text.splitlines()
@@ -1107,13 +1357,17 @@ def _has_unrepaired_control_token_leak(request: ModelCompressionInput, text: str
 
 
 def _has_generic_prompt_guidance_echo(request: ModelCompressionInput, text: str) -> bool:
-    raw_lines = {_normalized_guidance_line(line) for line in request.raw_input.splitlines() if line.strip()}
+    raw_lines = {
+        _normalized_guidance_line(line) for line in request.raw_input.splitlines() if line.strip()
+    }
     guidance_lines = _guidance_lines()
     for line in text.splitlines():
         candidate = _normalized_guidance_line(line)
         if not candidate:
             continue
-        if (candidate in guidance_lines or _is_soft_length_guidance_line(candidate)) and candidate not in raw_lines:
+        if (
+            candidate in guidance_lines or _is_soft_length_guidance_line(candidate)
+        ) and candidate not in raw_lines:
             return True
     return False
 
@@ -1124,7 +1378,7 @@ def _is_prompt_wrapper_label(
     *,
     mode: InstructionOutputMode | None = None,
 ) -> bool:
-    normalized_mode = mode or instruction_output_mode(request.instruction)
+    normalized_mode = mode or resolved_mode_from_intent(request.intent, request.instruction)
     stripped = line.strip()
     if not STRUCTURED_LABEL_RE.match(stripped):
         return False
@@ -1149,11 +1403,15 @@ def _guidance_lines() -> set[str]:
         "follow the instruction carefully.",
         "do not invent causes or fixes.",
         "return a concise plain-text recall summary",
+        "return a concise plain-text recall summary optimized for later retrieval",
         "avoid headings, bullets, markdown, or extra sections unless the instruction asks for them",
         "return the exact requested lines or quoted excerpts only",
         "copy quoted or extracted lines exactly from the raw output",
         "do not summarize unless the instruction also asks for it",
         "follow the requested structure exactly",
+        "return only the requested value, command, identifier, or lines",
+        "no prose, labels, bullets, headings, code fences, or surrounding context",
+        "if the instruction implies one exact span, output only that span and nothing else",
         "do not add extra sections that were not requested",
         "if the instruction requires exact quoted material or a longer structured answer, prioritize correctness instead",
     }

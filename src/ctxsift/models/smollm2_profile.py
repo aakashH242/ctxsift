@@ -30,6 +30,10 @@ def generation_kwargs(tokenizer: object, max_output_tokens: int) -> dict[str, in
 
 def normalize_output(request: ModelCompressionInput | str, text: str | None = None) -> str:
     """Apply SmolLM2-specific cleanup to generated text."""
+    if text is None:
+        return normalize_profile_output(str(request))
+    if isinstance(request, str):
+        raise TypeError("request context is required when text is provided")
     return normalize_profile_output(request, text)
 
 

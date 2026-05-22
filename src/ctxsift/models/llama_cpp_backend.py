@@ -22,6 +22,7 @@ from ctxsift.models.local_runtime import (
 from ctxsift.models.text_model_profiles import resolve_text_model_profile
 from ctxsift.models.text_profile_common import (
     apply_soft_length_hint,
+    build_validation_failure_message,
     build_cpu_protection_messages,
     build_cpu_protection_repair_messages,
     build_repair_messages,
@@ -30,10 +31,8 @@ from ctxsift.models.text_profile_common import (
     recover_scaffold_prefixed_output,
     should_attempt_repair,
     validate_instruction_aware_output,
-    validation_flags,
 )
 from ctxsift.types import LocalModelConfig
-
 
 DEFAULT_LLAMA_CONTEXT_WINDOW = 8192
 DEFAULT_LLAMA_BATCH_SIZE = 512
@@ -104,7 +103,9 @@ class LlamaCppBackend(ModelBackend):
                 verbose=False,
             )
         except Exception as error:
-            raise BackendUnavailableError(f"Could not load llama.cpp model from {model_path}: {error}") from error
+            raise BackendUnavailableError(
+                f"Could not load llama.cpp model from {model_path}: {error}"
+            ) from error
         return LlamaRuntime(model=model, model_path=model_path)
 
     def _generate_text(self, runtime: LlamaRuntime, request: ModelCompressionInput) -> str:
@@ -135,13 +136,13 @@ class LlamaCppBackend(ModelBackend):
         repair_validation = validate_instruction_aware_output(request, repaired_output)
 
         raise ModelOutputRejectedError(
-            f"{self._profile.family_name} output validation failed. "
-            f"first_pass_status={first_validation.status} "
-            f"first_pass_flags={list(validation_flags(first_validation))!r} "
-            f"first_pass={_preview_generation_output(first_pass)!r} "
-            f"repair_status={repair_validation.status} "
-            f"repair_flags={list(validation_flags(repair_validation))!r} "
-            f"repair_pass={_preview_generation_output(repaired_output)!r}"
+            build_validation_failure_message(
+                self._profile.family_name,
+                first_validation,
+                first_pass,
+                repair_validation,
+                repaired_output,
+            )
         )
 
     def _run_generation(
@@ -325,10 +326,3 @@ def _fallback_prompt(messages: list[dict[str, str]]) -> str:
         lines.append(f"<|{role}|>\n{content}")
     lines.append("<|assistant|>")
     return "\n\n".join(lines)
-
-
-def _preview_generation_output(text: str, limit: int = 160) -> str:
-    normalized = " ".join(text.split())
-    if len(normalized) <= limit:
-        return normalized
-    return normalized[: limit - 3] + "..."

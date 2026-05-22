@@ -19,6 +19,7 @@ from benchmark.scoring import (
 from benchmark.runner import (
     _ANSI_BLUE,
     _ANSI_GREEN,
+    _should_enable_remote_mode,
     _warmup_backend,
     _print_benchmark_line,
     _print_case_progress,
@@ -35,6 +36,7 @@ from benchmark.schemas import (
     WarmupMetrics,
 )
 from benchmark.viewer import LoadedResult, render_html_report
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.extraction import ExtractionContext
 from ctxsift.models.base import (
     BackendUnavailableError,
@@ -96,9 +98,9 @@ def test_load_scenarios_reads_matrix() -> None:
     matrix_path = Path("benchmark/matrix.json")
     scenarios = load_scenarios(matrix_path)
 
-    assert any(scenario.name == "cpu-smollm2-135m-no-quant" for scenario in scenarios)
     assert any(scenario.name == "cpu-smollm2-360m-no-quant" for scenario in scenarios)
-    assert any(scenario.phase == "gpu-second-wave" for scenario in scenarios)
+    assert any(scenario.name == "gpu-qwen3-1.7b-no-quant" for scenario in scenarios)
+    assert any(scenario.phase == "gpu-screen" for scenario in scenarios)
 
 
 def test_select_scenarios_filters_by_name_and_phase() -> None:
@@ -126,6 +128,108 @@ def test_select_scenarios_filters_by_name_and_phase() -> None:
 
     selected = select_scenarios(scenarios, names=set(), phases={"cpu-screen"})
     assert [scenario.name for scenario in selected] == ["cpu-a"]
+
+
+def test_should_enable_remote_mode_for_remote_phase_selection() -> None:
+    scenarios = (
+        BenchmarkScenario(
+            name="cpu-a",
+            track="cpu",
+            phase="cpu-screen",
+            model="a",
+            quantization="none",
+            device="cpu",
+        ),
+        BenchmarkScenario(
+            name="remote-b",
+            track="remote",
+            phase="remote-screen",
+            model="b",
+            quantization="none",
+            device="remote",
+        ),
+    )
+
+    assert (
+        _should_enable_remote_mode(
+            scenarios,
+            remote_requested=False,
+            names=set(),
+            phases={"remote-screen"},
+        )
+        is True
+    )
+
+
+def test_should_enable_remote_mode_for_remote_named_selection() -> None:
+    scenarios = (
+        BenchmarkScenario(
+            name="cpu-a",
+            track="cpu",
+            phase="cpu-screen",
+            model="a",
+            quantization="none",
+            device="cpu",
+        ),
+        BenchmarkScenario(
+            name="remote-b",
+            track="remote",
+            phase="remote-screen",
+            model="b",
+            quantization="none",
+            device="remote",
+        ),
+    )
+
+    assert (
+        _should_enable_remote_mode(
+            scenarios,
+            remote_requested=False,
+            names={"remote-b"},
+            phases=set(),
+        )
+        is True
+    )
+
+
+def test_should_not_enable_remote_mode_for_mixed_or_local_selection() -> None:
+    scenarios = (
+        BenchmarkScenario(
+            name="cpu-a",
+            track="cpu",
+            phase="cpu-screen",
+            model="a",
+            quantization="none",
+            device="cpu",
+        ),
+        BenchmarkScenario(
+            name="remote-b",
+            track="remote",
+            phase="remote-screen",
+            model="b",
+            quantization="none",
+            device="remote",
+        ),
+    )
+
+    assert (
+        _should_enable_remote_mode(
+            scenarios,
+            remote_requested=False,
+            names=set(),
+            phases={"cpu-screen"},
+        )
+        is False
+    )
+    assert (
+        _should_enable_remote_mode(
+            scenarios,
+            remote_requested=False,
+            names={"cpu-a", "remote-b"},
+            phases=set(),
+        )
+        is False
+    )
 
 
 def test_build_scenario_filter_error_reports_phase_mismatch() -> None:
@@ -214,6 +318,8 @@ def test_render_markdown_report_includes_summary_and_case_rows() -> None:
                 case_id="python-traceback-01",
                 title="traceback",
                 domain="python",
+                instruction="Summarize the traceback.",
+                expected_output="AuthError in src/auth.py line 42.",
                 inference_ms=42.0,
                 cpu_rss_bytes=1234,
                 gpu_peak_bytes=None,
@@ -278,18 +384,21 @@ def test_brevity_ratio_penalizes_excess_residual_tokens() -> None:
 
 def test_instruction_following_score_respects_output_modes() -> None:
     plain_request = ModelCompressionInput(
+        intent=CompressionIntent.RECALL,
         instruction="Return a concise plain-text recall summary.",
         raw_input="alpha\nbeta\ngamma",
         extracted_signal=ExtractedSignal(),
         max_output_tokens=64,
     )
     structured_request = ModelCompressionInput(
+        intent=CompressionIntent.BULLET_LIST,
         instruction="Return a bullet list for later recall.",
         raw_input="alpha\nbeta\ngamma",
         extracted_signal=ExtractedSignal(),
         max_output_tokens=64,
     )
     exact_request = ModelCompressionInput(
+        intent=CompressionIntent.EXACT_LINES,
         instruction="Quote the first 2 lines exactly.",
         raw_input="alpha\nbeta\ngamma",
         extracted_signal=ExtractedSignal(),
@@ -299,18 +408,21 @@ def test_instruction_following_score_respects_output_modes() -> None:
     assert instruction_following_score(plain_request, "short plain summary") == 1.0
     assert instruction_following_score(plain_request, "- short\n- plain") == 0.5
     assert instruction_following_score(structured_request, "- alpha\n- beta") == 1.0
-    assert instruction_following_score(structured_request, "alpha beta") == 0.5
+    assert instruction_following_score(structured_request, "alpha beta") == 0.0
     assert instruction_following_score(exact_request, "alpha\nbeta") == 1.0
     assert instruction_following_score(exact_request, "alpha\nparaphrased beta") == 0.5
     assert instruction_following_score(exact_request, "paraphrase only") == 0.0
-    assert instruction_following_score(
-        plain_request,
-        "short plain summary with too many extra tokens appended after the useful answer",
-        output_mode="plain_text",
-        expected_output="short plain summary",
-        required_anchors=(),
-        max_extra_tokens=2,
-    ) < 1.0
+    assert (
+        instruction_following_score(
+            plain_request,
+            "short plain summary with too many extra tokens appended after the useful answer",
+            output_mode="plain_text",
+            expected_output="short plain summary",
+            required_anchors=(),
+            max_extra_tokens=2,
+        )
+        < 1.0
+    )
 
 
 def test_final_benchmark_score_prioritizes_preservation_and_instruction() -> None:
@@ -498,11 +610,17 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
     assert "finalScore" in html_report
     assert "summaryQualityRatio" in html_report
     assert "instructionFollowingScore" in html_report
-    assert "100 x quality_core x latency, where quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)" in html_report
+    assert (
+        "100 x quality_core x latency, where quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)"
+        in html_report
+    )
     assert "Highest final score across CPU scenarios." not in html_report
     assert "Highest final score across GPU scenarios." not in html_report
     assert "Avg and p95 only. Click a row to inspect that scenario below." not in html_report
-    assert "Rail = success and failure base. Markers = exact, preserve, instruction, quality. Score stays on the right." not in html_report
+    assert (
+        "Rail = success and failure base. Markers = exact, preserve, instruction, quality. Score stays on the right."
+        not in html_report
+    )
 
 
 def test_print_case_progress_show_output_includes_stats(capsys) -> None:
@@ -510,6 +628,8 @@ def test_print_case_progress_show_output_includes_stats(capsys) -> None:
         case_id="python-traceback-01",
         title="traceback",
         domain="python",
+        instruction="Summarize the traceback.",
+        expected_output="AuthError in src/auth.py line 42.",
         inference_ms=42.0,
         cpu_rss_bytes=1024 * 1024,
         gpu_peak_bytes=None,
@@ -549,6 +669,8 @@ def test_print_case_progress_colors_success_lines_when_tty(capsys, monkeypatch) 
         case_id="python-traceback-01",
         title="traceback",
         domain="python",
+        instruction="Summarize the traceback.",
+        expected_output="AuthError in src/auth.py line 42.",
         inference_ms=42.0,
         cpu_rss_bytes=1024 * 1024,
         gpu_peak_bytes=None,

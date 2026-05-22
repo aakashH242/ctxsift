@@ -11,7 +11,6 @@ from ctxsift.file_fingerprint import sha256_if_reasonable
 from ctxsift.storage import initialize_database, insert_record_bundle
 from ctxsift.types import ExtractedTermRecord, ReferencedFileRecord, StoredRecord
 
-
 runner = CliRunner()
 
 
@@ -39,6 +38,8 @@ def test_recall_command_renders_results_and_freshness(tmp_path: Path, monkeypatc
 
     assert result.exit_code == 0
     assert "[1] fresh" in result.stdout
+    assert "Captured at:" in result.stdout
+    assert "just now ago" not in result.stdout
     assert "Instruction: summarize auth failures" in result.stdout
     assert "Files: src/auth.py" in result.stdout
 
@@ -110,7 +111,10 @@ def test_recall_without_global_config_warns_and_returns_no_results(
     result = runner.invoke(app, ["recall", "AuthError"])
 
     assert result.exit_code == 0
-    assert "[ctxsift warning] No workspace config, global config, or ctxsift env config is set yet." in result.stderr
+    assert (
+        "[ctxsift warning] No workspace config, global config, or ctxsift env config is set yet."
+        in result.stderr
+    )
     assert result.stdout.strip() == "No recall results."
 
 

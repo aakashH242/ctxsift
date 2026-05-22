@@ -16,6 +16,9 @@ import threading
 import time
 from typing import Any
 
+from rich.console import Console
+from rich.panel import Panel
+
 from ctxsift.daemon.registry import (
     delete_registry_record_if_owned,
     write_registry_record,
@@ -33,12 +36,15 @@ from ctxsift.daemon.types import (
     HealthResponse,
     JsonErrorPayload,
 )
-from ctxsift.embeddings.base import DocumentEmbeddingRequest, EmbeddingBackend, QueryEmbeddingRequest
+from ctxsift.embeddings.base import (
+    DocumentEmbeddingRequest,
+    EmbeddingBackend,
+    QueryEmbeddingRequest,
+)
 from ctxsift.embeddings.factory import create_in_process_embedding_backend
 from ctxsift.models.local_runtime import resolve_local_runtime
 from ctxsift.models.base import ModelBackend, ModelCompressionInput
 from ctxsift.models.factory import create_local_backend
-
 
 AUTH_HEADER = "X-Ctxsift-Token"
 SERVER_POLL_INTERVAL_SECONDS = 0.5
@@ -101,6 +107,7 @@ class CompressionRuntimeService:
                 result = asyncio.run(
                     self._backend.compress(
                         ModelCompressionInput(
+                            intent=task.request.intent,
                             instruction=task.request.instruction,
                             raw_input=task.request.raw_input,
                             extracted_signal=task.request.extracted_signal,
@@ -297,7 +304,7 @@ class DaemonApp:
     def handle_compress(self, payload: CompressRequestPayload) -> CompressResponsePayload:
         self._begin_request()
         try:
-            result = self._service.submit(payload)
+            result = self._compression_service().submit(payload)
             return CompressResponsePayload(compressed_output=result)
         finally:
             self._end_request()
@@ -305,7 +312,7 @@ class DaemonApp:
     def handle_embed_query(self, payload: EmbedQueryRequestPayload) -> EmbedQueryResponsePayload:
         self._begin_request()
         try:
-            return self._service.submit_query(payload.request)
+            return self._embedding_service().submit_query(payload.request)
         finally:
             self._end_request()
 
@@ -315,7 +322,7 @@ class DaemonApp:
     ) -> EmbedDocumentsResponsePayload:
         self._begin_request()
         try:
-            return self._service.submit_documents(payload.request)
+            return self._embedding_service().submit_documents(payload.request)
         finally:
             self._end_request()
 
@@ -374,6 +381,16 @@ class DaemonApp:
             max_batch_size=self.payload.daemon.embedding_max_batch_size,
         )
 
+    def _compression_service(self) -> CompressionRuntimeService:
+        if not isinstance(self._service, CompressionRuntimeService):
+            raise RuntimeError("Compression request received by embedding daemon.")
+        return self._service
+
+    def _embedding_service(self) -> EmbeddingRuntimeService:
+        if not isinstance(self._service, EmbeddingRuntimeService):
+            raise RuntimeError("Embedding request received by compression daemon.")
+        return self._service
+
     def _write_registry_record(self) -> None:
         record = DaemonRegistryRecord(
             role=self.payload.role,
@@ -410,7 +427,9 @@ class DaemonApp:
 
             def do_GET(self) -> None:  # noqa: N802
                 if not app.is_authorized(self.headers.get(AUTH_HEADER)):
-                    self._write_json(HTTPStatus.UNAUTHORIZED, JsonErrorPayload(error="Unauthorized"))
+                    self._write_json(
+                        HTTPStatus.UNAUTHORIZED, JsonErrorPayload(error="Unauthorized")
+                    )
                     return
                 if self.path != "/health":
                     self._write_json(HTTPStatus.NOT_FOUND, JsonErrorPayload(error="Not found"))
@@ -419,20 +438,31 @@ class DaemonApp:
 
             def do_POST(self) -> None:  # noqa: N802
                 if not app.is_authorized(self.headers.get(AUTH_HEADER)):
-                    self._write_json(HTTPStatus.UNAUTHORIZED, JsonErrorPayload(error="Unauthorized"))
+                    self._write_json(
+                        HTTPStatus.UNAUTHORIZED, JsonErrorPayload(error="Unauthorized")
+                    )
                     return
                 try:
                     if self.path == "/compress":
-                        payload = CompressRequestPayload.model_validate_json(self._read_body())
-                        self._write_json(HTTPStatus.OK, app.handle_compress(payload))
+                        compress_payload = CompressRequestPayload.model_validate_json(
+                            self._read_body()
+                        )
+                        self._write_json(HTTPStatus.OK, app.handle_compress(compress_payload))
                         return
                     if self.path == "/embed_query":
-                        payload = EmbedQueryRequestPayload.model_validate_json(self._read_body())
-                        self._write_json(HTTPStatus.OK, app.handle_embed_query(payload))
+                        query_payload = EmbedQueryRequestPayload.model_validate_json(
+                            self._read_body()
+                        )
+                        self._write_json(HTTPStatus.OK, app.handle_embed_query(query_payload))
                         return
                     if self.path == "/embed_documents":
-                        payload = EmbedDocumentsRequestPayload.model_validate_json(self._read_body())
-                        self._write_json(HTTPStatus.OK, app.handle_embed_documents(payload))
+                        documents_payload = EmbedDocumentsRequestPayload.model_validate_json(
+                            self._read_body()
+                        )
+                        self._write_json(
+                            HTTPStatus.OK,
+                            app.handle_embed_documents(documents_payload),
+                        )
                         return
                     if self.path == "/stop":
                         app.request_stop()
@@ -468,4 +498,29 @@ class DaemonApp:
 
 def run_daemon(payload: DaemonLaunchPayload) -> None:
     """Run one daemon worker until stopped or idle timeout is reached."""
+    _print_startup_notice(payload)
     DaemonApp(payload).serve()
+
+
+def _print_startup_notice(payload: DaemonLaunchPayload) -> None:
+    if payload.role is DaemonRole.COMPRESSION:
+        if payload.local is None:
+            raise RuntimeError("Compression daemon launch payload is missing local config.")
+        model_name = payload.local.model
+        device_name = payload.local.device
+    else:
+        if payload.embedding is None:
+            raise RuntimeError("Embedding daemon launch payload is missing embedding config.")
+        model_name = payload.embedding.model
+        device_name = payload.embedding.device
+    body = "\n".join(
+        [
+            f"CtxSift daemon started for {payload.role.value} requests.",
+            f"Model: {model_name}",
+            f"Device: {device_name}",
+            f"Port: {payload.port}",
+            f"Log file: {payload.log_path}",
+            "Do not close this process while clients are using the daemon.",
+        ]
+    )
+    Console().print(Panel(body, title="CtxSift Daemon", border_style="cyan"))

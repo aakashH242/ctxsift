@@ -6,10 +6,11 @@ from datetime import timedelta
 from datetime import timezone
 from pathlib import Path
 
-from ctxsift.file_fingerprint import sha256_if_reasonable
-from ctxsift.recall_hybrid import HybridRecallRequest, build_hybrid_records
+from ctxsift.shared.hashing import sha256_if_reasonable
+from ctxsift.recall.hybrid import HybridRecallRequest, build_hybrid_records
+from ctxsift.recall.ranking import RankingRequest, rank_records
 from ctxsift.recall import recall_records
-from ctxsift.recall_freshness import assess_record_freshness
+from ctxsift.recall.freshness import assess_record_freshness
 from ctxsift.storage import initialize_database, insert_record_bundle
 from ctxsift.types import (
     ExtractedTermRecord,
@@ -209,11 +210,60 @@ def test_recall_records_prioritize_multi_signal_matches(tmp_path: Path) -> None:
     assert results[0].score > results[1].score
 
 
+def test_rank_records_prefers_newer_results_for_latest_queries(tmp_path: Path) -> None:
+    older_record = RecallStorageRecord(
+        record_id=1,
+        created_at="2026-05-15 00:00:00",
+        workspace_root=str(tmp_path),
+        instruction="auth failure triage",
+        compressed_output="Auth failure in src/auth.py",
+        command="pytest tests/test_auth.py -q",
+        command_exit_code=1,
+        extracted_terms=[ExtractedTermRecord(term="AuthError", kind="symbol")],
+    )
+    newer_record = RecallStorageRecord(
+        record_id=2,
+        created_at="2026-05-19 00:00:00",
+        workspace_root=str(tmp_path),
+        instruction="auth notes",
+        compressed_output="Auth failure in src/auth.py",
+        command="pytest tests/test_auth.py -q",
+        command_exit_code=1,
+        extracted_terms=[ExtractedTermRecord(term="AuthError", kind="symbol")],
+    )
+    records = [older_record, newer_record]
+    default_ranked = rank_records(
+        RankingRequest(
+            records=records,
+            fts_ranks={1: 1, 2: 2},
+            normalized_query="auth failure",
+            search_terms=["auth", "failure"],
+            file_filters=[],
+            recency_weight=0.75,
+            prefer_recent=False,
+        )
+    )
+    latest_ranked = rank_records(
+        RankingRequest(
+            records=records,
+            fts_ranks={1: 1, 2: 2},
+            normalized_query="latest auth failure",
+            search_terms=["latest", "auth", "failure"],
+            file_filters=[],
+            recency_weight=2.0,
+            prefer_recent=True,
+        )
+    )
+
+    assert default_ranked[0].record_id == 1
+    assert latest_ranked[0].record_id == 2
+
+
 def test_recall_records_include_vector_only_candidates(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import ctxsift.recall as recall_module
+    import ctxsift.recall.orchestrator as recall_module
 
     repo_path = tmp_path / "repo"
     git_dir = repo_path / ".git"
@@ -263,7 +313,7 @@ def test_recall_records_schedule_background_retention_cleanup(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import ctxsift.recall as recall_module
+    import ctxsift.recall.orchestrator as recall_module
 
     repo_path = tmp_path / "repo"
     git_dir = repo_path / ".git"
@@ -309,7 +359,9 @@ def test_recall_records_schedule_background_retention_cleanup(
     async def fake_vector_hits(*args, **kwargs):
         return []
 
-    monkeypatch.setattr(recall_module, "schedule_retention_cleanup", fake_schedule_retention_cleanup)
+    monkeypatch.setattr(
+        recall_module, "schedule_retention_cleanup", fake_schedule_retention_cleanup
+    )
     monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
 
     results = asyncio.run(recall_records("AuthError", repo_path))
@@ -323,7 +375,7 @@ def test_recall_records_drop_weak_vector_only_candidates(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import ctxsift.recall as recall_module
+    import ctxsift.recall.orchestrator as recall_module
 
     repo_path = tmp_path / "repo"
     git_dir = repo_path / ".git"
@@ -371,7 +423,7 @@ def test_recall_records_apply_file_filters_after_retrieval(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
-    import ctxsift.recall as recall_module
+    import ctxsift.recall.orchestrator as recall_module
 
     repo_path = tmp_path / "repo"
     git_dir = repo_path / ".git"
@@ -490,12 +542,120 @@ def test_hybrid_recall_boosts_exact_symbol_test_and_file_hits(tmp_path: Path) ->
             normalized_query="autherror",
             search_terms=["autherror", "tests/test_auth.py::test_login"],
             max_vector_distance=0.75,
+            min_score=120,
+            weak_fallback_min_score=90,
+            weak_fallback_limit=1,
         )
     )
 
     assert len(results) == 2
     assert results[0].record_id == 1
     assert results[0].score > results[1].score
+
+
+def test_hybrid_recall_drops_low_scoring_tail_when_strong_matches_exist(tmp_path: Path) -> None:
+    primary = RecallStorageRecord(
+        record_id=1,
+        created_at="2026-05-15 00:00:00",
+        workspace_root=str(tmp_path),
+        instruction="auth failure triage",
+        compressed_output="AuthError in src/auth.py",
+        command="pytest tests/test_auth.py -q",
+        command_exit_code=1,
+        referenced_files=[],
+        extracted_terms=[ExtractedTermRecord(term="AuthError", kind="symbol")],
+        matched_fields=[],
+        score=0,
+    )
+    weak = RecallStorageRecord(
+        record_id=2,
+        created_at="2026-05-15 00:00:01",
+        workspace_root=str(tmp_path),
+        instruction="unrelated auth notes",
+        compressed_output="general auth context",
+        command=None,
+        command_exit_code=None,
+        referenced_files=[],
+        extracted_terms=[],
+        matched_fields=[],
+        score=0,
+    )
+
+    results = build_hybrid_records(
+        HybridRecallRequest(
+            lexical_records=[primary, weak],
+            all_records=[primary, weak],
+            vector_hits=[],
+            freshness_by_record_id={
+                1: FreshnessStatus.FRESH,
+                2: FreshnessStatus.UNKNOWN,
+            },
+            file_filters=[],
+            limit=10,
+            normalized_query="autherror pytest",
+            search_terms=["autherror", "pytest"],
+            max_vector_distance=0.75,
+            min_score=120,
+            weak_fallback_min_score=90,
+            weak_fallback_limit=1,
+        )
+    )
+
+    assert [item.record_id for item in results] == [1]
+
+
+def test_hybrid_recall_allows_bounded_weak_fallback_when_no_strong_matches(
+    tmp_path: Path,
+) -> None:
+    weak_one = RecallStorageRecord(
+        record_id=1,
+        created_at="2026-05-15 00:00:00",
+        workspace_root=str(tmp_path),
+        instruction="general auth notes",
+        compressed_output="Auth issue in src/auth.py",
+        command=None,
+        command_exit_code=None,
+        referenced_files=[],
+        extracted_terms=[ExtractedTermRecord(term="issue", kind="symbol")],
+        matched_fields=["instruction", "compressed_output"],
+        score=0,
+    )
+    weak_two = RecallStorageRecord(
+        record_id=2,
+        created_at="2026-05-15 00:00:01",
+        workspace_root=str(tmp_path),
+        instruction="older auth notes",
+        compressed_output="Auth issue elsewhere",
+        command=None,
+        command_exit_code=None,
+        referenced_files=[],
+        extracted_terms=[ExtractedTermRecord(term="issue", kind="symbol")],
+        matched_fields=["instruction", "compressed_output"],
+        score=0,
+    )
+
+    results = build_hybrid_records(
+        HybridRecallRequest(
+            lexical_records=[weak_one, weak_two],
+            all_records=[weak_one, weak_two],
+            vector_hits=[],
+            freshness_by_record_id={
+                1: FreshnessStatus.UNKNOWN,
+                2: FreshnessStatus.UNKNOWN,
+            },
+            file_filters=[],
+            limit=10,
+            normalized_query="auth issue",
+            search_terms=["auth", "issue"],
+            max_vector_distance=0.75,
+            min_score=500,
+            weak_fallback_min_score=120,
+            weak_fallback_limit=1,
+        )
+    )
+
+    assert len(results) == 1
+    assert results[0].record_id == 1
 
 
 def test_assess_record_freshness_labels_expected_states(tmp_path: Path) -> None:
@@ -636,9 +796,11 @@ def test_assess_record_freshness_uses_mtime_when_hash_missing(tmp_path: Path) ->
     assert asyncio.run(assess_record_freshness(record)) is FreshnessStatus.STALE_CHANGED
 
 
-def test_assess_record_freshness_uses_git_status_when_available(tmp_path: Path, monkeypatch) -> None:
+def test_assess_record_freshness_uses_git_status_when_available(
+    tmp_path: Path, monkeypatch
+) -> None:
     from ctxsift.git_file_status import GitFileStatus
-    import ctxsift.recall_freshness as recall_freshness
+    import ctxsift.recall.freshness as recall_freshness
 
     target_file = tmp_path / "git.py"
     target_file.write_text("same\n", encoding="utf-8")

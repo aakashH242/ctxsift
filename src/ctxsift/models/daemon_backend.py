@@ -27,6 +27,7 @@ class DaemonCompressionBackend(ModelBackend):
 
     async def compress(self, request: ModelCompressionInput) -> str:
         payload = CompressRequestPayload(
+            intent=request.intent,
             instruction=request.instruction,
             raw_input=request.raw_input,
             extracted_signal=request.extracted_signal,

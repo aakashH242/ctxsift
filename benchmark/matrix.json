@@ -73,15 +73,47 @@
     "device": "cpu"
   },
       {
-    "name": "cpu-kiwi-1.0-0.7b-no-quant",
+    "name": "cpu-gemma-3-1b-it-no-quant",
     "track": "cpu",
     "phase": "cpu-screen",
-    "model": "mradermacher/Kiwi-1.0-0.7B-32k-Instruct-GGUF",
-    "gguf_filename": "Kiwi-1.0-0.7B-32k-Instruct.Q8_0.gguf",
+    "model": "unsloth/gemma-3-1b-it-GGUF",
+    "gguf_filename": "gemma-3-1b-it-Q8_0.gguf",
     "quantization": "none",
     "device": "cpu"
   },
-
+          {
+    "name": "cpu-lfm2.5-1.2b-instruct-no-quant",
+    "track": "cpu",
+    "phase": "cpu-screen",
+    "model": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+    "gguf_filename": "LFM2.5-1.2B-Instruct-Q8_0.gguf",
+    "quantization": "none",
+    "device": "cpu"
+  },
+                  {
+    "name": "gpu-lfm2.5-1.2b-instruct-no-quant",
+    "track": "gpu",
+    "phase": "gpu-screen",
+    "model": "LiquidAI/LFM2.5-1.2B-Instruct",
+    "quantization": "none",
+    "device": "cuda"
+  },
+              {
+    "name": "gpu-granite-4.0-micro-no-quant",
+    "track": "gpu",
+    "phase": "gpu-screen",
+    "model": "ibm-granite/granite-4.0-micro",
+    "quantization": "none",
+    "device": "cuda"
+  },
+      {
+    "name": "gpu-gemma-3-1b-it-no-quant",
+    "track": "gpu",
+    "phase": "gpu-screen",
+    "model": "unsloth/gemma-3-1b-it",
+    "quantization": "none",
+    "device": "cuda"
+  },
 
     {
       "name": "gpu-granite-3.3-2b-instruct-no-quant",
@@ -131,14 +163,7 @@
       "quantization": "none",
       "device": "cuda"
     },
-    {
-      "name": "gpu-gemma4-e2b-it-no-quant",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "google/gemma-4-E2B-it",
-      "quantization": "none",
-      "device": "cuda"
-    },
+
     {
       "name": "remote-gpt-4.1-mini",
       "track": "remote",

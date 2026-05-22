@@ -6,7 +6,7 @@ from pathlib import Path
 import ctxsift.embedding_indexer as embedding_indexer
 from ctxsift.storage import initialize_database
 from ctxsift.types import EmbeddingConfig, StoredRecord
-from ctxsift.vector_store import search_record_embeddings
+from ctxsift.storage.vector import search_record_embeddings
 
 
 class FakeEmbeddingBackend:

@@ -1,12 +1,18 @@
 """Tests for the LiteLLM remote compression backend."""
 
 import asyncio
+import logging
 from types import SimpleNamespace
 
 import pytest
 
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.models.base import BackendUnavailableError, ModelCompressionInput, RemoteBackendOptions
-from ctxsift.models.litellm_remote import LiteLLMRemoteBackend
+from ctxsift.models.litellm_remote import (
+    LiteLLMRemoteBackend,
+    _LiteLLMLoggingWorkerErrorFilter,
+    _configure_litellm_runtime,
+)
 from ctxsift.types import ExtractedSignal
 
 
@@ -18,13 +24,7 @@ def test_litellm_remote_backend_uses_async_completion(
     async def fake_acompletion(**kwargs):
         captured.update(kwargs)
         return SimpleNamespace(
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(
-                        content="Remote summary"
-                    )
-                )
-            ]
+            choices=[SimpleNamespace(message=SimpleNamespace(content="Remote summary"))]
         )
 
     monkeypatch.setattr(
@@ -46,6 +46,7 @@ def test_litellm_remote_backend_uses_async_completion(
     result = asyncio.run(
         backend.compress(
             ModelCompressionInput(
+                intent=CompressionIntent.SUMMARY,
                 instruction="Summarize failures",
                 raw_input="AuthError: login failed",
                 extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -91,6 +92,7 @@ def test_litellm_remote_backend_rejects_empty_output(
         asyncio.run(
             backend.compress(
                 ModelCompressionInput(
+                    intent=CompressionIntent.SUMMARY,
                     instruction="Summarize",
                     raw_input="text",
                     extracted_signal=ExtractedSignal(),
@@ -126,6 +128,7 @@ def test_litellm_remote_backend_wraps_provider_errors(
         asyncio.run(
             backend.compress(
                 ModelCompressionInput(
+                    intent=CompressionIntent.SUMMARY,
                     instruction="Summarize",
                     raw_input="text",
                     extracted_signal=ExtractedSignal(),
@@ -133,3 +136,51 @@ def test_litellm_remote_backend_wraps_provider_errors(
                 )
             )
         )
+
+
+def test_litellm_runtime_configuration_suppresses_logging_worker_noise() -> None:
+    logger = logging.getLogger("LiteLLM")
+    original_filters = list(logger.filters)
+    original_marker = getattr(logger, "_ctxsift_logging_worker_filter_installed", None)
+    if original_marker is not None:
+        delattr(logger, "_ctxsift_logging_worker_filter_installed")
+    logger.filters = []
+    try:
+        fake_litellm = SimpleNamespace(suppress_debug_info=False)
+        _configure_litellm_runtime(fake_litellm)
+
+        assert fake_litellm.suppress_debug_info is True
+        assert len(logger.filters) == 1
+        assert isinstance(logger.filters[0], _LiteLLMLoggingWorkerErrorFilter)
+
+        record = logging.LogRecord(
+            name="LiteLLM",
+            level=logging.ERROR,
+            pathname="logging_worker.py",
+            lineno=103,
+            msg="LoggingWorker error: %s",
+            args=(TimeoutError(),),
+            exc_info=None,
+        )
+        assert logger.filters[0].filter(record) is False
+
+        normal_record = logging.LogRecord(
+            name="LiteLLM",
+            level=logging.ERROR,
+            pathname="litellm_remote.py",
+            lineno=1,
+            msg="Remote backend request failed",
+            args=(),
+            exc_info=None,
+        )
+        assert logger.filters[0].filter(normal_record) is True
+
+        _configure_litellm_runtime(fake_litellm)
+        assert len(logger.filters) == 1
+    finally:
+        logger.filters = original_filters
+        if original_marker is None:
+            if hasattr(logger, "_ctxsift_logging_worker_filter_installed"):
+                delattr(logger, "_ctxsift_logging_worker_filter_installed")
+        else:
+            setattr(logger, "_ctxsift_logging_worker_filter_installed", original_marker)

@@ -6,7 +6,7 @@ import sqlite3
 
 import pytest
 
-from ctxsift import retention
+from ctxsift.storage import retention
 from ctxsift.storage import (
     initialize_database,
     insert_record_bundle,
@@ -80,7 +80,9 @@ def test_prune_expired_records_deletes_old_rows_and_related_rows(
         deleted_embeddings.extend(record_ids)
         return None
 
-    monkeypatch.setattr("ctxsift.storage.delete_record_embeddings", fake_delete_record_embeddings)
+    monkeypatch.setattr(
+        "ctxsift.storage.database.delete_record_embeddings", fake_delete_record_embeddings
+    )
 
     result = asyncio.run(prune_expired_records(db_path, max_age_days=30))
 
@@ -88,9 +90,7 @@ def test_prune_expired_records_deletes_old_rows_and_related_rows(
     assert result.deleted_record_ids == [old_record_id]
     assert deleted_embeddings == [old_record_id]
     with sqlite3.connect(db_path) as connection:
-        records = connection.execute(
-            "SELECT id FROM records ORDER BY id ASC"
-        ).fetchall()
+        records = connection.execute("SELECT id FROM records ORDER BY id ASC").fetchall()
         referenced_files = connection.execute(
             "SELECT record_id, path FROM referenced_files ORDER BY record_id ASC"
         ).fetchall()

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from ctxsift.compression.intent import CompressionIntent
+
 
 class ReasoningMode(str, Enum):
     """Supported remote reasoning controls."""
@@ -72,6 +74,7 @@ class CacheLookupResult(StrictModel):
 class CompressionRequest(StrictModel):
     """Compression input carried through the pipeline."""
 
+    intent: CompressionIntent
     instruction: str
     raw_input: str = ""
     mode: str = "pipe"
@@ -205,7 +208,7 @@ class LocalModelConfig(StrictModel):
     """Local model configuration."""
 
     model: str = "ibm-granite/granite-4.0-350m-GGUF"
-    gguf_filename: str | None = "smollm2-360m-instruct-q8_0.gguf"
+    gguf_filename: str | None = "granite-4.0-350m-Q8_0.gguf"
     llama_context_window: int | None = None
     device: str = "auto"
     dtype: str = "auto"
@@ -268,6 +271,9 @@ class RecallConfig(StrictModel):
     lexical_candidate_limit: int = Field(default=50, ge=1)
     vector_candidate_limit: int = Field(default=50, ge=1)
     max_vector_distance: float = Field(default=0.75, ge=0.0)
+    min_score: int = Field(default=120, ge=0)
+    weak_fallback_min_score: int = Field(default=90, ge=0)
+    weak_fallback_limit: int = Field(default=1, ge=0)
 
 
 class DaemonConfig(StrictModel):

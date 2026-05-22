@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import math
-from typing import Sequence
+from typing import Any, Sequence
 
 from benchmark.schemas import BenchmarkCase
 from benchmark.scoring import summary_quality_ratio
@@ -12,10 +12,13 @@ from ctxsift.embeddings import create_in_process_embedding_backend
 from ctxsift.embeddings.base import DocumentEmbeddingRequest, EmbeddingBackendUnavailableError
 from ctxsift.types import EmbeddingConfig
 
+yaml_module: Any | None
 try:  # pragma: no cover - optional dependency in some environments
-    import yaml
+    import yaml as _yaml
 except ImportError:  # pragma: no cover - optional dependency in some environments
-    yaml = None
+    yaml_module = None
+else:  # pragma: no cover - optional dependency in some environments
+    yaml_module = _yaml
 
 
 _EMBEDDING_FAMILIES = {
@@ -249,10 +252,10 @@ def _parse_json(text: str) -> object | None:
 
 
 def _parse_yaml(text: str) -> object | None:
-    if yaml is None:
+    if yaml_module is None:
         return None
     try:
-        return yaml.safe_load(text)
+        return yaml_module.safe_load(text)
     except Exception:
         return None
 
@@ -306,11 +309,11 @@ def _flatten_structure(value: object, prefix: str = "") -> list[tuple[str, str]]
             flattened.extend(_flatten_structure(value[key], next_prefix))
         return flattened
     if isinstance(value, list):
-        flattened: list[tuple[str, str]] = []
+        flattened_items: list[tuple[str, str]] = []
         for index, item in enumerate(value):
             next_prefix = f"{prefix}[{index}]" if prefix else f"[{index}]"
-            flattened.extend(_flatten_structure(item, next_prefix))
-        return flattened
+            flattened_items.extend(_flatten_structure(item, next_prefix))
+        return flattened_items
     normalized_value = "" if value is None else str(value).strip()
     return [(prefix or "$", normalized_value)]
 

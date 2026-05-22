@@ -8,6 +8,7 @@ from typing import Any
 
 from pydantic import Field
 
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.embeddings.base import DocumentEmbeddingRequest, QueryEmbeddingRequest
 from ctxsift.types import (
     DaemonConfig,
@@ -107,6 +108,7 @@ class HealthResponse(StrictModel):
 class CompressRequestPayload(StrictModel):
     """Compression daemon request payload."""
 
+    intent: CompressionIntent
     instruction: str
     raw_input: str
     extracted_signal: ExtractedSignal

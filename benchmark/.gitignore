@@ -1,0 +1,68 @@
+# CtxSift storage and benchmark artifact
+.ctxsift
+.certs
+infrastructure
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Editor / IDE settings
+.idea/
+.vscode/
+*.iml
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Packaging / build artifacts
+build/
+dist/
+site/
+.eggs/
+*.egg
+*.egg-info/
+pip-wheel-metadata/
+
+# Test, lint, and type-checker caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.pyre/
+.hypothesis/
+.nox/
+.tox/
+.cache/
+dmypy.json
+.dmypy.json
+
+# Coverage output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+
+# Local environment files
+.env
+.env.*
+*.local
+
+# Logs
+*.log
+
+# ctxsift local workspace data
+.ctxsift/
+
+# Notebook checkpoints
+.ipynb_checkpoints/
+

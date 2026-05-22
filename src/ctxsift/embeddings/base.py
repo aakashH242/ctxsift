@@ -5,7 +5,6 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 
-
 DEFAULT_RECALL_QUERY_PROMPT = (
     "Instruct: Given a coding issue, command output, or debugging question, "
     "retrieve prior command outputs, errors, files, and fixes that are most useful "

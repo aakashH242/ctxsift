@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import threading
 import time
+from typing import cast
 
-from ctxsift.daemon.server import CompressionRuntimeService, EmbeddingRuntimeService
+from ctxsift.compression.intent import CompressionIntent
+from ctxsift.daemon.server import (
+    CompressionRuntimeService,
+    EmbeddingRuntimeService,
+    _print_startup_notice,
+)
+from ctxsift.daemon.types import DaemonLaunchPayload, DaemonRole
 from ctxsift.daemon.types import CompressRequestPayload
 from ctxsift.embeddings.base import DocumentEmbeddingRequest, QueryEmbeddingRequest
-from ctxsift.models.base import ModelCompressionInput
-from ctxsift.types import ExtractedSignal
+from ctxsift.embeddings.base import EmbeddingBackend
+from ctxsift.models.base import ModelBackend, ModelCompressionInput
+from ctxsift.types import DaemonConfig, EmbeddingConfig, ExtractedSignal, LocalModelConfig
 
 
 class FakeCompressionBackend:
@@ -63,7 +71,7 @@ class FakeEmbeddingBackend:
 
 def test_compression_runtime_service_serializes_requests_without_mixing_outputs() -> None:
     backend = FakeCompressionBackend()
-    service = CompressionRuntimeService(backend)
+    service = CompressionRuntimeService(cast(ModelBackend, backend))
     service.start()
     try:
         results: list[str] = ["", ""]
@@ -71,6 +79,7 @@ def test_compression_runtime_service_serializes_requests_without_mixing_outputs(
         def submit(index: int, text: str) -> None:
             results[index] = service.submit(
                 CompressRequestPayload(
+                    intent=CompressionIntent.SUMMARY,
                     instruction="compress",
                     raw_input=text,
                     extracted_signal=ExtractedSignal(),
@@ -93,7 +102,9 @@ def test_compression_runtime_service_serializes_requests_without_mixing_outputs(
 
 def test_embedding_runtime_service_batches_query_requests() -> None:
     backend = FakeEmbeddingBackend()
-    service = EmbeddingRuntimeService(backend, batch_window_ms=50, max_batch_size=8)
+    service = EmbeddingRuntimeService(
+        cast(EmbeddingBackend, backend), batch_window_ms=50, max_batch_size=8
+    )
     service.start()
     try:
         results: list[list[float]] = [[], []]
@@ -118,7 +129,9 @@ def test_embedding_runtime_service_batches_query_requests() -> None:
 
 def test_embedding_runtime_service_batches_document_requests() -> None:
     backend = FakeEmbeddingBackend()
-    service = EmbeddingRuntimeService(backend, batch_window_ms=50, max_batch_size=8)
+    service = EmbeddingRuntimeService(
+        cast(EmbeddingBackend, backend), batch_window_ms=50, max_batch_size=8
+    )
     service.start()
     try:
         outputs: list[list[list[float]]] = [[], []]
@@ -140,3 +153,25 @@ def test_embedding_runtime_service_batches_document_requests() -> None:
     assert backend.document_batches == [[["one"], ["two", "three"]]]
     assert outputs[0] == [[1.0, 0.0, 0.0]]
     assert outputs[1] == [[1.0, 0.0, 0.0], [1.0, 0.0, 0.0]]
+
+
+def test_print_startup_notice_reports_daemon_details(capsys) -> None:
+    payload = DaemonLaunchPayload(
+        role=DaemonRole.COMPRESSION,
+        signature_hash="sig",
+        port=4012,
+        auth_token="token",
+        registry_path="C:/tmp/ctxsift-registry.json",
+        log_path="C:/tmp/ctxsift.log",
+        daemon=DaemonConfig(),
+        local=LocalModelConfig(model="ibm-granite/granite-4.0-350m-GGUF", device="cpu"),
+        embedding=EmbeddingConfig(),
+    )
+
+    _print_startup_notice(payload)
+
+    output = capsys.readouterr().out
+    assert "CtxSift daemon started for compression requests." in output
+    assert "Model: ibm-granite/granite-4.0-350m-GGUF" in output
+    assert "Device: cpu" in output
+    assert "Do not close this process while clients are using the daemon." in output

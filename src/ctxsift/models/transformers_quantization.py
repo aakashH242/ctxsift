@@ -9,12 +9,12 @@ from typing import Any
 from ctxsift.models.base import BackendUnavailableError
 from ctxsift.types import LocalModelConfig, LocalQuantizationMode
 
-
 _BITSANDBYTES_MODES = {
     LocalQuantizationMode.BNB_8BIT,
     LocalQuantizationMode.BNB_4BIT_FP4,
     LocalQuantizationMode.BNB_4BIT_NF4,
 }
+
 
 @dataclass(frozen=True)
 class TransformersLoadOptions:
@@ -56,9 +56,7 @@ def _build_quantization_config(
     if quantization in _BITSANDBYTES_MODES:
         config_class = _load_bitsandbytes_config_class()
         return config_class(**_bitsandbytes_kwargs(quantization, torch_dtype))
-    raise BackendUnavailableError(
-        f"Unsupported quantization mode '{quantization.value}'."
-    )
+    raise BackendUnavailableError(f"Unsupported quantization mode '{quantization.value}'.")
 
 
 def _bitsandbytes_kwargs(

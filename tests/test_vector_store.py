@@ -4,7 +4,11 @@ import asyncio
 from pathlib import Path
 
 from ctxsift.storage import initialize_database
-from ctxsift.vector_store import ensure_vector_store, search_record_embeddings, upsert_record_embedding
+from ctxsift.storage.vector import (
+    ensure_vector_store,
+    search_record_embeddings,
+    upsert_record_embedding,
+)
 
 
 def test_vector_store_accepts_embeddings_and_searches(tmp_path: Path) -> None:

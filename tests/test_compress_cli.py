@@ -11,8 +11,7 @@ from typer.testing import CliRunner
 
 import ctxsift.cli as cli
 from ctxsift.cli import app
-from ctxsift import compression
-
+from ctxsift.compression import pipeline as compression
 
 runner = CliRunner()
 
@@ -39,12 +38,26 @@ def test_compress_command_reads_stdin_and_uses_exact_cache(tmp_path: Path, monke
 
     first_result = runner.invoke(
         app,
-        ["compress", "summarize auth failures", "--max-output-tokens", "128"],
+        [
+            "compress",
+            "--intent",
+            "summary",
+            "summarize auth failures",
+            "--max-output-tokens",
+            "128",
+        ],
         input="AuthError: login failed\npytest exited with code 1\n",
     )
     second_result = runner.invoke(
         app,
-        ["compress", "summarize auth failures", "--max-output-tokens", "128"],
+        [
+            "compress",
+            "--intent",
+            "summary",
+            "summarize auth failures",
+            "--max-output-tokens",
+            "128",
+        ],
         input="AuthError: login failed\npytest exited with code 1\n",
     )
 
@@ -80,6 +93,8 @@ def test_compress_command_preserves_child_exit_code_and_stores_metadata(
         app,
         [
             "compress",
+            "--intent",
+            "summary",
             "summarize failing command",
             "--",
             sys.executable,
@@ -93,12 +108,10 @@ def test_compress_command_preserves_child_exit_code_and_stores_metadata(
     raw_input = cast(str, seen["raw_input"])
     assert raw_input == "hello\n\noops"
     with sqlite3.connect(db_path) as connection:
-        row = connection.execute(
-            """
+        row = connection.execute("""
             SELECT mode, command, command_exit_code, command_duration_ms, stdout_hash, stderr_hash
             FROM records
-            """
-        ).fetchone()
+            """).fetchone()
 
     assert row is not None
     assert row[0] == "run"
@@ -129,6 +142,8 @@ def test_compress_command_supports_explicit_shell_mode(tmp_path: Path, monkeypat
         [
             "compress",
             "--shell",
+            "--intent",
+            "summary",
             "summarize failing command",
             "--",
             _shell_test_command(),
@@ -150,12 +165,15 @@ def test_compress_without_global_config_warns_and_returns_raw_input(
 
     result = runner.invoke(
         app,
-        ["compress", "summarize auth failures"],
+        ["compress", "--intent", "summary", "summarize auth failures"],
         input="AuthError: login failed\n",
     )
 
     assert result.exit_code == 0
-    assert "[ctxsift warning] No workspace config, global config, or ctxsift env config is set yet." in result.stderr
+    assert (
+        "[ctxsift warning] No workspace config, global config, or ctxsift env config is set yet."
+        in result.stderr
+    )
     assert result.stdout == "AuthError: login failed\n"
 
 
@@ -180,7 +198,7 @@ def test_compress_accepts_env_only_config_and_initializes_workspace(
 
     result = runner.invoke(
         app,
-        ["compress", "summarize auth failures"],
+        ["compress", "--intent", "summary", "summarize auth failures"],
         input="AuthError: login failed\n",
         env=env,
     )
@@ -188,6 +206,59 @@ def test_compress_accepts_env_only_config_and_initializes_workspace(
     assert result.exit_code == 0
     assert "Env-config summary" in result.stdout
     assert (tmp_path / ".ctxsift" / "ctxsift.db").exists()
+
+
+def test_compress_requires_intent_flag() -> None:
+    result = runner.invoke(
+        app,
+        ["compress", "summarize auth failures"],
+        input="AuthError: login failed\n",
+    )
+
+    assert result.exit_code != 0
+    assert "Missing option '--intent'" in result.stderr
+
+
+@pytest.mark.parametrize(
+    "intent_name",
+    [
+        "summary",
+        "recall",
+        "exact-lines",
+        "exact-format",
+        "json",
+        "yaml",
+        "table",
+        "bullet-list",
+    ],
+)
+def test_compress_accepts_all_public_intents(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    intent_name: str,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    _write_workspace_db_path_config(tmp_path, tmp_path / "ctxsift.db")
+    seen: dict[str, object] = {}
+
+    class FakeBackend:
+        provider_name = "transformers"
+        model_name = "google/gemma-test"
+        cache_model_id = "google/gemma-test"
+
+        async def compress(self, request) -> str:
+            seen["intent"] = request.intent.value
+            return "ok"
+
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
+    result = runner.invoke(
+        app,
+        ["compress", "--intent", intent_name, "summarize auth failures"],
+        input="AuthError: login failed\n",
+    )
+
+    assert result.exit_code == 0
+    assert seen["intent"] == intent_name
 
 
 def _write_workspace_db_path_config(tmp_path: Path, db_path: Path) -> None:

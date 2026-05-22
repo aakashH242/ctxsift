@@ -13,7 +13,7 @@ import re
 from statistics import mean
 import sys
 import time
-from typing import Awaitable, Iterable, Mapping, TypeVar
+from typing import Awaitable, Iterable, Literal, Mapping, TypeVar, cast
 
 from benchmark.loader import load_manifest
 from benchmark.metrics import (
@@ -48,6 +48,7 @@ from benchmark.schemas import (
     WarmupMetrics,
 )
 from benchmark.stats import percentile
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.config import ConfigResolutionRequest, resolve_config
 from ctxsift.extraction import ExtractionContext, extract_signal
 from ctxsift.models import create_compression_backend, create_local_backend
@@ -67,7 +68,9 @@ from ctxsift.workspace import detect_workspace_context
 
 _AwaitableResult = TypeVar("_AwaitableResult")
 _RUN_NAME_RE = re.compile(r"[^A-Za-z0-9._-]+")
-_VALIDATION_STATUS_RE = re.compile(r"\b(?:first_pass_status|repair_status)=(accepted|soft_accepted|rejected)\b")
+_VALIDATION_STATUS_RE = re.compile(
+    r"\b(?:first_pass_status|repair_status)=(accepted|soft_accepted|rejected)\b"
+)
 _VALIDATION_FLAGS_RE = re.compile(r"\b(?:first_pass_flags|repair_flags)=(\[[^\]]*\])")
 _ANSI_RESET = "\x1b[0m"
 _ANSI_BLUE = "\x1b[34m"
@@ -153,11 +156,19 @@ async def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
     manifest = load_manifest(Path(args.dataset), Path(args.matrix))
-    remote_config = _remote_listing_config(manifest.scenarios, args.remote, args.list_scenarios)
+    requested_names = set(args.scenario)
+    requested_phases = set(args.phase)
+    remote_enabled = _should_enable_remote_mode(
+        manifest.scenarios,
+        remote_requested=args.remote,
+        names=requested_names,
+        phases=requested_phases,
+    )
+    remote_config = _remote_listing_config(manifest.scenarios, remote_enabled, args.list_scenarios)
     if remote_config is None:
         remote_config = _resolve_remote_benchmark_config(
             env_file=Path(args.env_file),
-            enabled=args.remote,
+            enabled=remote_enabled,
         )
     scenarios_for_mode = _scenarios_for_mode(
         manifest.scenarios,
@@ -170,8 +181,8 @@ async def main() -> int:
     )
     scenarios = select_scenarios(
         scenarios_for_mode,
-        names=set(args.scenario),
-        phases=set(args.phase),
+        names=requested_names,
+        phases=requested_phases,
     )
     if args.list_scenarios:
         _print_scenarios(scenarios)
@@ -180,8 +191,8 @@ async def main() -> int:
         parser.error(
             build_scenario_filter_error(
                 scenarios_for_mode,
-                names=set(args.scenario),
-                phases=set(args.phase),
+                names=requested_names,
+                phases=requested_phases,
             )
         )
     if not cases:
@@ -192,9 +203,7 @@ async def main() -> int:
     named_run_output_dir = output_root / build_run_directory_name(timestamp, args.name)
     total_scenarios = len(scenarios)
     output_label = (
-        str(named_run_output_dir)
-        if args.name.strip()
-        else f"{output_root} (per-scenario folders)"
+        str(named_run_output_dir) if args.name.strip() else f"{output_root} (per-scenario folders)"
     )
     print(
         f"Running {total_scenarios} benchmark scenario(s) across {len(cases)} case(s). "
@@ -589,7 +598,7 @@ def _load_env_file(env_file: Path) -> Mapping[str, str]:
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):
-            line = line[len("export "):].strip()
+            line = line[len("export ") :].strip()
         if "=" not in line:
             continue
         key, value = line.split("=", 1)
@@ -631,6 +640,21 @@ def _remote_benchmark_scenario(
         concurrency=scenario.concurrency,
         enabled=scenario.enabled,
     )
+
+
+def _should_enable_remote_mode(
+    scenarios: tuple[BenchmarkScenario, ...],
+    *,
+    remote_requested: bool,
+    names: set[str],
+    phases: set[str],
+) -> bool:
+    if remote_requested:
+        return True
+    selected = select_scenarios(scenarios, names=names, phases=phases)
+    if not selected:
+        return False
+    return all(_is_remote_scenario(scenario) for scenario in selected)
 
 
 def _scenarios_for_mode(
@@ -695,6 +719,8 @@ async def _warmup_backend(
         raw_input="pytest failed in tests/test_auth.py::test_login\nE AuthError: invalid token",
         max_output_tokens=scenario.max_output_tokens,
         context=context,
+        family="recall",
+        output_mode="plain_text",
     )
     reset_gpu_peak_memory(torch_module)
     started = time.perf_counter()
@@ -730,6 +756,8 @@ async def _run_case(
             raw_input=case.raw_input,
             max_output_tokens=scenario.max_output_tokens,
             context=context,
+            family=case.family,
+            output_mode=case.output_mode,
             required_anchors=case.anchor_tokens,
         )
         reset_gpu_peak_memory(torch_module)
@@ -854,11 +882,18 @@ def _model_request(
     raw_input: str,
     max_output_tokens: int,
     context: ExtractionContext,
+    family: str = "summary",
+    output_mode: str = "plain_text",
     required_anchors: tuple[str, ...] = (),
-    evaluation_context: str = "benchmark",
+    evaluation_context: Literal["benchmark"] = "benchmark",
 ) -> ModelCompressionInput:
     signal = extract_signal(raw_input, context)
     return ModelCompressionInput(
+        intent=_benchmark_intent(
+            family=family,
+            output_mode=output_mode,
+            instruction=instruction,
+        ),
         instruction=instruction,
         raw_input=raw_input,
         extracted_signal=signal,
@@ -868,12 +903,75 @@ def _model_request(
     )
 
 
+def _benchmark_intent(
+    *,
+    family: str,
+    output_mode: str,
+    instruction: str,
+) -> CompressionIntent:
+    normalized_output_mode = output_mode.strip().casefold().replace("_", "-")
+    if normalized_output_mode == "json":
+        return CompressionIntent.JSON
+    if normalized_output_mode == "yaml":
+        return CompressionIntent.YAML
+    if normalized_output_mode == "table":
+        return CompressionIntent.TABLE
+    if normalized_output_mode == "bullet-list":
+        return CompressionIntent.BULLET_LIST
+    if normalized_output_mode == "exact-lines":
+        return CompressionIntent.EXACT_LINES
+    if normalized_output_mode in {"regex-constrained", "single-line"}:
+        return CompressionIntent.EXACT_FORMAT
+    if family == "recall":
+        return CompressionIntent.RECALL
+
+    normalized = instruction.casefold()
+    if any(token in normalized for token in ("json", "valid json only")):
+        return CompressionIntent.JSON
+    if "yaml" in normalized:
+        return CompressionIntent.YAML
+    if "table" in normalized:
+        return CompressionIntent.TABLE
+    if "bullet" in normalized or "bullets" in normalized:
+        return CompressionIntent.BULLET_LIST
+    if any(
+        token in normalized
+        for token in (
+            "quote exactly",
+            "verbatim",
+            "exact lines",
+            "exact line",
+            "copy the lines",
+            "extract the lines",
+        )
+    ):
+        return CompressionIntent.EXACT_LINES
+    if any(
+        token in normalized
+        for token in (
+            "return only",
+            "output only",
+            "single line",
+            "exact match",
+            "regex-constrained",
+            "no prose, bullets, backticks, or extra whitespace",
+        )
+    ):
+        return CompressionIntent.EXACT_FORMAT
+    if "recall" in normalized:
+        return CompressionIntent.RECALL
+    return CompressionIntent.SUMMARY
+
+
 def _rejected_validation_from_error(error: str):
     flags = _validation_flags_from_error(error)
     if not flags:
         return None
     statuses = _VALIDATION_STATUS_RE.findall(error)
-    status = "rejected" if "rejected" in statuses else (statuses[-1] if statuses else "rejected")
+    status = cast(
+        Literal["accepted", "soft_accepted", "rejected"],
+        "rejected" if "rejected" in statuses else (statuses[-1] if statuses else "rejected"),
+    )
     from ctxsift.models.text_profile_common import TextValidationResult
 
     return TextValidationResult(

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ctxsift import config_store
+from ctxsift.config import store as config_store
 from ctxsift.config import ConfigResolutionRequest, resolve_config
 from ctxsift.types import AppConfig, LocalQuantizationMode, ReasoningMode
 from ctxsift.workspace import detect_workspace_context
@@ -18,7 +18,7 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.retries == 1
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
     assert config.local.model == "ibm-granite/granite-4.0-350m-GGUF"
-    assert config.local.gguf_filename == "smollm2-360m-instruct-q8_0.gguf"
+    assert config.local.gguf_filename == "granite-4.0-350m-Q8_0.gguf"
     assert config.local.llama_context_window is None
     assert config.local.attn_implementation == "auto"
     assert config.local.quantization is LocalQuantizationMode.NONE
@@ -32,6 +32,9 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.recall.lexical_candidate_limit == 50
     assert config.recall.vector_candidate_limit == 50
     assert config.recall.max_vector_distance == 0.75
+    assert config.recall.min_score == 120
+    assert config.recall.weak_fallback_min_score == 90
+    assert config.recall.weak_fallback_limit == 1
     assert config.daemon.enabled is True
     assert config.daemon.idle_timeout_seconds == 600
     assert config.daemon.startup_timeout_ms == 15000
@@ -152,6 +155,9 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": "44",
             "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": "33",
             "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": "0.61",
+            "CTXSIFT_RECALL_MIN_SCORE": "140",
+            "CTXSIFT_RECALL_WEAK_FALLBACK_MIN_SCORE": "95",
+            "CTXSIFT_RECALL_WEAK_FALLBACK_LIMIT": "2",
             "CTXSIFT_DAEMON_ENABLED": "false",
             "CTXSIFT_DAEMON_IDLE_TIMEOUT_SECONDS": "321",
             "CTXSIFT_DAEMON_STARTUP_TIMEOUT_MS": "6543",
@@ -178,6 +184,9 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["recall"]["lexical_candidate_limit"] == 44
     assert layer["recall"]["vector_candidate_limit"] == 33
     assert layer["recall"]["max_vector_distance"] == 0.61
+    assert layer["recall"]["min_score"] == 140
+    assert layer["recall"]["weak_fallback_min_score"] == 95
+    assert layer["recall"]["weak_fallback_limit"] == 2
     assert layer["daemon"]["enabled"] is False
     assert layer["daemon"]["idle_timeout_seconds"] == 321
     assert layer["daemon"]["startup_timeout_ms"] == 6543

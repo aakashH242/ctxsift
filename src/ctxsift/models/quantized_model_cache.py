@@ -12,7 +12,6 @@ from typing import Any
 
 from ctxsift.types import LocalModelConfig, LocalQuantizationMode
 
-
 _CACHE_METADATA_FILE = "ctxsift-quantized-model.json"
 _TOKENIZER_FILE_NAMES = (
     "tokenizer.json",

@@ -9,22 +9,24 @@ from typing import Annotated
 
 import typer
 from pydantic import ValidationError
+from rich.console import Console
 
-from ctxsift.agent_skills import install_agent_skills, prompt_for_agent_skill_install
+from ctxsift.agent.skills import install_agent_skills, prompt_for_agent_skill_install
 from ctxsift.compression import compress_input
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.config import (
     ConfigResolutionRequest,
     ConfigSaveRequest,
     ConfigScope,
     ConfigWriteRequest,
-    render_resolved_config,
+    discover_global_config_paths,
+    render_resolved_config_rich,
     resolve_config,
     save_config,
     set_config_value,
 )
-from ctxsift.config_store import discover_global_config_paths
-from ctxsift.configure_setup import run_configure_setup
-from ctxsift.configure_flow import prompt_for_config, prompt_for_save_scope
+from ctxsift.config.setup import run_configure_setup
+from ctxsift.config.flow import prompt_for_config, prompt_for_save_scope
 from ctxsift.daemon.manager import (
     daemon_statuses,
     required_daemon_specs,
@@ -33,7 +35,7 @@ from ctxsift.daemon.manager import (
     stop_daemon,
 )
 from ctxsift.daemon.types import DaemonStatus
-from ctxsift.doctor import collect_doctor_report, render_doctor_report
+from ctxsift.diagnostics.doctor import collect_doctor_report, render_doctor_report_rich
 from ctxsift.execution import (
     CommandExecutionRequest,
     CommandValidationError,
@@ -42,12 +44,12 @@ from ctxsift.execution import (
 )
 from ctxsift.git_metadata import capture_git_metadata
 from ctxsift.recall import recall_records, render_recall_records
-from ctxsift.run_capture import (
+from ctxsift.compression.run_payload import (
     render_run_payload,
 )
 from ctxsift.types import CompressionRequest
 from ctxsift.workspace import detect_workspace_context
-from ctxsift.workspace_setup import (
+from ctxsift.workspace.setup import (
     bootstrap_config_available,
     ensure_workspace_initialized,
     should_offer_workspace_ignore,
@@ -67,6 +69,7 @@ config_app = typer.Typer(
     help="Show or change config values directly. Use `configure` for the guided interactive setup."
 )
 daemon_app = typer.Typer(help="Start, stop, or inspect local ctxsift daemons.")
+console = Console()
 
 app.add_typer(config_app, name="config")
 app.add_typer(daemon_app, name="daemon")
@@ -96,14 +99,12 @@ def configure(
             cwd=current_directory,
         )
     )
-    agent_skill_plan = None
     try:
         updated_config = prompt_for_config(resolved.config)
         selected_scope = prompt_for_save_scope(
             workspace_path=Path(workspace.workspace_config_path),
             global_path=global_paths.write_path,
         )
-        agent_skill_plan = prompt_for_agent_skill_install(Path(workspace.workspace_root))
         effective_write_ignore = _resolve_configure_write_ignore(
             current_directory=current_directory,
             config=updated_config,
@@ -119,6 +120,9 @@ def configure(
     except (ValueError, ValidationError) as error:
         typer.echo(str(error), err=True)
         raise typer.Exit(code=2) from error
+    agent_skill_plan = prompt_for_agent_skill_install(Path(workspace.workspace_root))
+    if agent_skill_plan is not None and agent_skill_plan.selections:
+        typer.echo("Please wait: installing selected agent skills...")
     agent_skill_results = install_agent_skills(
         agent_skill_plan,
         workspace_root=Path(workspace.workspace_root),
@@ -134,6 +138,7 @@ def configure(
             cwd=current_directory,
             config=updated_config,
             write_ignore=effective_write_ignore,
+            progress=typer.echo,
         )
     )
     if setup_result.workspace.created:
@@ -146,7 +151,7 @@ def configure(
         else:
             typer.echo(f"[ctxsift warning] {preload_result.detail}", err=True)
     typer.echo("")
-    typer.echo(render_doctor_report(setup_result.doctor))
+    console.print(render_doctor_report_rich(setup_result.doctor), soft_wrap=True)
 
 
 def _resolve_configure_write_ignore(
@@ -167,6 +172,13 @@ def _resolve_configure_write_ignore(
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def compress(
     ctx: typer.Context,
+    intent: Annotated[
+        CompressionIntent,
+        typer.Option(
+            "--intent",
+            help="Explicit output contract for the compression result.",
+        ),
+    ],
     instruction: Annotated[
         str, typer.Argument(help="Compression instruction for the provided input.")
     ],
@@ -196,6 +208,7 @@ def compress(
         _ensure_workspace_ready(resolved.config, current_directory=Path.cwd())
         result, exit_code = _invoke_command_compression(
             ctx=ctx,
+            intent=intent,
             instruction=instruction,
             current_directory=Path.cwd(),
             max_output_tokens=max_output_tokens,
@@ -209,6 +222,7 @@ def compress(
     result = asyncio.run(
         compress_input(
             CompressionRequest(
+                intent=intent,
                 instruction=instruction,
                 raw_input=raw_input,
                 cwd=str(Path.cwd()),
@@ -274,7 +288,7 @@ def config_show(
             force_global=global_scope,
         )
     )
-    typer.echo(render_resolved_config(result))
+    console.print(render_resolved_config_rich(result), soft_wrap=True)
 
 
 @config_app.command("set")
@@ -309,7 +323,7 @@ def config_set(
 def doctor() -> None:
     """Inspect runtime health and optional features."""
     report = asyncio.run(collect_doctor_report(Path.cwd()))
-    typer.echo(render_doctor_report(report))
+    console.print(render_doctor_report_rich(report), soft_wrap=True)
 
 
 @daemon_app.command("start")
@@ -358,6 +372,7 @@ async def _run_capture(request: CommandExecutionRequest):
 
 async def _run_command_flow(
     request: CommandExecutionRequest,
+    intent: CompressionIntent,
     instruction: str,
     current_directory: Path,
     max_output_tokens: int | None,
@@ -368,6 +383,7 @@ async def _run_command_flow(
     raw_input = render_run_payload(capture, workspace, git_metadata)
     result = await compress_input(
         CompressionRequest(
+            intent=intent,
             instruction=instruction,
             raw_input=raw_input,
             mode="run",
@@ -389,6 +405,7 @@ async def _run_command_flow(
 
 def _invoke_command_compression(
     ctx: typer.Context,
+    intent: CompressionIntent,
     instruction: str,
     current_directory: Path,
     max_output_tokens: int | None,
@@ -415,6 +432,7 @@ def _invoke_command_compression(
         return asyncio.run(
             _run_command_flow(
                 request=request,
+                intent=intent,
                 instruction=instruction,
                 current_directory=current_directory,
                 max_output_tokens=max_output_tokens,
@@ -505,7 +523,7 @@ def _command_args(extra_args: list[str]) -> list[str]:
 def _hash_or_none(text: str) -> str | None:
     if not text:
         return None
-    from ctxsift.compression import sha256_text
+    from ctxsift.shared.hashing import sha256_text
 
     return sha256_text(text)
 

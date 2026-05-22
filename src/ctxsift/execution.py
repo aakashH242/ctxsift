@@ -9,7 +9,6 @@ from pathlib import Path
 import shutil
 import time
 
-
 SHELL_SYNTAX_LABELS = (
     ("||", "||"),
     ("&&", "&&"),
@@ -85,7 +84,7 @@ def build_shell_syntax_error(argv: tuple[str, ...]) -> CommandValidationError:
         f"This command appears to contain shell syntax: {token_list}\n\n"
         "ctxsift compress uses safe argv mode by default.\n\n"
         "Use explicit shell mode:\n\n"
-        f'ctxsift compress --shell "show failures" -- "{command_text}"'
+        f'ctxsift compress --intent summary --shell "show failures" -- "{command_text}"'
     )
     return CommandValidationError(message)
 
@@ -120,13 +119,9 @@ def _validate_request(request: CommandExecutionRequest) -> None:
 
 def _validate_shell_command(argv: tuple[str, ...]) -> None:
     if len(argv) != 1:
-        raise CommandValidationError(
-            "Shell mode expects one command string after `--`."
-        )
+        raise CommandValidationError("Shell mode expects one command string after `--`.")
     if not argv[0].strip():
-        raise CommandValidationError(
-            "Shell mode expects one non-empty command string after `--`."
-        )
+        raise CommandValidationError("Shell mode expects one non-empty command string after `--`.")
 
 
 async def _execute_subprocess(request: CommandExecutionRequest) -> CommandExecutionResult:

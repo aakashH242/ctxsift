@@ -94,7 +94,9 @@ class SentenceTransformersBackend(EmbeddingBackend):
                     "sentence-transformers is not installed."
                 ) from error
             try:
-                model = await asyncio.to_thread(self._load_sentence_transformer, SentenceTransformer)
+                model = await asyncio.to_thread(
+                    self._load_sentence_transformer, SentenceTransformer
+                )
             except Exception as error:  # pragma: no cover - backend-specific failures
                 raise EmbeddingBackendUnavailableError(
                     f"Could not load embedding model '{self.model_name}': {error}"
@@ -223,7 +225,7 @@ class SentenceTransformersBackend(EmbeddingBackend):
         backend = embedding_backend_choice(device, self.config.backend, self.model_name)
         if backend == "onnx":
             provider = _onnx_provider(device)
-            kwargs = {"provider": provider}
+            kwargs: dict[str, Any] = {"provider": provider}
             if self.model_name.casefold().startswith("microsoft/harrier-oss"):
                 kwargs["export"] = True
             return kwargs

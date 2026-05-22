@@ -3,13 +3,15 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
 
 import pytest
 
 import ctxsift.daemon.manager as manager
 from ctxsift.daemon.client import DaemonClientError
-from ctxsift.daemon.types import DaemonRegistryRecord, DaemonRole
-from ctxsift.types import AppConfig
+from ctxsift.daemon.types import DaemonLaunchPayload, DaemonRegistryRecord, DaemonRole
+from ctxsift.types import AppConfig, DaemonConfig, EmbeddingConfig, LocalModelConfig
 
 
 def test_ensure_daemon_reuses_healthy_existing_record(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -131,3 +133,43 @@ def test_startup_statuses_reports_superseded_same_role_daemon(
     assert statuses[0].detail == "started"
     assert statuses[1].model == "old/model"
     assert "superseded by current config" in statuses[1].detail
+
+
+def test_start_worker_process_uses_new_console_on_windows(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = DaemonLaunchPayload(
+        role=DaemonRole.COMPRESSION,
+        signature_hash="sig",
+        port=4012,
+        auth_token="token",
+        registry_path=str(tmp_path / "registry.json"),
+        log_path=str(tmp_path / "daemon.log"),
+        daemon=DaemonConfig(),
+        local=LocalModelConfig(model="ibm-granite/granite-4.0-350m-GGUF", device="cpu"),
+        embedding=EmbeddingConfig(),
+    )
+    captured: dict[str, Any] = {}
+
+    monkeypatch.setattr(manager.os, "name", "nt")
+    monkeypatch.setattr(manager.subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200, raising=False)
+    monkeypatch.setattr(manager.subprocess, "CREATE_NEW_CONSOLE", 0x00000010, raising=False)
+    monkeypatch.setattr(manager.sys, "executable", r"C:\Python312\python.exe")
+
+    def fake_popen(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace()
+
+    monkeypatch.setattr(manager.subprocess, "Popen", fake_popen)
+
+    manager._start_worker_process(payload, tmp_path / "launch.json")
+
+    assert captured["creationflags"] == 0x00000210
+    assert captured["args"][0:2] == ["cmd.exe", "/k"]
+    assert "ctxsift.daemon_worker" in captured["args"][2]
+    assert "--launch-file" in captured["args"][2]
+    assert r"C:\Python312\python.exe" in captured["args"][2]
+    assert "stdout" not in captured
+    assert "stderr" not in captured
+    assert "start_new_session" not in captured

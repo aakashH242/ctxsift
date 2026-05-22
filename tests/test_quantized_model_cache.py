@@ -10,7 +10,7 @@ from ctxsift.models.quantized_model_cache import (
     persist_quantized_model_cache,
     resolve_quantized_model_cache,
 )
-from ctxsift.types import LocalModelConfig
+from ctxsift.types import LocalModelConfig, LocalQuantizationMode
 
 
 def test_resolve_quantized_model_cache_uses_home_cache_fallback(
@@ -35,7 +35,7 @@ def test_resolve_quantized_model_cache_uses_home_cache_fallback(
             model="google/gemma-4-E2B-it",
             device="cuda",
             gguf_filename=None,
-            quantization="bnb-8bit",
+            quantization=LocalQuantizationMode.BNB_8BIT,
         ),
         "google/gemma-4-E2B-it",
     )
@@ -89,7 +89,11 @@ def test_persist_quantized_model_cache_skips_nonserializable_quantizers(tmp_path
         model=FakeModel(),
         tokenizer=FakeTokenizer(),
         model_name="Qwen/Qwen2.5-0.5B-Instruct",
-        config=LocalModelConfig(device="cuda", gguf_filename=None, quantization="bnb-8bit"),
+        config=LocalModelConfig(
+            device="cuda",
+            gguf_filename=None,
+            quantization=LocalQuantizationMode.BNB_8BIT,
+        ),
     )
 
     assert cache.model_dir.exists() is False

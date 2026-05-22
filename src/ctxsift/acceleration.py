@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import importlib.util
 
-
 FLASH_ATTENTION_BACKEND = "flash_attention_2"
 
 

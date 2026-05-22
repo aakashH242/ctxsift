@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-import ctxsift.doctor as doctor
-from ctxsift import config_store
+import ctxsift.diagnostics.doctor as doctor
+from ctxsift.config import store as config_store
 from ctxsift.types import AppConfig, VectorStoreStatus
 
 
@@ -83,6 +83,12 @@ def test_doctor_reports_optional_runtime_checks(
     repo_path = tmp_path / "repo"
     (repo_path / ".git").mkdir(parents=True)
 
+    monkeypatch.setattr(
+        doctor,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(config=AppConfig()),
+    )
+
     monkeypatch.setattr(doctor, "cuda_probe", lambda: (False, "CUDA is unavailable."))
     monkeypatch.setattr(
         doctor,
@@ -136,7 +142,7 @@ def test_doctor_warns_when_remote_is_enabled_without_litellm(
     rendered = doctor.render_doctor_report(report)
 
     assert "[warning] litellm: warning" in rendered
-    assert 'uv add "ctxsift[remote]"' in rendered
+    assert 'uv tool install "ctxsift[remote]"' in rendered
     assert "remote compression will not work" in rendered
 
 
@@ -173,8 +179,25 @@ def test_doctor_reports_llama_cpp_checks_for_local_cpu_runtime(
 
     monkeypatch.setattr(
         doctor,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(
+            config=AppConfig.model_validate({"local": {"device": "cpu"}})
+        ),
+    )
+
+    monkeypatch.setattr(
+        doctor,
         "optional_package_probe",
-        lambda module_name, label: (False, f"{label} is not installed."),
+        lambda module_name, label: (
+            (False, f"{label} is not installed.")
+            if module_name == "llama_cpp"
+            else (True, f"{label} is available.")
+        ),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "resolve_local_runtime",
+        lambda config: type("RuntimeSelection", (), {"uses_llama_cpp": True})(),
     )
     monkeypatch.setattr(
         doctor,

@@ -12,7 +12,6 @@ from ctxsift.cli import app
 from ctxsift.daemon.types import DaemonRole, DaemonStatus
 from ctxsift.types import AppConfig
 
-
 runner = CliRunner()
 
 

@@ -360,6 +360,9 @@ def build_scenario_row(
     warmup_ms = _as_float(warmup.get("duration_ms") or warmup.get("warmup_ms"))
     success_rate = _as_float(summary.get("success_rate"), success_count / case_count if case_count else 0.0)
     exact_pass_rate = _as_float(summary.get("exact_pass_rate"), exact_hits / case_count if case_count else 0.0)
+    accepted_count = _as_int(summary.get("accepted_count"), success_count)
+    soft_accepted_count = _as_int(summary.get("soft_accepted_count"), 0)
+    rejected_count = _as_int(summary.get("rejected_count"), error_count)
     exact_pass_count = _as_int(summary.get("exact_pass_count"), exact_hits)
     family = _scenario_family(scenario)
     case_scores_for_formula = case_scores if case_scores else None
@@ -372,8 +375,8 @@ def build_scenario_row(
         avg_summary_quality_ratio=avg_quality_ratio,
         avg_instruction_following_score=avg_instruction_ratio,
         avg_brevity_ratio=avg_brevity_ratio,
-        accepted_count=_as_int(summary.get("accepted_count"), success_count),
-        soft_accepted_count=_as_int(summary.get("soft_accepted_count"), 0),
+      accepted_count=accepted_count,
+      soft_accepted_count=soft_accepted_count,
         avg_inference_ms=avg_inference_ms,
         p95_inference_ms=p95_inference_ms,
         case_scores=case_scores_for_formula,
@@ -413,6 +416,9 @@ def build_scenario_row(
         "successRate": success_rate,
         "exactPassRate": exact_pass_rate,
         "caseCount": case_count,
+        "acceptedCount": accepted_count,
+        "softAcceptedCount": soft_accepted_count,
+        "rejectedCount": rejected_count,
         "successCount": success_count,
         "errorCount": error_count,
         "exactPassCount": exact_pass_count,
@@ -1320,6 +1326,226 @@ def render_html_report(
       margin-top: 14px;
     }
 
+    .leaderboard-list.scrollable {
+      max-height: min(72vh, 560px);
+      overflow-y: auto;
+      padding-right: 6px;
+      align-content: start;
+    }
+
+    .visuals-shell {
+      display: grid;
+      gap: 16px;
+      padding: 16px;
+    }
+
+    .visuals-grid {
+      display: grid;
+      gap: 16px;
+    }
+
+    .visual-card {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(4, 10, 12, 0.92);
+      min-width: 0;
+    }
+
+    .visual-card h3 {
+      margin: 0;
+      font-size: 1rem;
+    }
+
+    .visual-note {
+      color: var(--muted);
+      font-size: 0.78rem;
+      line-height: 1.4;
+    }
+
+    .visual-stage {
+      min-width: 0;
+    }
+
+    .visual-scroll {
+      max-height: min(70vh, 560px);
+      overflow: auto;
+      padding-right: 6px;
+    }
+
+    .chart-svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+
+    .chart-axis,
+    .chart-grid,
+    .chart-label,
+    .chart-legend,
+    .chart-title {
+      font-family: var(--mono);
+    }
+
+    .chart-axis,
+    .chart-label,
+    .chart-legend {
+      fill: var(--muted);
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .chart-grid {
+      stroke: rgba(255, 255, 255, 0.08);
+      stroke-width: 1;
+    }
+
+    .chart-domain {
+      stroke: rgba(255, 255, 255, 0.18);
+      stroke-width: 1;
+    }
+
+    .legend-row {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      color: var(--muted);
+      font-size: 0.76rem;
+    }
+
+    .legend-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .legend-chip i {
+      width: 10px;
+      height: 10px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .bar-list,
+    .dumbbell-list {
+      display: grid;
+      gap: 10px;
+    }
+
+    .bar-row,
+    .dumbbell-row {
+      width: 100%;
+      display: grid;
+      gap: 12px;
+      grid-template-columns: minmax(0, 1.5fr) minmax(200px, 3fr) auto;
+      align-items: center;
+      padding: 10px 12px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(4, 10, 12, 0.84);
+      text-align: left;
+    }
+
+    .stack-rail,
+    .dumbbell-rail {
+      position: relative;
+      min-width: 0;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.06);
+      overflow: hidden;
+    }
+
+    .stack-rail {
+      height: 14px;
+    }
+
+    .stack-segment {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+    }
+
+    .stack-segment.accepted { background: color-mix(in srgb, var(--success) 78%, transparent); }
+    .stack-segment.soft { background: color-mix(in srgb, var(--warn) 72%, transparent); }
+    .stack-segment.rejected { background: rgba(248, 81, 73, 0.75); }
+
+    .dumbbell-rail {
+      height: 18px;
+      overflow: visible;
+      background: transparent;
+    }
+
+    .dumbbell-line {
+      position: absolute;
+      top: 8px;
+      height: 2px;
+      border-radius: 999px;
+      background: color-mix(in srgb, var(--accent) 70%, transparent);
+    }
+
+    .dumbbell-point {
+      position: absolute;
+      top: 3px;
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      transform: translateX(-50%);
+      box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.8);
+    }
+
+    .dumbbell-point.avg { background: var(--accent); }
+    .dumbbell-point.p95 { background: var(--exact); }
+
+    .heatmap-wrap {
+      overflow: auto;
+    }
+
+    .heatmap-table {
+      width: max-content;
+      min-width: 100%;
+      border-collapse: separate;
+      border-spacing: 4px;
+    }
+
+    .heatmap-table th,
+    .heatmap-table td {
+      min-width: 74px;
+      padding: 8px 10px;
+      border: 1px solid rgba(58, 42, 14, 0.55);
+      border-radius: 8px;
+      text-align: center;
+      vertical-align: middle;
+    }
+
+    .heatmap-table th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(3, 6, 8, 0.98);
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 0.74rem;
+    }
+
+    .heatmap-table td.model-cell,
+    .heatmap-table th.model-cell {
+      left: 0;
+      position: sticky;
+      z-index: 2;
+      min-width: 220px;
+      text-align: left;
+      background: rgba(3, 6, 8, 0.98);
+    }
+
+    .heatmap-value {
+      display: block;
+      font-family: var(--mono);
+      font-size: 0.78rem;
+      font-weight: 600;
+    }
+
     .leaderboard-row {
       width: 100%;
       display: grid;
@@ -1426,6 +1652,56 @@ def render_html_report(
 
     .detail-shell .table-wrap {
       margin-top: 14px;
+      max-height: min(62vh, 520px);
+      overflow: auto;
+    }
+
+    .detail-shell thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: rgba(3, 6, 8, 0.98);
+    }
+
+    .detail-visual-grid {
+      display: grid;
+      gap: 14px;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      margin-top: 14px;
+    }
+
+    .mini-visual-card {
+      display: grid;
+      gap: 10px;
+      padding: 14px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: rgba(4, 10, 12, 0.84);
+    }
+
+    .mini-visual-card h3 {
+      margin: 0;
+      font-size: 0.96rem;
+    }
+
+    .mini-note {
+      color: var(--muted);
+      font-size: 0.76rem;
+      line-height: 1.4;
+    }
+
+    .mini-stat-stack {
+      display: grid;
+      gap: 10px;
+    }
+
+    .mini-metric-label {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 0.76rem;
+      font-family: var(--mono);
     }
 
     .model-head-score {
@@ -1484,38 +1760,15 @@ def render_html_report(
       </div>
     </section>
 
-      <section class="compare-panel">
-        <div class="compare-toolbar">
+    <section class="grid track-cards mode-collective" id="collective-overview">
+      <div class="panel">
+        <div class="panel-head">
           <div>
-            <h2>Head-to-Head</h2>
-          </div>
-          <div class="compare-toolbar-right">
-            <div class="control">
-              <label>Track</label>
-              <div class="segmented-toggle" id="compare-track-toggle"></div>
-            </div>
-            <div class="compare-actions">
-              <button type="button" id="compare-collapse-toggle">Collapse</button>
-            </div>
+            <h2>All Top Score</h2>
           </div>
         </div>
-        <div class="compare-body" id="compare-body">
-          <div class="compare-controls">
-            <div class="control">
-              <label for="compare-left-select">Left model</label>
-              <select id="compare-left-select"></select>
-            </div>
-            <div class="control compare-spacer" aria-hidden="true"></div>
-            <div class="control">
-              <label for="compare-right-select">Right model</label>
-              <select id="compare-right-select"></select>
-            </div>
-          </div>
-          <div id="head-to-head-summary"></div>
-        </div>
-      </section>
-
-    <section class="grid two-up mode-collective" id="collective-overview">
+        <div id="all-best-card"></div>
+      </div>
       <div class="panel">
         <div class="panel-head">
           <div>
@@ -1532,6 +1785,14 @@ def render_html_report(
         </div>
         <div id="gpu-best-card"></div>
       </div>
+      <div class="panel">
+        <div class="panel-head">
+          <div>
+            <h2>Remote Top Score</h2>
+          </div>
+        </div>
+        <div id="remote-best-card"></div>
+      </div>
     </section>
 
     <section class="grid two-up" id="leaderboards">
@@ -1542,7 +1803,7 @@ def render_html_report(
           </div>
           <div class="segmented-toggle" id="latency-track-toggle"></div>
         </div>
-        <div class="leaderboard-list" id="latency-bars"></div>
+        <div class="leaderboard-list scrollable" id="latency-bars"></div>
       </div>
       <div class="panel">
         <div class="panel-head">
@@ -1551,7 +1812,7 @@ def render_html_report(
           </div>
           <div class="segmented-toggle" id="score-track-toggle"></div>
         </div>
-        <div class="leaderboard-list" id="quality-stacks"></div>
+        <div class="leaderboard-list scrollable" id="quality-stacks"></div>
         <div class="legend">
           <span><i style="background: var(--success);"></i>Success</span>
           <span><i style="background: var(--danger);"></i>Error</span>
@@ -1562,6 +1823,85 @@ def render_html_report(
         </div>
       </div>
     </section>
+
+    <section class="panel visuals-shell" id="visual-comparisons">
+      <div class="panel-head">
+        <div>
+          <h2>Visual Comparisons</h2>
+          <div class="panel-note">Global charts for quality, latency, reliability, and benchmark-family behavior. Use the track toggle to switch between all models or one track.</div>
+        </div>
+        <div class="compare-toolbar-right">
+          <div class="control">
+            <label>Track</label>
+            <div class="segmented-toggle" id="visuals-track-toggle"></div>
+          </div>
+          <div class="compare-actions">
+            <button type="button" id="visuals-collapse-toggle">Expand</button>
+          </div>
+        </div>
+      </div>
+      <div class="visuals-body" id="visuals-body" hidden>
+        <div class="grid two-up visuals-grid">
+          <div class="visual-card">
+            <h3>Score vs Latency</h3>
+            <div class="visual-note">Each dot is one model. Higher is better; farther right is slower.</div>
+            <div class="visual-stage" id="scatter-plot"></div>
+          </div>
+          <div class="visual-card">
+            <h3>Acceptance Breakdown</h3>
+            <div class="visual-note">Accepted, soft-accepted, and rejected cases for each model.</div>
+            <div class="visual-stage visual-scroll" id="acceptance-bars"></div>
+          </div>
+        </div>
+        <div class="visual-card">
+          <h3>Average vs P95 Latency</h3>
+          <div class="visual-note">Yellow point = average run time. Cyan point = slowest 5% cutoff. Longer gap means less stable latency.</div>
+          <div class="visual-stage visual-scroll" id="latency-dumbbell"></div>
+        </div>
+        <div class="visual-card">
+          <h3>Model Metric Heatmap</h3>
+          <div class="visual-note">Greener cells mean better overall results in the models you are looking at. For the latency columns, faster models are shown greener.</div>
+          <div class="visual-stage heatmap-wrap visual-scroll" id="metric-heatmap"></div>
+        </div>
+        <div class="visual-card">
+          <h3>Benchmark Family Heatmap</h3>
+          <div class="visual-note">Average case score by benchmark family for each model.</div>
+          <div class="visual-stage heatmap-wrap visual-scroll" id="family-heatmap"></div>
+        </div>
+      </div>
+    </section>
+
+      <section class="compare-panel">
+        <div class="compare-toolbar">
+          <div>
+            <h2>Head-to-Head</h2>
+            <div class="panel-note">Compare two models on their quality, latency, reliability, and benchmark-family behavior. Use the track toggle to switch between all models or one track.</div>
+          </div>
+          <div class="compare-toolbar-right">
+            <div class="control">
+              <label>Track</label>
+              <div class="segmented-toggle" id="compare-track-toggle"></div>
+            </div>
+            <div class="compare-actions">
+              <button type="button" id="compare-collapse-toggle">Expand</button>
+            </div>
+          </div>
+        </div>
+        <div class="compare-body" id="compare-body" hidden>
+          <div class="compare-controls">
+            <div class="control">
+              <label for="compare-left-select">Left model</label>
+              <select id="compare-left-select"></select>
+            </div>
+            <div class="control compare-spacer" aria-hidden="true"></div>
+            <div class="control">
+              <label for="compare-right-select">Right model</label>
+              <select id="compare-right-select"></select>
+            </div>
+          </div>
+          <div id="head-to-head-summary"></div>
+        </div>
+      </section>
 
     <section class="grid two-up" id="standard-summary" hidden>
       <div class="panel">
@@ -1658,6 +1998,7 @@ def render_html_report(
       </div>
       <div id="detail-model-header"></div>
       <div id="scenario-details"></div>
+      <div id="detail-visuals"></div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -1685,13 +2026,15 @@ def render_html_report(
       const state = {
         activeScenarioKey: allScenarios[0]?.key ?? null,
         caseMode: "all",
-        compareFamily: "cpu",
-        compareCollapsed: false,
+        compareFamily: "all",
+        compareCollapsed: true,
+        visualsCollapsed: true,
         compareLeftKey: null,
         compareRightKey: null,
-        latencyFamily: "cpu",
-        scoreFamily: "cpu",
-        detailFamily: "cpu",
+        latencyFamily: "all",
+        scoreFamily: "all",
+        visualsFamily: "all",
+        detailFamily: "all",
       tableSorts: {
         scenario: { key: null, direction: "none" },
         domain: { key: null, direction: "none" },
@@ -1838,6 +2181,570 @@ def render_html_report(
       return badge;
     }
 
+    const BENCHMARK_FAMILIES = [
+      "summary",
+      "recall",
+      "explanation",
+      "instruction_following",
+      "structured",
+      "exact_format",
+    ];
+
+    const MODEL_HEATMAP_METRICS = [
+      { key: "finalScore", label: "Score", better: "high", value: (scenario) => scenario.finalScore, format: (value) => fmtScore(value) },
+      { key: "qualityCore", label: "Q Core", better: "high", value: (scenario) => scenario.qualityCore, format: (value) => fmtPct(value) },
+      { key: "successRate", label: "Success", better: "high", value: (scenario) => scenario.successRate, format: (value) => fmtPct(value) },
+      { key: "exactPassRate", label: "Exact", better: "high", value: (scenario) => scenario.exactPassRate, format: (value) => fmtPct(value) },
+      { key: "avgPreservationRatio", label: "Preserve", better: "high", value: (scenario) => scenario.avgPreservationRatio, format: (value) => fmtPct(value) },
+      { key: "avgInstructionRatio", label: "Instruction", better: "high", value: (scenario) => scenario.avgInstructionRatio, format: (value) => fmtPct(value) },
+      { key: "avgQualityRatio", label: "Quality", better: "high", value: (scenario) => scenario.avgQualityRatio, format: (value) => fmtPct(value) },
+      { key: "avgFormatRatio", label: "Format", better: "high", value: (scenario) => scenario.avgFormatRatio, format: (value) => fmtPct(value) },
+      { key: "avgBrevityRatio", label: "Brevity", better: "high", value: (scenario) => scenario.avgBrevityRatio, format: (value) => fmtPct(value) },
+      { key: "avgInferenceMs", label: "Avg Lat", better: "low", value: (scenario) => scenario.avgInferenceMs, format: (value) => fmtLatency(value) },
+      { key: "p95InferenceMs", label: "P95 Lat", better: "low", value: (scenario) => scenario.p95InferenceMs, format: (value) => fmtLatency(value) },
+    ];
+
+    function clamp01(value) {
+      return Math.max(0, Math.min(1, Number(value || 0)));
+    }
+
+    function prettyFamilyLabel(value) {
+      return String(value || "")
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ");
+    }
+
+    function trackColor(family) {
+      if (family === "gpu") {
+        return "#22c55e";
+      }
+      if (family === "remote") {
+        return "#3bd4ff";
+      }
+      return "#ffb020";
+    }
+
+    function heatColor(score) {
+      const normalized = clamp01(score);
+      const bad = [255, 91, 107];
+      const good = [34, 197, 94];
+      const red = Math.round(bad[0] + (good[0] - bad[0]) * normalized);
+      const green = Math.round(bad[1] + (good[1] - bad[1]) * normalized);
+      const blue = Math.round(bad[2] + (good[2] - bad[2]) * normalized);
+      const alpha = 0.14 + normalized * 0.42;
+      return `rgba(${red}, ${green}, ${blue}, ${alpha.toFixed(3)})`;
+    }
+
+    function svgNode(tagName, attrs = {}) {
+      const node = document.createElementNS("http://www.w3.org/2000/svg", tagName);
+      Object.entries(attrs).forEach(([key, value]) => {
+        if (value !== undefined && value !== null) {
+          node.setAttribute(key, String(value));
+        }
+      });
+      return node;
+    }
+
+    function visualScenarios() {
+      return [...familyScenarios(state.visualsFamily)].sort((left, right) => compareScenariosByRule(left, right, "final-score"));
+    }
+
+    function benchmarkFamilyStats(scenario) {
+      const totals = Object.fromEntries(BENCHMARK_FAMILIES.map((family) => [family, { sum: 0, count: 0, accepted: 0 }]));
+      scenario.cases.forEach((item) => {
+        const bucket = totals[item.family];
+        if (!bucket) {
+          return;
+        }
+        const baseScore = item.hasCaseScore ? item.caseScore : (item.error ? 0 : Math.max(item.summaryQualityRatio, item.exactPreservationRatio));
+        bucket.sum += Number(baseScore || 0);
+        bucket.count += 1;
+        if (!item.error && item.validationStatus !== "rejected") {
+          bucket.accepted += 1;
+        }
+      });
+      return Object.fromEntries(Object.entries(totals).map(([family, bucket]) => [
+        family,
+        {
+          avg: bucket.count ? bucket.sum / bucket.count : null,
+          count: bucket.count,
+          acceptedRate: bucket.count ? bucket.accepted / bucket.count : null,
+        },
+      ]));
+    }
+
+    function metricRange(scenarios, getter) {
+      const values = scenarios.map((scenario) => getter(scenario)).filter((value) => Number.isFinite(value));
+      if (!values.length) {
+        return { min: 0, max: 1 };
+      }
+      return { min: Math.min(...values), max: Math.max(...values) };
+    }
+
+    function normalizeMetricValue(value, range, better = "high") {
+      if (!Number.isFinite(value)) {
+        return 0.5;
+      }
+      if (!Number.isFinite(range.min) || !Number.isFinite(range.max) || range.max <= range.min) {
+        return 0.5;
+      }
+      let normalized = (value - range.min) / (range.max - range.min);
+      if (better === "low") {
+        normalized = 1 - normalized;
+      }
+      return clamp01(normalized);
+    }
+
+    function buildLegendRow(items) {
+      const legend = document.createElement("div");
+      legend.className = "legend-row";
+      items.forEach((item) => {
+        const chip = document.createElement("span");
+        chip.className = "legend-chip";
+        const swatch = document.createElement("i");
+        swatch.style.background = item.color;
+        const text = document.createElement("span");
+        text.textContent = item.label;
+        chip.append(swatch, text);
+        legend.append(chip);
+      });
+      return legend;
+    }
+
+    function renderScatterPlot(scenarios) {
+      const root = document.getElementById("scatter-plot");
+      if (!scenarios.length) {
+        root.replaceChildren(emptyState("No scenarios selected."));
+        return;
+      }
+      const width = 760;
+      const height = 360;
+      const margin = { top: 16, right: 18, bottom: 42, left: 56 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const latencySeconds = scenarios.map((scenario) => Math.max(0.5, scenario.avgInferenceMs / 1000));
+      const minLatency = Math.min(...latencySeconds);
+      const maxLatency = Math.max(...latencySeconds);
+      const logMin = Math.log10(minLatency);
+      const logMax = Math.log10(Math.max(maxLatency, minLatency + 0.01));
+      const scoreMax = Math.max(100, ...scenarios.map((scenario) => scenario.finalScore));
+      const xFor = (seconds) => {
+        if (logMax <= logMin) {
+          return margin.left + innerWidth / 2;
+        }
+        return margin.left + ((Math.log10(Math.max(0.5, seconds)) - logMin) / (logMax - logMin)) * innerWidth;
+      };
+      const yFor = (score) => margin.top + innerHeight - (Number(score || 0) / scoreMax) * innerHeight;
+      const svg = svgNode("svg", { class: "chart-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Score versus latency scatter plot" });
+      const grid = svgNode("g");
+      [0, 25, 50, 75, 100].forEach((tick) => {
+        const y = yFor(tick);
+        grid.append(svgNode("line", { class: "chart-grid", x1: margin.left, y1: y, x2: width - margin.right, y2: y }));
+        const label = svgNode("text", { class: "chart-axis", x: margin.left - 8, y: y + 4, "text-anchor": "end" });
+        label.textContent = `${tick}`;
+        grid.append(label);
+      });
+      const candidateTicks = [0.5, 1, 2, 5, 10, 20, 50, 100, 200];
+      candidateTicks.filter((tick) => tick >= minLatency && tick <= maxLatency * 1.05).forEach((tick) => {
+        const x = xFor(tick);
+        grid.append(svgNode("line", { class: "chart-grid", x1: x, y1: margin.top, x2: x, y2: height - margin.bottom }));
+        const label = svgNode("text", { class: "chart-axis", x, y: height - margin.bottom + 18, "text-anchor": "middle" });
+        label.textContent = `${tick}s`;
+        grid.append(label);
+      });
+      svg.append(grid);
+      svg.append(svgNode("line", { class: "chart-domain", x1: margin.left, y1: height - margin.bottom, x2: width - margin.right, y2: height - margin.bottom }));
+      svg.append(svgNode("line", { class: "chart-domain", x1: margin.left, y1: margin.top, x2: margin.left, y2: height - margin.bottom }));
+      const xLabel = svgNode("text", { class: "chart-label", x: margin.left + innerWidth / 2, y: height - 8, "text-anchor": "middle" });
+      xLabel.textContent = "Average latency in seconds (log scale)";
+      svg.append(xLabel);
+      const yLabel = svgNode("text", { class: "chart-label", x: 16, y: margin.top + innerHeight / 2, transform: `rotate(-90 16 ${margin.top + innerHeight / 2})`, "text-anchor": "middle" });
+      yLabel.textContent = "Final score";
+      svg.append(yLabel);
+      scenarios.forEach((scenario) => {
+        const circle = svgNode("circle", {
+          cx: xFor(scenario.avgInferenceMs / 1000),
+          cy: yFor(scenario.finalScore),
+          r: 6,
+          fill: trackColor(scenario.family),
+          stroke: "rgba(255,255,255,0.85)",
+          "stroke-width": 1,
+          opacity: 0.92,
+        });
+        const title = svgNode("title");
+        title.textContent = `${displayModelName(scenario.model)} (${familyLabel(scenario.family)})\nScore ${fmtScore(scenario.finalScore)}\nAverage latency ${fmtLatency(scenario.avgInferenceMs)}`;
+        circle.append(title);
+        svg.append(circle);
+      });
+      root.replaceChildren(
+        buildLegendRow([
+          { label: "CPU", color: trackColor("cpu") },
+          { label: "GPU", color: trackColor("gpu") },
+          { label: "REMOTE", color: trackColor("remote") },
+        ]),
+        svg,
+      );
+    }
+
+    function renderAcceptanceBreakdown(scenarios) {
+      const root = document.getElementById("acceptance-bars");
+      if (!scenarios.length) {
+        root.replaceChildren(emptyState("No scenarios selected."));
+        return;
+      }
+      const list = document.createElement("div");
+      list.className = "bar-list";
+      const ordered = [...scenarios].sort((left, right) => compareScenariosByRule(left, right, "final-score"));
+      ordered.forEach((scenario) => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "bar-row";
+        row.title = `Accepted ${scenario.acceptedCount}/${scenario.caseCount}. Soft accepted ${scenario.softAcceptedCount}/${scenario.caseCount}. Rejected ${scenario.rejectedCount}/${scenario.caseCount}.`;
+        row.addEventListener("click", () => setActiveScenario(scenario));
+
+        const copy = document.createElement("div");
+        copy.className = "leaderboard-copy";
+        const model = document.createElement("strong");
+        model.className = "leaderboard-model";
+        model.textContent = displayModelName(scenario.model);
+        const meta = document.createElement("span");
+        meta.className = "leaderboard-meta";
+        meta.textContent = scenarioLabel(scenario);
+        copy.append(model, meta);
+
+        const rail = document.createElement("div");
+        rail.className = "stack-rail";
+        const accepted = document.createElement("div");
+        accepted.className = "stack-segment accepted";
+        accepted.style.left = "0%";
+        accepted.style.width = `${(scenario.acceptedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+        const soft = document.createElement("div");
+        soft.className = "stack-segment soft";
+        soft.style.left = `${(scenario.acceptedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+        soft.style.width = `${(scenario.softAcceptedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+        const rejected = document.createElement("div");
+        rejected.className = "stack-segment rejected";
+        rejected.style.left = `${((scenario.acceptedCount + scenario.softAcceptedCount) / Math.max(1, scenario.caseCount)) * 100}%`;
+        rejected.style.width = `${(scenario.rejectedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+        rail.append(accepted, soft, rejected);
+
+        const value = document.createElement("div");
+        value.className = "leaderboard-value dim";
+        value.textContent = `${scenario.acceptedCount} / ${scenario.softAcceptedCount} / ${scenario.rejectedCount}`;
+
+        row.append(copy, rail, value);
+        list.append(row);
+      });
+      root.replaceChildren(
+        buildLegendRow([
+          { label: "Accepted", color: "rgba(34, 197, 94, 0.75)" },
+          { label: "Soft accepted", color: "rgba(255, 210, 74, 0.75)" },
+          { label: "Rejected", color: "rgba(248, 81, 73, 0.75)" },
+        ]),
+        list,
+      );
+    }
+
+    function renderLatencyDumbbell(scenarios) {
+      const root = document.getElementById("latency-dumbbell");
+      if (!scenarios.length) {
+        root.replaceChildren(emptyState("No scenarios selected."));
+        return;
+      }
+      const ordered = [...scenarios].sort((left, right) => compareScenariosByRule(left, right, "latency"));
+      const maxP95 = Math.max(...ordered.map((scenario) => scenario.p95InferenceMs), 1);
+      const list = document.createElement("div");
+      list.className = "dumbbell-list";
+      ordered.forEach((scenario) => {
+        const row = document.createElement("button");
+        row.type = "button";
+        row.className = "dumbbell-row";
+        row.title = `Average latency ${fmtLatency(scenario.avgInferenceMs)}. Slowest 5% cutoff ${fmtLatency(scenario.p95InferenceMs)}.`;
+        row.addEventListener("click", () => setActiveScenario(scenario));
+
+        const copy = document.createElement("div");
+        copy.className = "leaderboard-copy";
+        const model = document.createElement("strong");
+        model.className = "leaderboard-model";
+        model.textContent = displayModelName(scenario.model);
+        const meta = document.createElement("span");
+        meta.className = "leaderboard-meta";
+        meta.textContent = scenarioLabel(scenario);
+        copy.append(model, meta);
+
+        const rail = document.createElement("div");
+        rail.className = "dumbbell-rail";
+        const avgLeft = (scenario.avgInferenceMs / maxP95) * 100;
+        const p95Left = (scenario.p95InferenceMs / maxP95) * 100;
+        const line = document.createElement("div");
+        line.className = "dumbbell-line";
+        line.style.left = `${Math.max(1, avgLeft)}%`;
+        line.style.width = `${Math.max(2, p95Left - avgLeft)}%`;
+        const avgPoint = document.createElement("div");
+        avgPoint.className = "dumbbell-point avg";
+        avgPoint.style.left = `${Math.max(1, avgLeft)}%`;
+        const p95Point = document.createElement("div");
+        p95Point.className = "dumbbell-point p95";
+        p95Point.style.left = `${Math.min(99, Math.max(1, p95Left))}%`;
+        rail.append(line, avgPoint, p95Point);
+
+        const value = document.createElement("div");
+        value.className = "leaderboard-value dim";
+        value.textContent = `${fmtLatency(scenario.avgInferenceMs)} / ${fmtLatency(scenario.p95InferenceMs)}`;
+        row.append(copy, rail, value);
+        list.append(row);
+      });
+      root.replaceChildren(
+        buildLegendRow([
+          { label: "Average", color: trackColor("cpu") },
+          { label: "P95", color: trackColor("remote") },
+        ]),
+        list,
+      );
+    }
+
+    function buildHeatmapTable({ scenarios, columns, valueGetter, formatValue, titleBuilder, betterByColumn, rowStatGetter }) {
+      if (!scenarios.length) {
+        return emptyState("No scenarios selected.");
+      }
+      const ranges = Object.fromEntries(columns.map((column) => [column.key, metricRange(scenarios, (scenario) => valueGetter(scenario, column.key))]));
+      const table = document.createElement("table");
+      table.className = "heatmap-table";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      const modelHead = document.createElement("th");
+      modelHead.className = "model-cell";
+      modelHead.textContent = "Model";
+      headRow.append(modelHead);
+      columns.forEach((column) => {
+        const th = document.createElement("th");
+        th.textContent = column.label;
+        headRow.append(th);
+      });
+      thead.append(headRow);
+      table.append(thead);
+      const tbody = document.createElement("tbody");
+      scenarios.forEach((scenario) => {
+        const row = document.createElement("tr");
+        row.addEventListener("click", () => setActiveScenario(scenario));
+        const modelCell = document.createElement("td");
+        modelCell.className = "model-cell";
+        modelCell.title = scenarioLabel(scenario);
+        const name = document.createElement("div");
+        name.className = "leaderboard-model";
+        name.textContent = displayModelName(scenario.model);
+        const meta = document.createElement("div");
+        meta.className = "leaderboard-meta";
+        meta.textContent = scenarioLabel(scenario);
+        modelCell.append(name, meta);
+        row.append(modelCell);
+        columns.forEach((column) => {
+          const value = valueGetter(scenario, column.key);
+          const range = ranges[column.key];
+          const score = normalizeMetricValue(value, range, betterByColumn(column.key));
+          const cell = document.createElement("td");
+          cell.style.background = Number.isFinite(value) ? heatColor(score) : "rgba(255,255,255,0.04)";
+          cell.title = titleBuilder(scenario, column.key, value, rowStatGetter ? rowStatGetter(scenario, column.key) : null);
+          const valueNode = document.createElement("span");
+          valueNode.className = "heatmap-value";
+          valueNode.textContent = formatValue(column.key, value, scenario);
+          cell.append(valueNode);
+          row.append(cell);
+        });
+        tbody.append(row);
+      });
+      table.append(tbody);
+      return table;
+    }
+
+    function renderMetricHeatmap(scenarios) {
+      const root = document.getElementById("metric-heatmap");
+      const ordered = [...scenarios].sort((left, right) => compareScenariosByRule(left, right, "final-score"));
+      root.replaceChildren(buildHeatmapTable({
+        scenarios: ordered,
+        columns: MODEL_HEATMAP_METRICS,
+        valueGetter: (scenario, key) => MODEL_HEATMAP_METRICS.find((column) => column.key === key)?.value(scenario),
+        formatValue: (key, value) => MODEL_HEATMAP_METRICS.find((column) => column.key === key)?.format(value) || String(value),
+        titleBuilder: (scenario, key, value) => `${displayModelName(scenario.model)}\n${MODEL_HEATMAP_METRICS.find((column) => column.key === key)?.label}: ${MODEL_HEATMAP_METRICS.find((column) => column.key === key)?.format(value)}`,
+        betterByColumn: (key) => MODEL_HEATMAP_METRICS.find((column) => column.key === key)?.better || "high",
+      }));
+    }
+
+    function renderFamilyHeatmap(scenarios) {
+      const root = document.getElementById("family-heatmap");
+      if (!scenarios.length) {
+        root.replaceChildren(emptyState("No scenarios selected."));
+        return;
+      }
+      const familyStats = new Map(scenarios.map((scenario) => [scenario.key, benchmarkFamilyStats(scenario)]));
+      const columns = BENCHMARK_FAMILIES.map((family) => ({ key: family, label: prettyFamilyLabel(family) }));
+      const ordered = [...scenarios].sort((left, right) => compareScenariosByRule(left, right, "final-score"));
+      root.replaceChildren(buildHeatmapTable({
+        scenarios: ordered,
+        columns,
+        valueGetter: (scenario, key) => familyStats.get(scenario.key)?.[key]?.avg,
+        formatValue: (key, value) => (Number.isFinite(value) ? fmtPct(value) : "--"),
+        titleBuilder: (scenario, key, value) => {
+          const stat = familyStats.get(scenario.key)?.[key];
+          if (!stat || !Number.isFinite(value)) {
+            return `${displayModelName(scenario.model)}\n${prettyFamilyLabel(key)}: no cases`;
+          }
+          return `${displayModelName(scenario.model)}\n${prettyFamilyLabel(key)} avg case score ${fmtPct(value)} across ${stat.count} asks. Accepted ${fmtPct(stat.acceptedRate)}`;
+        },
+        betterByColumn: () => "high",
+      }));
+    }
+
+    function renderDetailVisuals(scenario) {
+      const root = document.getElementById("detail-visuals");
+      if (!scenario) {
+        root.replaceChildren();
+        return;
+      }
+
+      const wrap = document.createElement("div");
+      wrap.className = "detail-visual-grid";
+
+      const overviewCard = document.createElement("div");
+      overviewCard.className = "mini-visual-card";
+      const overviewTitle = document.createElement("h3");
+      overviewTitle.textContent = "Model visuals";
+      const overviewNote = document.createElement("div");
+      overviewNote.className = "mini-note";
+      overviewNote.textContent = "A quick visual read of reliability and latency spread for this model.";
+      const statStack = document.createElement("div");
+      statStack.className = "mini-stat-stack";
+
+      const acceptanceLabel = document.createElement("div");
+      acceptanceLabel.className = "mini-metric-label";
+      acceptanceLabel.replaceChildren(
+        Object.assign(document.createElement("span"), { textContent: "Acceptance breakdown" }),
+        Object.assign(document.createElement("span"), { textContent: `${scenario.acceptedCount} / ${scenario.softAcceptedCount} / ${scenario.rejectedCount}` }),
+      );
+      const acceptanceRail = document.createElement("div");
+      acceptanceRail.className = "stack-rail";
+      acceptanceRail.title = `Accepted ${scenario.acceptedCount}, soft accepted ${scenario.softAcceptedCount}, rejected ${scenario.rejectedCount}.`;
+      const accepted = document.createElement("div");
+      accepted.className = "stack-segment accepted";
+      accepted.style.left = "0%";
+      accepted.style.width = `${(scenario.acceptedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+      const soft = document.createElement("div");
+      soft.className = "stack-segment soft";
+      soft.style.left = `${(scenario.acceptedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+      soft.style.width = `${(scenario.softAcceptedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+      const rejected = document.createElement("div");
+      rejected.className = "stack-segment rejected";
+      rejected.style.left = `${((scenario.acceptedCount + scenario.softAcceptedCount) / Math.max(1, scenario.caseCount)) * 100}%`;
+      rejected.style.width = `${(scenario.rejectedCount / Math.max(1, scenario.caseCount)) * 100}%`;
+      acceptanceRail.append(accepted, soft, rejected);
+
+      const latencyLabel = document.createElement("div");
+      latencyLabel.className = "mini-metric-label";
+      latencyLabel.replaceChildren(
+        Object.assign(document.createElement("span"), { textContent: "Average vs slow tail" }),
+        Object.assign(document.createElement("span"), { textContent: `${fmtLatency(scenario.avgInferenceMs)} / ${fmtLatency(scenario.p95InferenceMs)}` }),
+      );
+      const dumbbellRail = document.createElement("div");
+      dumbbellRail.className = "dumbbell-rail";
+      dumbbellRail.title = `Average latency ${fmtLatency(scenario.avgInferenceMs)}. Slowest 5% cutoff ${fmtLatency(scenario.p95InferenceMs)}.`;
+      const localMax = Math.max(scenario.p95InferenceMs, scenario.avgInferenceMs, 1);
+      const avgLeft = (scenario.avgInferenceMs / localMax) * 100;
+      const p95Left = (scenario.p95InferenceMs / localMax) * 100;
+      const line = document.createElement("div");
+      line.className = "dumbbell-line";
+      line.style.left = `${Math.max(1, avgLeft)}%`;
+      line.style.width = `${Math.max(2, p95Left - avgLeft)}%`;
+      const avgPoint = document.createElement("div");
+      avgPoint.className = "dumbbell-point avg";
+      avgPoint.style.left = `${Math.max(1, avgLeft)}%`;
+      const p95Point = document.createElement("div");
+      p95Point.className = "dumbbell-point p95";
+      p95Point.style.left = `${Math.min(99, Math.max(1, p95Left))}%`;
+      dumbbellRail.append(line, avgPoint, p95Point);
+
+      statStack.append(
+        buildLegendRow([
+          { label: "Accepted", color: "rgba(34, 197, 94, 0.75)" },
+          { label: "Soft", color: "rgba(255, 210, 74, 0.75)" },
+          { label: "Rejected", color: "rgba(248, 81, 73, 0.75)" },
+        ]),
+        acceptanceLabel,
+        acceptanceRail,
+        buildLegendRow([
+          { label: "Average", color: trackColor("cpu") },
+          { label: "Slowest 5%", color: trackColor("remote") },
+        ]),
+        latencyLabel,
+        dumbbellRail,
+      );
+      overviewCard.append(overviewTitle, overviewNote, statStack);
+
+      const familyCard = document.createElement("div");
+      familyCard.className = "mini-visual-card";
+      const familyTitle = document.createElement("h3");
+      familyTitle.textContent = "Benchmark family snapshot";
+      const familyNote = document.createElement("div");
+      familyNote.className = "mini-note";
+      familyNote.textContent = "How this model did across the six task families in the benchmark.";
+      const familyStats = benchmarkFamilyStats(scenario);
+      const familyTable = document.createElement("table");
+      familyTable.className = "heatmap-table";
+      const thead = document.createElement("thead");
+      const headRow = document.createElement("tr");
+      BENCHMARK_FAMILIES.forEach((family) => {
+        const th = document.createElement("th");
+        th.textContent = prettyFamilyLabel(family);
+        headRow.append(th);
+      });
+      thead.append(headRow);
+      familyTable.append(thead);
+      const tbody = document.createElement("tbody");
+      const valueRow = document.createElement("tr");
+      BENCHMARK_FAMILIES.forEach((family) => {
+        const stat = familyStats[family];
+        const value = stat?.avg;
+        const td = document.createElement("td");
+        td.style.background = Number.isFinite(value) ? heatColor(value) : "rgba(255,255,255,0.04)";
+        td.title = Number.isFinite(value)
+          ? `${prettyFamilyLabel(family)} average case score ${fmtPct(value)} across ${stat.count} asks. Accepted ${fmtPct(stat.acceptedRate)}.`
+          : `${prettyFamilyLabel(family)}: no cases in this run.`;
+        const valueNode = document.createElement("span");
+        valueNode.className = "heatmap-value";
+        valueNode.textContent = Number.isFinite(value) ? fmtPct(value) : "--";
+        td.append(valueNode);
+        valueRow.append(td);
+      });
+      tbody.append(valueRow);
+      familyTable.append(tbody);
+      familyCard.append(familyTitle, familyNote, familyTable);
+
+      wrap.append(overviewCard, familyCard);
+      root.replaceChildren(wrap);
+    }
+
+    function renderVisuals() {
+      renderTrackToggle("visuals-track-toggle", "visualsFamily");
+      const scenarios = visualScenarios();
+      renderScatterPlot(scenarios);
+      renderAcceptanceBreakdown(scenarios);
+      renderLatencyDumbbell(scenarios);
+      renderMetricHeatmap(scenarios);
+      renderFamilyHeatmap(scenarios);
+    }
+
+    function renderVisualsCollapse() {
+      const toggle = document.getElementById("visuals-collapse-toggle");
+      const body = document.getElementById("visuals-body");
+      if (!toggle || !body) {
+        return;
+      }
+      body.hidden = state.visualsCollapsed;
+      toggle.textContent = state.visualsCollapsed ? "Expand" : "Collapse";
+      toggle.setAttribute("aria-expanded", String(!state.visualsCollapsed));
+    }
+
     function compareValues(left, right) {
       if (typeof left === "number" && typeof right === "number") {
         return left - right;
@@ -1916,7 +2823,8 @@ def render_html_report(
     }
 
     function availableFamilies() {
-      return ["cpu", "gpu", "remote"].filter((family) => allScenarios.some((scenario) => scenario.family === family));
+      const families = ["cpu", "gpu", "remote"].filter((family) => allScenarios.some((scenario) => scenario.family === family));
+      return allScenarios.length ? ["all", ...families] : families;
     }
 
     function normalizeFamily(family) {
@@ -1929,6 +2837,9 @@ def render_html_report(
 
     function familyScenarios(family, allowFallback = true) {
       const resolved = allowFallback ? normalizeFamily(family) : family;
+      if (resolved === "all") {
+        return [...allScenarios];
+      }
       return allScenarios.filter((scenario) => scenario.family === resolved);
     }
 
@@ -1948,6 +2859,7 @@ def render_html_report(
       state.compareFamily = normalizeFamily(state.compareFamily);
       state.latencyFamily = normalizeFamily(state.latencyFamily);
       state.scoreFamily = normalizeFamily(state.scoreFamily);
+      state.visualsFamily = normalizeFamily(state.visualsFamily);
       state.detailFamily = normalizeFamily(state.detailFamily);
       const visibleKeys = new Set(getDetailScenarios().map((scenario) => scenario.key));
       if (state.activeScenarioKey && visibleKeys.has(state.activeScenarioKey)) {
@@ -2360,11 +3272,9 @@ def render_html_report(
 
         const leftValue = document.createElement("div");
         leftValue.className = `headtohead-value ${leftClass}`;
-        const leftSmall = document.createElement("small");
-        leftSmall.textContent = scenarioLabel(left);
         const leftStrong = document.createElement("strong");
         leftStrong.textContent = metric.format(left[metric.key]);
-        leftValue.append(leftSmall, leftStrong);
+        leftValue.append(leftStrong);
 
         const label = document.createElement("div");
         label.className = "headtohead-label";
@@ -2372,11 +3282,9 @@ def render_html_report(
 
         const rightValue = document.createElement("div");
         rightValue.className = `headtohead-value ${rightClass}`;
-        const rightSmall = document.createElement("small");
-        rightSmall.textContent = scenarioLabel(right);
         const rightStrong = document.createElement("strong");
         rightStrong.textContent = metric.format(right[metric.key]);
-        rightValue.append(rightSmall, rightStrong);
+        rightValue.append(rightStrong);
 
         row.append(leftValue, label, rightValue);
         return row;
@@ -2408,12 +3316,12 @@ def render_html_report(
 
     function renderTrackToggle(rootId, stateKey) {
       const root = document.getElementById(rootId);
-      const families = ["cpu", "gpu", "remote"];
+      const families = availableFamilies();
       root.replaceChildren(...families.map((family) => {
         const button = document.createElement("button");
         button.type = "button";
         button.textContent = familyLabel(family);
-        button.disabled = !allScenarios.some((scenario) => scenario.family === family);
+        button.disabled = family !== "all" && !allScenarios.some((scenario) => scenario.family === family);
         button.dataset.active = String(state[stateKey] === family);
         button.addEventListener("click", () => {
           if (button.disabled) {
@@ -2486,8 +3394,10 @@ def render_html_report(
     }
 
     function renderCollectiveOverview() {
+      renderTrackWinner("all-best-card", "all");
       renderTrackWinner("cpu-best-card", "cpu");
       renderTrackWinner("gpu-best-card", "gpu");
+      renderTrackWinner("remote-best-card", "remote");
     }
 
     function renderLatencyBars() {
@@ -2504,7 +3414,7 @@ def render_html_report(
         const row = document.createElement("button");
         row.type = "button";
         row.className = "leaderboard-row";
-        row.title = scenarioLabel(scenario);
+        row.title = `Yellow bar = average time (${fmtLatency(scenario.avgInferenceMs)}). White mark = slowest 5% (${fmtLatency(scenario.p95InferenceMs)}). Full width = the slowest p95 in this track.`;
         row.addEventListener("click", () => setActiveScenario(scenario));
 
         const copy = document.createElement("div");
@@ -2526,7 +3436,7 @@ def render_html_report(
         fill.style.width = `${Math.max(2, (scenario.avgInferenceMs / maxP95) * 100)}%`;
         const marker = document.createElement("div");
         marker.className = "metric-marker";
-        marker.style.left = `${Math.max(2, (scenario.p95InferenceMs / maxP95) * 100)}%`;
+        marker.style.left = `${Math.min(99, Math.max(2, (scenario.p95InferenceMs / maxP95) * 100))}%`;
         rail.append(fill, marker);
 
         const caption = document.createElement("div");
@@ -2539,6 +3449,7 @@ def render_html_report(
 
         const value = document.createElement("div");
         value.className = "leaderboard-value dim";
+        value.title = `Average time ${fmtLatency(scenario.avgInferenceMs)}. Slowest 5% ${fmtLatency(scenario.p95InferenceMs)}.`;
         value.textContent = `${fmtLatency(scenario.avgInferenceMs)} / ${fmtLatency(scenario.p95InferenceMs)}`;
         row.append(copy, railWrap, value);
         return row;
@@ -2558,7 +3469,7 @@ def render_html_report(
         const row = document.createElement("button");
         row.type = "button";
         row.className = "leaderboard-row";
-        row.title = scenarioLabel(scenario);
+        row.title = `Final score ${fmtScore(scenario.finalScore)} = quality core ${fmtPct(scenario.qualityCore)} x latency factor ${scenario.latencyFactor.toFixed(3)}. Success ${fmtPct(scenario.successRate)}, exact ${fmtPct(scenario.exactPassRate)}, preserve ${fmtPct(scenario.avgPreservationRatio)}, instruction ${fmtPct(scenario.avgInstructionRatio)}, quality ${fmtPct(scenario.avgQualityRatio)}.`;
         row.addEventListener("click", () => setActiveScenario(scenario));
 
         const copy = document.createElement("div");
@@ -2651,7 +3562,7 @@ def render_html_report(
         fill.style.width = `${Math.max(2, (item.avgInferenceMs / maxP95) * 100)}%`;
         const marker = document.createElement("div");
         marker.className = "metric-marker";
-        marker.style.left = `${Math.max(2, (item.p95InferenceMs / maxP95) * 100)}%`;
+        marker.style.left = `${Math.min(99, Math.max(2, (item.p95InferenceMs / maxP95) * 100))}%`;
         rail.append(fill, marker);
 
         const value = document.createElement("div");
@@ -2846,10 +3757,12 @@ def render_html_report(
       const scenario = getDetailScenarios().find((item) => item.key === state.activeScenarioKey);
       const modelRoot = document.getElementById("detail-model-header");
       const detailRoot = document.getElementById("scenario-details");
+      const visualRoot = document.getElementById("detail-visuals");
       const caseRoot = document.getElementById("case-table");
       if (!scenario) {
         modelRoot.replaceChildren(emptyState("No scenario is available for the selected track."));
         detailRoot.replaceChildren(emptyState("Select a scenario above to inspect its per-case results."));
+        visualRoot.replaceChildren();
         caseRoot.replaceChildren(emptyRow("No case data for the current selection.", 7));
         return;
       }
@@ -2916,6 +3829,7 @@ def render_html_report(
       });
       detailGrid.append(statGrid);
       detailRoot.replaceChildren(detailGrid);
+      renderDetailVisuals(scenario);
 
       if (!sortedCases.length) {
         caseRoot.replaceChildren(emptyRow("No cases match the current detail filters.", 7));
@@ -2965,10 +3879,12 @@ def render_html_report(
       ensureHeadToHeadSelection();
       renderSortableHeaders();
       renderCompareCollapse();
+      renderVisualsCollapse();
       renderHeadToHead();
       renderCollectiveOverview();
       renderLatencyBars();
       renderQualityStacks();
+      renderVisuals();
       renderScenarioSelector();
       renderCaseModeButtons();
       renderScenarioDetail();
@@ -2995,6 +3911,11 @@ def render_html_report(
       document.getElementById("compare-collapse-toggle").addEventListener("click", () => {
         state.compareCollapsed = !state.compareCollapsed;
         renderCompareCollapse();
+      });
+
+      document.getElementById("visuals-collapse-toggle").addEventListener("click", () => {
+        state.visualsCollapsed = !state.visualsCollapsed;
+        renderVisualsCollapse();
       });
 
       initSortableHeaders();

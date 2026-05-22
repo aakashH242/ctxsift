@@ -7,12 +7,13 @@ import sqlite3
 
 import pytest
 
-from ctxsift import compression
+from ctxsift.compression.intent import CompressionIntent
+from ctxsift.compression import pipeline as compression
 from ctxsift.compression import compress_input, summarize_deterministically
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
 from ctxsift.models.transformers_gemma import TransformersTextBackend
-from ctxsift.run_capture import CommandCapture, render_run_payload
+from ctxsift.compression.run_payload import CommandCapture, render_run_payload
 from ctxsift.types import AppConfig, CompressionRequest, LocalModelConfig
 from ctxsift.types import WorkspaceContext
 
@@ -40,6 +41,7 @@ def test_compress_input_returns_local_passthrough_without_storing_when_backend_i
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures for me",
         raw_input="\n".join(
             [
@@ -83,6 +85,7 @@ def test_compress_input_does_not_cache_local_passthrough_when_backend_is_unavail
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction=" Summarize   auth failures ",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
@@ -90,6 +93,7 @@ def test_compress_input_does_not_cache_local_passthrough_when_backend_is_unavail
     )
 
     second_request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="summarize auth failures",
         raw_input=request.raw_input,
         cwd=request.cwd,
@@ -129,6 +133,7 @@ def test_compress_input_uses_model_backend_when_available(
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
@@ -173,6 +178,7 @@ def test_compress_input_schedules_background_retention_cleanup(
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
     monkeypatch.setattr(compression, "schedule_retention_cleanup", fake_schedule_retention_cleanup)
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
@@ -219,6 +225,7 @@ def test_compress_input_run_mode_sends_only_output_text_to_model_backend(
         db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize the failure",
         raw_input=render_run_payload(
             capture,
@@ -269,6 +276,7 @@ def test_compress_input_uses_remote_backend_when_base_url_is_configured(
         "ctxsift.models.factory.create_local_backend",
         fail_create_local_backend,
     )
+
     @dataclass(frozen=True)
     class FakeResolvedConfig:
         config: object
@@ -288,14 +296,13 @@ def test_compress_input_uses_remote_backend_when_base_url_is_configured(
         ),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
     )
 
-    result = asyncio.run(
-        compress_input(request)
-    )
+    result = asyncio.run(compress_input(request))
 
     assert result.model_provider == "litellm"
     assert result.model_name == "gpt-5-mini"
@@ -321,6 +328,7 @@ def test_compress_input_falls_back_when_model_backend_is_unavailable(
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
@@ -346,6 +354,7 @@ def test_compress_input_falls_back_when_backend_factory_is_unavailable(
         raise BackendUnavailableError("remote misconfigured")
 
     monkeypatch.setattr(compression, "create_compression_backend", fail_backend_factory)
+
     @dataclass(frozen=True)
     class FakeResolvedConfig:
         config: object
@@ -365,6 +374,7 @@ def test_compress_input_falls_back_when_backend_factory_is_unavailable(
         ),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
@@ -402,7 +412,9 @@ def test_compress_input_remote_failure_passthrough_uses_run_output_body(
     class FakeResolvedConfig:
         config: object
 
-    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingRemoteBackend())
+    monkeypatch.setattr(
+        compression, "create_compression_backend", lambda config: FailingRemoteBackend()
+    )
     monkeypatch.setattr(
         compression,
         "resolve_config",
@@ -434,6 +446,7 @@ def test_compress_input_remote_failure_passthrough_uses_run_output_body(
         db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize the failure",
         raw_input=render_run_payload(
             capture,
@@ -494,6 +507,7 @@ def test_compress_input_remote_litellm_missing_returns_raw_output_with_warning(
     )
 
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize auth failures",
         raw_input="AuthError: login failed\npytest exited with code 1\n",
         cwd=str(repo_path),
@@ -503,7 +517,10 @@ def test_compress_input_remote_litellm_missing_returns_raw_output_with_warning(
 
     assert result.model_provider == "litellm"
     assert result.model_name == "gpt-5-mini"
-    assert "[ctxsift warning] Remote compression failed: LiteLLM is not installed." in result.compressed_output
+    assert (
+        "[ctxsift warning] Remote compression failed: LiteLLM is not installed."
+        in result.compressed_output
+    )
     assert result.compressed_output.endswith("AuthError: login failed\npytest exited with code 1")
     assert result.record_id is None
     with sqlite3.connect(db_path) as connection:
@@ -548,6 +565,7 @@ def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_fil
         db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize the failure",
         raw_input=render_run_payload(
             capture,
@@ -601,6 +619,7 @@ def test_compress_input_run_mode_with_empty_output_does_not_promote_inline_comma
         db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize the command",
         raw_input=render_run_payload(
             capture,
@@ -705,6 +724,7 @@ def test_compress_input_unknown_family_fallback_profile_stores_soft_accepted_out
         ),
     )
     request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize cli failure",
         raw_input="src/cli.py\nValidationError: Extra inputs are not permitted\n",
         cwd=str(repo_path),

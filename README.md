@@ -1,4 +1,9 @@
-# CtxSift — Save tokens and extend sessions
+
+# CtxSift — Save tokens and extend your coding sessions
+
+<p align="center">
+  <img src="./docs/src/assets/banner.png" alt="CtxSift" width="30%" />
+</p>
 
 Command outputs and state recollection are the biggest source of token overuse. 
 
@@ -28,29 +33,50 @@ It compresses tool outputs and caches them so that agents can do a look-up when 
 
 ### Install
 
-CtxSift uses a LLM to compress tool outputs. This can be a model running locally or hosted remotely.
+CtxSift uses a language model to compress tool outputs. This can be a model running locally or hosted remotely.
 You can choose the installation path best suited to your environment. When using local models, you can override the default
 model - see the [supported models](#local-model-support) section for further details. 
 
-> ❗ We recommend at least 4 GB of RAM when using remote models for compression. For local compression, 8+ GB of RAM is recommended.  
-> Optionally, a GPU with at least 6 GB of VRAM can improve your experience.
+
+> ❗ For the best experience, please see the minimum hardware requirements below.
+> 
+> <details>
+> <summary>Requirements matrix</summary>
+>
+> | Compression Mode | Minimum RAM | Minimum VRAM                                       | Comments                                                   |
+> |---|---|----------------------------------------------------|------------------------------------------------------------|
+> | Local, no GPU | 8 GB | N/A                                                | Both embedding and compression models are loaded into RAM  |
+> | Local, with GPU | 2 GB | 8 GB                                               | Both embedding and compression models get loaded into VRAM |
+> | Remote, no GPU | 4 GB | N/A | Only the embedding model gets loaded into RAM              |
+> | Remote, with GPU | 2 GB | 4 GB                                               | Only the embedding model gets loaded into VRAM             |
+> 
+> </details>
+
 
 ```bash 
 # Install the base package - inference runs on CPU
-uv add ctxsift
+uv tool install ctxsift
 
 # Install with GPU add-ons - inference with GPU acceleration
-uv add "ctxsift[gpu]"
+uv tool install "ctxsift[gpu]"
 
 # Enable quantization support on GPU
-uv add "ctxsift[gpu,quant]"
+uv tool install "ctxsift[gpu,quant]"
 
 # Install with LiteLLM included - use remotely hosted models for inference
-uv add "ctxsift[remote]"
+uv tool install "ctxsift[remote]"
 
 # Install the full package
-uv add "ctxsift[all]"
+uv tool install "ctxsift[all]"
 ```
+
+If `ctxsift` is not found after installation, run:
+
+```bash
+uv tool update-shell
+```
+
+Then restart your shell and try `ctxsift` again.
 
 ### First-time setup
 
@@ -60,10 +86,14 @@ Run a guided setup to configure your model provider and workspace settings.
 ctxsift configure
 ```
 
-### Verify your setup
+### Verify and test your setup
 
 ```bash
+# Verify
 ctxsift doctor
+
+# Test compression
+echo "alpha\nbeta\ngamma" | ctxsift compress "Return only the first line, no explanations."
 ```
 
 ---
@@ -73,12 +103,12 @@ ctxsift doctor
 CtxSift uses two model uses under the hood: one model for **compression**, and one model for **embeddings** used by recall. Those two uses are configured separately.
 
 By default, compression runs locally with a small GGUF model that is safe to start on CPU through embedded `llama.cpp`. 
-If you prefer a hosted provider, you can switch compression to a remote LiteLLM-compatible endpoint instead. 
+If you prefer a hosted provider, you can switch compression to a remote LiteLLM-compatible endpoint instead.
 Embeddings are separate: CtxSift currently uses a local Sentence Transformers-compatible embedding model for storing and recalling records, even when compression itself is remote.
 
 | Component | Default                                                                                    | When it is used | Conditions and notes |
 |---|--------------------------------------------------------------------------------------------|---|---|
-| Local compression | [ibm-granite/granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-h-350m) | Used by default | Active when `remote.base_url` is not set. On CPU, local compression uses embedded `llama.cpp` with a Hugging Face GGUF repo id plus one GGUF filename. On CUDA, local compression uses the Transformers backend and a normal Hugging Face text-generation model id. Guided `ctxsift configure` will steer CUDA systems toward `Qwen/Qwen3.5-0.8B` on `cuda`, and in CPU mode it tells you to use a GGUF repo id plus one `.gguf` file from that repo's Files tab. You can switch model, GGUF filename, device, dtype, attention backend, and quantization through config. |
+| Local compression | [ibm-granite/granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) | Used by default | Active when `remote.base_url` is not set. On CPU, local compression uses embedded `llama.cpp` with a Hugging Face GGUF repo id plus one GGUF filename. On CUDA, local compression uses the Transformers backend and a normal Hugging Face text-generation model id. Guided `ctxsift configure` steers CPU setups toward `ibm-granite/granite-4.0-350m-GGUF` and CUDA setups toward `LiquidAI/LFM2.5-1.2B-Instruct`. You can switch model, GGUF filename, device, dtype, attention backend, and quantization through config. |
 | Remote compression | Off by default                                                                             | Used only when remote mode is configured | Becomes active when `remote.base_url` and `remote.model_name` are set. Usually also needs an API key, depending on the provider. Requires `ctxsift[remote]` because remote compression goes through LiteLLM. This replaces local compression, but not local embeddings. |
 | Embeddings for recall | [microsoft/harrier-oss-v1-0.6b](https://huggingface.co/microsoft/harrier-oss-v1-0.6b)      | Used for storing and recalling records | This path is used regardless of whether compression is local or remote. The model must be compatible with Sentence Transformers. |
 
@@ -87,33 +117,57 @@ Embeddings are separate: CtxSift currently uses a local Sentence Transformers-co
 For CPU-based environments, you can configure any GGUF-quantized text-generation models supported by `llama.cpp`. 
 For GPU-based environments, any text-generation models from HuggingFace can be used. The choice is endless, based on your hardware.
 
-We have [benchmarked](benchmark) a few models to help you get started. You can view the benchmark results by opening the HTML file [here](benchmark/results/viewer.html) in your browser.
+We have [benchmarked](benchmark) a few models to help you get started.
 You can also run the benchmark to see how a model not listed here will perform. Learn more about it [here](benchmark/README.md).
+To view the latest benchmark, open `benchmark/results/viewer.html` to inspect the latest static dashboard snapshot.
 
-**CPU models** — GGUF quantized models running on CPU via built-in llama.cpp engine. Sorted by average inference time, fastest first.
+**CPU models** — GGUF quantized models running on CPU via built-in llama.cpp engine. Sorted by score, highest first.
+
+> Scores reflect the May 2026 benchmark run on an i7-12700F with 64 GiB RAM. Latency numbers are machine-specific — treat them as relative comparisons only.
 
 | Name                                                                                                          | Avg. Inference (s) | Score | Comments |
-|---------------------------------------------------------------------------------------------------------------|---|---|---|
-| [granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) (default)                   | 4.17 | 49.12 | The built-in default. Responds quickly and gets the job done for most everyday compression tasks. |
-| [gemma-3-270m-it-GGUF](https://huggingface.co/unsloth/gemma-3-270m-it-GGUF)                                   | 4.78 | 49.43 | Tiny 270M model from Google. Nearly as fast as Granite with a similar quality ceiling — a solid alternative. |
-| [Qwen2.5-Coder-0.5B-Instruct-128K-GGUF](https://huggingface.co/unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF) | 6.71 | 54.8 | A step up in quality over the two faster models above, with only a modest increase in wait time. Good pick if you want noticeably better results without going much slower. |
-| [Qwen2-500M-Instruct-GGUF](https://huggingface.co/lmstudio-community/Qwen2-500M-Instruct-GGUF)                | 7.81 | 43.60 | Slower than similar-sized alternatives and the weakest score in this group. Not recommended. |
-| [Qwen3.5-0.8B-GGUF](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF)                                         | 8.26 | 60.20 | Best overall CPU model. Highest score with zero rejected outputs. Recommended default for CPU. |
-| [SmolLM2-360M-Instruct-GGUF](https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF)                       | 8.37 | 54.34 | Impressive for a 360M model. Runs at roughly the same speed as Qwen3.5-0.8B but with a lower quality ceiling. |
-| [Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF)                                             | 19.74 | 57.77 | Good quality but 2–3× slower than Qwen3.5-0.8B for a lower score. The newer Qwen3.5 variant is a better pick. |
-| [Kiwi-1.0-0.7B-32k-Instruct-GGUF](https://huggingface.co/mradermacher/Kiwi-1.0-0.7B-32k-Instruct-GGUF)        | 29.10 | 38.73 | Slowest and lowest scoring CPU model tested. Not recommended. |
+|---------------------------------------------------------------------------------------------------------------|:-:|:-:|---|
+| [Qwen3.5-0.8B-GGUF](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF) **(recommended)**                       | 5.6 | **56.14** | Best CPU model overall. Highest score, fewest rejected outputs (only 19 out of 280 cases), and a reasonable ~5–6 s per request. Recommended if you want to switch from the default. |
+| [LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF)                      | 7.4 | 52.69 | Strong second-place CPU model. Low rejection count (13 out of 280) and good quality. Slower than Qwen3.5-0.8B but a solid step up from the smaller models below. |
+| [Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF)                                             | 15.9 | 50.86 | Decent quality but roughly 3× slower than Qwen3.5-0.8B for a lower score. The newer Qwen3.5 variant is the better pick unless you specifically want Qwen3. |
+| [SmolLM2-360M-Instruct-GGUF](https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF)                       | 6.3 | 46.83 | Respectable for a tiny 360M model. A good fallback if you are on a very constrained machine. |
+| [Qwen2.5-Coder-0.5B-Instruct-128K-GGUF](https://huggingface.co/unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF) | 5.2 | 46.74 | Fast and code-aware. Slightly fewer rejections than the base Qwen2.5-0.5B and worth considering for code-heavy workloads. |
+| [gemma-3-270m-it-GGUF](https://huggingface.co/unsloth/gemma-3-270m-it-GGUF)                                   | 3.7 | 43.65 | Fastest model in the group, but higher rejection rate (67 out of 280). Fine when raw speed matters more than reliability. |
+| [granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) **(default)**               | 2.9 | 42.92 | Very fast — the quickest model after Gemma 270M. Quality is middling and rejections are moderate. Worth trying if you need the fastest possible response time and can tolerate some misses. |
+| [Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF)                          | 7.8 | 42.12 | Slower than Qwen3.5 with lower quality. Not the strongest choice unless you specifically want the Qwen2.5 base family. |
+| [Qwen2-500M-Instruct-GGUF](https://huggingface.co/lmstudio-community/Qwen2-500M-Instruct-GGUF)                | 5.9 | 38.67 | High rejection rate (66 out of 280) and the second-lowest score. Not recommended. |
+| [Kiwi-1.0-0.7B-32k-Instruct-GGUF](https://huggingface.co/mradermacher/Kiwi-1.0-0.7B-32k-Instruct-GGUF)        | 24.8 | 34.68 | Slowest and lowest-scoring CPU model tested. Not recommended. |
 
-**GPU models** — full-precision Transformers models running on CUDA. Sorted by average inference time, fastest first. Tested on an RTX 3060 Ti (8 GiB).
+**GPU models** — full-precision Transformers models running on CUDA. Sorted by score, highest first. Tested on an RTX 3060 Ti (8 GiB).
+
+> Latency on GPU depends heavily on your specific card. Use the scores as the main comparison signal.
 
 | Name | Avg. Inference (s) | Score | Comments |
-|---|---|---|---|
-| [LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) | 1.94 | 61.45 | Fastest GPU model with strong quality. Excellent speed-to-quality ratio — a great first choice for GPU setups. |
-| [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | 3.78 | 54.38 | Fast but quality trails other 1–2B GPU models. Fine for setups where throughput matters more than peak accuracy. |
-| [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) | 4.80 | 57.57 | Solid all-rounder at 1.7B. Good quality at moderate speed. |
-| [granite-3.3-2b-instruct](https://huggingface.co/ibm-granite/granite-3.3-2b-instruct) | 6.34 | 61.16 | IBM's 2B reasoning model. Particularly reliable at preserving exact values and producing structured outputs like JSON or bullet lists. |
-| [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | 12.71 | 58.19 | Smaller model that runs slower on GPU than the others. Reasonable quality — best used when VRAM is very tight. |
-| [gemma-4-E2B-it](https://huggingface.co/google/gemma-4-E2B-it) | 162.52 | 67.49 | Highest score of all GPU models, but extremely slow — over 2 minutes average per case on an RTX 3060 Ti. Only practical if quality is the sole priority and speed does not matter. |
+|------|:-:|:-:|---|
+| [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | 9.7 | **52.99** | Best overall GPU model by score. Solid quality jump over the 1–1.5B options. Good pick if you want the highest quality and don’t mind the extra wait. |
+| [granite-3.3-2b-instruct](https://huggingface.co/ibm-granite/granite-3.3-2b-instruct) | 4.7 | 51.54 | IBM's 2B model. Particularly good at preserving exact values and following structured output contracts like JSON or bullet lists. Also the fastest of the 2B-class models. |
+| [LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) **(recommended)** | 1.2 | 50.38 | Fastest GPU model tested — roughly 4× faster than most others. Best speed-to-quality ratio in this class. Recommended default for GPU setups. |
+| [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B) | 19.5 | 49.58 | Decent quality but much slower than Qwen3.5-2B for a lower score. Hard to recommend unless you specifically want this model. |
+| [granite-4.0-micro](https://huggingface.co/ibm-granite/granite-4.0-micro) | 8.5 | 48.83 | IBM's micro model. Moderate quality and speed, slightly below its 2B sibling. |
+| [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) | 4.6 | 48.78 | Fast and lightweight. A reasonable fallback if you want quick GPU inference without paying for a larger model. |
+| [gemma-3-1b-it](https://huggingface.co/unsloth/gemma-3-1b-it) | 8.6 | 47.29 | Google's 1B Gemma model. Middling quality with a higher rejection count — not the strongest option at this size. |
+| [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | 5.5 | 50.21 | Smaller model that holds up reasonably well on GPU. Best used when VRAM is very tight and you still want decent Qwen3.5 quality. |
+| [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | 3.6 | 45.91 | Fast and lightweight, but quality trails other GPU models at this size. Fine when throughput matters more than peak accuracy. |
 
+**Remote / hosted models** — models accessed through a LiteLLM-compatible endpoint (e.g. OpenAI). Requires `ctxsift[remote]`. Sorted by score, highest first.
+
+> Remote latency depends on your network and the provider's load at the time of the run. Treat latency numbers here as indicative, not fixed.
+
+| Name | Avg. Inference (s) | Score | Comments |
+|------|:-:|:-:|---|
+| [gpt-4.1](https://platform.openai.com/docs/models) | 1.8 | **89.76** | Best remote model by a wide margin. Only 1 rejected case out of 280 and near-perfect anchor preservation. The ceiling for hosted compression quality. |
+| [gpt-5.4-mini](https://platform.openai.com/docs/models) | 1.3 | 83.69 | Near the top of the leaderboard at a fraction of the cost of gpt-4.1. Very few rejections (2 out of 280) and fast responses. Strong everyday choice. |
+| [gpt-5.4-nano](https://platform.openai.com/docs/models) | 1.5 | 83.32 | Almost identical results to gpt-5.4-mini. Nano-sized pricing with strong quality. A cost-efficient pick for high-volume setups. |
+| [gpt-4o-mini](https://platform.openai.com/docs/models) | 2.1 | 77.46 | Reliable and fast. Noticeably fewer rejections than gpt-4.1-mini and a solid score. Good value for everyday compression at scale. |
+| [gpt-4.1-mini](https://platform.openai.com/docs/models) | 1.8 | 73.46 | Decent performance. Slightly more rejections than gpt-4o-mini but still a reasonable choice if you are already on gpt-4.1 pricing. |
+| [gpt-4o](https://platform.openai.com/docs/models) | 1.7 | 73.11 | Scores below gpt-4o-mini despite being the larger model. More rejections (24 out of 280). gpt-4o-mini is the better pick in this family. |
+| [gpt-5-mini](https://platform.openai.com/docs/models) | 6.6 | 31.40 | Underperformed significantly — 132 rejected cases out of 280. Slow responses compounded by poor instruction following on structured output tasks. Not recommended in its current form. |
+| [gpt-5-nano](https://platform.openai.com/docs/models) | 4.8 | 7.35 | Failed on almost every case — 244 rejections out of 280. Appears to not follow the compression contract reliably at all. Not suitable for CtxSift use right now. |
 
 To learn more about the benchmark based on which, we recommend alternate models, please [see here](benchmark/README.md).
 
@@ -128,13 +182,13 @@ CtxSift has two core operations that the skill injects into an agent's workflow.
     The agent specifies its needs via an instruction in either of the ways belows.
     **Pipe mode** — pipe any command output with a natural language instruction:
     ```bash
-    pytest -q | ctxsift compress "show only failing tests, useful traceback lines, and files involved"
+    pytest -q | ctxsift compress --intent summary "show only failing tests, useful traceback lines, and files involved"
     ```
     **Command capture mode** — let CtxSift execute the command directly for richer metadata (exit code, duration, stderr, git state):
     ```bash
-    ctxsift compress "summarize build errors and point out specific misbehaving files" -- npm run build
+    ctxsift compress --intent summary "summarize build errors and point out specific misbehaving files" -- pnpm build
     ```
-2. **Recall**: Mostly after a context compaction event, agents rediscover the current state by inspecting large files which can negate tokens saved by compression. Recall lets agents 
+2. **Recall**: Mostly after a context compaction event, agents rediscover the current state by inspecting large files which can negate tokens saved by compression. Recall lets agents search previously compressed outputs using natural language, returning relevant summaries, execution metadata, and file paths to rebuild their context efficiently.
 
     The agent recalls using the below commands.
     ```bash
@@ -374,7 +428,7 @@ CtxSift currently supports these quantization modes for local GPU compression:
 Quantized GPU loads require the optional quantization dependencies:
 
 ```bash
-uv add "ctxsift[gpu,quant]"
+uv tool install "ctxsift[gpu,quant]"
 ```
 
 ### Flash Attention
@@ -418,7 +472,7 @@ ctxsift daemon stop --all
 
 ## Acknowledgement
 
-CtxSift was inspired by the original [Distill](https://github.com/samuelfaj/distill) project by samuelfaj. 
+CtxSift was inspired by the original [Distill](https://github.com/samuelfaj/distill) project by [samuelfaj](https://github.com/samuelfaj). 
 That work helped shape the initial direction here and motivated extending the idea toward local execution, file re-reads, and read-after-compression state recovery.
 
 Thanks as well to the open-source tooling that makes this project practical: Hugging Face for providing opensource models, llama.cpp for efficient local inference on CPU, LiteLLM for their package to support a hundred providers and the broader libraries and communities around local LLM workflows that make projects like this possible.

@@ -18,7 +18,6 @@ from ctxsift.daemon.types import (
     JsonErrorPayload,
 )
 
-
 AUTH_HEADER = "X-Ctxsift-Token"
 
 

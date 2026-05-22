@@ -21,12 +21,12 @@ from ctxsift.models.local_runtime import should_apply_soft_length_hint
 from ctxsift.models.text_model_profiles import resolve_text_model_profile
 from ctxsift.models.text_profile_common import (
     apply_soft_length_hint,
+    build_validation_failure_message,
     build_repair_messages,
     choose_preferred_candidate,
     recover_scaffold_prefixed_output,
     should_attempt_repair,
     validate_instruction_aware_output,
-    validation_flags,
 )
 from ctxsift.models.text_profile_types import TextModelProfile
 from ctxsift.models.quantized_model_cache import (
@@ -132,7 +132,9 @@ class TransformersTextBackend(ModelBackend):
                     torch_dtype=torch_dtype,
                     attention_backend=None,
                 )
-            except Exception as fallback_error:  # pragma: no cover - exercised through fallback behavior
+            except (
+                Exception
+            ) as fallback_error:  # pragma: no cover - exercised through fallback behavior
                 raise BackendUnavailableError(str(fallback_error)) from fallback_error
 
     def _generate_text(self, runtime: TextRuntime, request: ModelCompressionInput) -> str:
@@ -163,13 +165,13 @@ class TransformersTextBackend(ModelBackend):
         repair_validation = validate_instruction_aware_output(request, repaired_output)
 
         raise ModelOutputRejectedError(
-            f"{self._profile.family_name} output validation failed. "
-            f"first_pass_status={first_validation.status} "
-            f"first_pass_flags={list(validation_flags(first_validation))!r} "
-            f"first_pass={_preview_generation_output(first_pass)!r} "
-            f"repair_status={repair_validation.status} "
-            f"repair_flags={list(validation_flags(repair_validation))!r} "
-            f"repair_pass={_preview_generation_output(repaired_output)!r}"
+            build_validation_failure_message(
+                self._profile.family_name,
+                first_validation,
+                first_pass,
+                repair_validation,
+                repaired_output,
+            )
         )
 
     def _recover_candidate_before_validation(
@@ -207,13 +209,6 @@ class TransformersTextBackend(ModelBackend):
         if not self._use_soft_length_hint:
             return messages
         return apply_soft_length_hint(messages, request)
-
-
-def _preview_generation_output(text: str, limit: int = 160) -> str:
-    normalized = " ".join(text.split())
-    if len(normalized) <= limit:
-        return normalized
-    return normalized[: limit - 3] + "..."
 
 
 TransformersGemmaBackend = TransformersTextBackend
@@ -284,7 +279,7 @@ def _create_text_runtime(
     if load_options.move_to_device:
         model.to(resolved_device.torch_device)
     model.eval()
-    tokenizer_kwargs = {"padding_side": "left"}
+    tokenizer_kwargs: dict[str, Any] = {"padding_side": "left"}
     if profile.trust_remote_code:
         tokenizer_kwargs["trust_remote_code"] = True
     tokenizer = auto_tokenizer.from_pretrained(artifacts.tokenizer_source, **tokenizer_kwargs)
@@ -353,16 +348,16 @@ def _cached_model_kwargs(model_kwargs: dict[str, Any], trust_remote_code: bool) 
 
 def _runtime_input_device(model: Any, fallback_device: str) -> str:
     embedding_device = _input_embedding_device(model)
-    if embedding_device not in {None, "meta"}:
+    if embedding_device is not None and embedding_device != "meta":
         return embedding_device
     hf_device_map = getattr(model, "hf_device_map", None)
     if isinstance(hf_device_map, dict):
         for device in hf_device_map.values():
             normalized_device = _normalize_runtime_device(device)
-            if normalized_device not in {None, "disk", "meta"}:
+            if normalized_device is not None and normalized_device not in {"disk", "meta"}:
                 return normalized_device
     model_device = _normalize_runtime_device(getattr(model, "device", None))
-    if model_device not in {None, "meta"}:
+    if model_device is not None and model_device != "meta":
         return model_device
     return fallback_device
 

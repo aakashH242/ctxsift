@@ -6,6 +6,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.types import ExtractedSignal
 
 
@@ -21,6 +22,7 @@ class ModelOutputRejectedError(BackendUnavailableError):
 class ModelCompressionInput:
     """Structured input passed to one model backend."""
 
+    intent: CompressionIntent
     instruction: str
     raw_input: str
     extracted_signal: ExtractedSignal

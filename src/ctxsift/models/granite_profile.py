@@ -15,6 +15,8 @@ from ctxsift.models.text_profile_common import (
 )
 from ctxsift.models.text_profile_types import TextModelProfile
 
+GRANITE_REASONING_TAGS = ("think", "thinking", "thought")
+
 
 def matches_model_name(model_name: str) -> bool:
     """Return whether the configured model should use the Granite profile."""
@@ -35,10 +37,12 @@ def generation_kwargs(tokenizer: object, max_output_tokens: int) -> dict[str, in
 def normalize_output(request: ModelCompressionInput | str, text: str | None = None) -> str:
     """Apply Granite-specific cleanup to generated text."""
     if text is None:
-        without_think = strip_reasoning_blocks(str(request), "think")
+        without_think = strip_reasoning_blocks(str(request), *GRANITE_REASONING_TAGS)
         without_response_wrapper = re.sub(r"</?response>", "", without_think, flags=re.IGNORECASE)
         return normalize_plain_output(without_response_wrapper)
-    without_think = strip_reasoning_blocks(text, "think")
+    if isinstance(request, str):
+        raise TypeError("request context is required when text is provided")
+    without_think = strip_reasoning_blocks(text, *GRANITE_REASONING_TAGS)
     without_response_wrapper = re.sub(r"</?response>", "", without_think, flags=re.IGNORECASE)
     return normalize_profile_output(request, without_response_wrapper)
 

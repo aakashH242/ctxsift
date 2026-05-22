@@ -5,13 +5,12 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ctxsift import config_store
+from ctxsift.config import store as config_store
 from ctxsift.cli import app
-from ctxsift import configure_setup
-from ctxsift import configure_flow
-from ctxsift.doctor import DoctorCheck, DoctorReport
+from ctxsift.config import setup as configure_setup
+from ctxsift.config import flow as configure_flow
+from ctxsift.diagnostics.doctor import DoctorCheck, DoctorReport
 from ctxsift.model_preload import ModelPreloadResult
-
 
 runner = CliRunner()
 
@@ -42,7 +41,12 @@ def fast_configure_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
             ]
         )
 
-    async def fake_preload_configured_models(config):
+    async def fake_preload_configured_models(config, progress=None):
+        if progress is not None:
+            progress(
+                f"Preparing embedding model {config.embedding.model}. "
+                "This may still take time even if artifacts are already cached."
+            )
         results = [
             ModelPreloadResult(
                 label=f"embedding model {config.embedding.model}",
@@ -51,6 +55,11 @@ def fast_configure_side_effects(monkeypatch: pytest.MonkeyPatch) -> None:
             )
         ]
         if not config.remote.base_url.strip():
+            if progress is not None:
+                progress(
+                    f"Preparing local compression model {config.local.model}. "
+                    "This may still take time even if artifacts are already cached."
+                )
             results.append(
                 ModelPreloadResult(
                     label=f"local compression model {config.local.model}",
@@ -94,13 +103,18 @@ def test_configure_writes_workspace_scope_by_default(
     workspace_config = repo_path / ".git" / "ctxsift" / "config.toml"
     assert workspace_config.exists()
     assert "Updated workspace config" in result.stdout
+    assert "Please wait: initializing workspace database..." in result.stdout
+    assert "Please wait: running health checks..." in result.stdout
+    assert "Please wait: preparing configured models..." in result.stdout
+    assert "Preparing embedding model microsoft/harrier-oss-v1-0.6b." in result.stdout
+    assert "Preparing local compression model ibm-granite/granite-4.0-350m-GGUF." in result.stdout
     assert (repo_path / ".git" / "ctxsift" / "ctxsift.db").exists()
     assert "Preloaded embedding model microsoft/harrier-oss-v1-0.6b." in result.stdout
     assert "Preloaded local compression model ibm-granite/granite-4.0-350m-GGUF." in result.stdout
     assert "[required] sqlite_fts5: ok" in result.stdout
     text = workspace_config.read_text(encoding="utf-8")
     assert 'model = "ibm-granite/granite-4.0-350m-GGUF"' in text
-    assert 'gguf_filename = "smollm2-360m-instruct-q8_0.gguf"' in text
+    assert 'gguf_filename = "granite-4.0-350m-Q8_0.gguf"' in text
     assert 'quantization = "none"' in text
     assert 'model = "microsoft/harrier-oss-v1-0.6b"' in text
 
@@ -128,6 +142,31 @@ def test_configure_can_set_local_model_cache_path(
     assert "Local model cache path override" in result.output
     text = isolated_config_paths.read_text(encoding="utf-8")
     assert 'model_cache_path = "D:/ctxsift-model-cache"' in text
+
+
+def test_configure_hides_database_path_override_and_clears_existing_value(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    isolated_config_paths.parent.mkdir(parents=True, exist_ok=True)
+    isolated_config_paths.write_text('db_path = "D:/old-ctxsift.db"\n', encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["configure"],
+        input=_configure_input(
+            compression_mode="remote",
+            save_target="global",
+            write_ignore_answer="",
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Database path override" not in result.output
+    text = isolated_config_paths.read_text(encoding="utf-8")
+    assert "db_path" not in text
 
 
 def test_configure_global_writes_remote_values(
@@ -175,7 +214,7 @@ def test_configure_succeeds_when_remote_litellm_warning_is_reported(
                     severity="warning",
                     ok=False,
                     detail=(
-                        "LiteLLM is not installed. Install it with `uv add \"ctxsift[remote]\"`; "
+                        'LiteLLM is not installed. Install it with `uv tool install "ctxsift[remote]"`; '
                         "remote compression will not work until it is available."
                     ),
                 )
@@ -202,7 +241,7 @@ def test_configure_succeeds_when_remote_litellm_warning_is_reported(
     assert isolated_config_paths.exists()
     assert "Updated global config" in result.stdout
     assert "[warning] litellm: warning" in result.stdout
-    assert 'uv add "ctxsift[remote]"' in result.stdout
+    assert 'uv tool install "ctxsift[remote]"' in result.stdout
 
 
 def test_configure_rejects_invalid_final_config(
@@ -273,9 +312,11 @@ def test_configure_uses_gpu_recommended_model_when_cuda_is_available(
 
     assert result.exit_code == 0
     assert "Local device (GPU detected) (cuda, cpu)" in result.output
-    assert "Local model (recommended: Qwen/Qwen3.5-0.8B)" in result.output
+    assert "Local model (recommended: LiquidAI/LFM2.5-1.2B-Instruct)" in result.output
     assert "Local GGUF filename" not in result.output
-    assert 'model = "Qwen/Qwen3.5-0.8B"' in isolated_config_paths.read_text(encoding="utf-8")
+    assert 'model = "LiquidAI/LFM2.5-1.2B-Instruct"' in isolated_config_paths.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_configure_local_mode_hides_remote_prompts(
@@ -363,6 +404,9 @@ def test_init_command_is_not_available() -> None:
 def _configure_input(
     compression_mode: str,
     recall_default_limit: str = "10",
+    recall_min_score: str = "120",
+    weak_fallback_min_score: str = "90",
+    weak_fallback_limit: str = "1",
     local_device: str = "",
     local_model_cache_path: str = "",
     embedding_device: str = "auto",
@@ -405,7 +449,9 @@ def _configure_input(
             "50",
             "50",
             "0.75",
-            "",
+            recall_min_score,
+            weak_fallback_min_score,
+            weak_fallback_limit,
             save_target,
         ]
     )

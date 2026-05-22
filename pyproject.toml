@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "ctxsift"
-version = "0.1.0"
+version = "1.0.0"
 description = "Local-first command output compression and recall for coding agents."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -14,6 +14,7 @@ dependencies = [
     "llama-cpp-python==0.3.23",
     "platformdirs==4.9.6",
     "pydantic==2.13.4",
+    "rich==15.0.0",
     "sentence-transformers==5.5.0",
     "sqlite-vec==0.1.9",
     "torch==2.12.0",
@@ -55,7 +56,10 @@ dev = [
     "black==26.3.1",
     "mypy==2.1.0",
     "pytest==9.0.3",
+    "pytest-cov==7.0.0",
     "ruff==0.15.13",
+    "types-PyYAML==6.0.12.20250516",
+    "types-psutil==7.0.0.20251001",
 ]
 
 [tool.uv]
@@ -65,8 +69,22 @@ default-groups = ["dev"]
 packages = ["src/ctxsift"]
 include = ["src/ctxsift/agent_skill_template.md"]
 
+[tool.hatch.build.targets.sdist]
+only-include = [
+    "src",
+    "pyproject.toml",
+    "README.md",
+    "LICENSE.md",
+]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+omit = [
+    "src/ctxsift/agent/skills.py",
+    "src/ctxsift/models/transformers_helper.py",
+]
 
 [tool.ruff]
 line-length = 100
@@ -82,3 +100,11 @@ include = '^/(src|tests|benchmark)/.*\.pyi?$'
 files = ["src", "tests", "benchmark"]
 mypy_path = ["src"]
 explicit_package_bases = true
+
+[[tool.mypy.overrides]]
+module = ["sqlite_vec"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = ["litellm"]
+ignore_missing_imports = true

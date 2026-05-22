@@ -6,6 +6,7 @@ import asyncio
 
 import pytest
 
+from ctxsift.compression.intent import CompressionIntent
 import ctxsift.embeddings.daemon_backend as embedding_daemon
 import ctxsift.models.daemon_backend as compression_daemon
 from ctxsift.daemon.client import DaemonClientError
@@ -57,6 +58,7 @@ def test_daemon_compression_backend_retries_once_after_transport_failure(
     result = asyncio.run(
         backend.compress(
             ModelCompressionInput(
+                intent=CompressionIntent.SUMMARY,
                 instruction="compress",
                 raw_input="stderr here",
                 extracted_signal=ExtractedSignal(),
@@ -67,7 +69,11 @@ def test_daemon_compression_backend_retries_once_after_transport_failure(
 
     assert result == "compressed output"
     assert attempts == ["stderr here", "stderr here"]
-    assert forgotten == [compression_daemon.compression_daemon_spec(backend._config.local, backend._config.daemon).signature_hash]
+    assert forgotten == [
+        compression_daemon.compression_daemon_spec(
+            backend._config.local, backend._config.daemon
+        ).signature_hash
+    ]
 
 
 def test_daemon_compression_backend_resolves_current_spec_per_request(
@@ -99,6 +105,7 @@ def test_daemon_compression_backend_resolves_current_spec_per_request(
     asyncio.run(
         backend.compress(
             ModelCompressionInput(
+                intent=CompressionIntent.SUMMARY,
                 instruction="compress",
                 raw_input="before",
                 extracted_signal=ExtractedSignal(),
@@ -111,6 +118,7 @@ def test_daemon_compression_backend_resolves_current_spec_per_request(
     asyncio.run(
         backend.compress(
             ModelCompressionInput(
+                intent=CompressionIntent.SUMMARY,
                 instruction="compress",
                 raw_input="after",
                 extracted_signal=ExtractedSignal(),

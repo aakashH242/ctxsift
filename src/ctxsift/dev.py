@@ -5,7 +5,6 @@ from __future__ import annotations
 import subprocess
 import sys
 
-
 FORMAT_COMMANDS: tuple[tuple[str, ...], ...] = ((sys.executable, "-m", "black", "src", "tests"),)
 
 LINT_COMMANDS: tuple[tuple[str, ...], ...] = (

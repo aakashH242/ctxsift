@@ -7,7 +7,7 @@ from ctxsift.daemon.signatures import (
     build_embedding_signature,
     signature_hash,
 )
-from ctxsift.types import EmbeddingConfig, LocalModelConfig
+from ctxsift.types import EmbeddingConfig, LocalModelConfig, LocalQuantizationMode
 
 
 def test_identical_local_configs_share_one_compression_signature() -> None:
@@ -38,7 +38,7 @@ def test_changed_local_runtime_config_changes_compression_signature(
         LocalModelConfig(
             model="Qwen/Qwen3.5-0.8B",
             device="cuda",
-            quantization="bnb-8bit",
+            quantization=LocalQuantizationMode.BNB_8BIT,
             gguf_filename=None,
         )
     )

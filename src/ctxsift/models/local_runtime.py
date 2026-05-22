@@ -10,7 +10,6 @@ from typing import Any
 from ctxsift.models.base import BackendUnavailableError
 from ctxsift.types import LocalModelConfig, LocalQuantizationMode
 
-
 LLAMA_CPP_PROVIDER = "llama_cpp"
 TRANSFORMERS_PROVIDER = "transformers"
 SMALL_MODEL_MAX_BILLIONS = 2.0
@@ -133,19 +132,24 @@ def required_gguf_filename(config: LocalModelConfig) -> str:
 
 def recommended_llama_threads() -> int:
     """Return a pragmatic CPU thread count for llama.cpp loads."""
+    psutil_module: Any | None
     try:
-        import psutil  # type: ignore[import-not-found]
-    except Exception:
-        psutil = None
-    if psutil is not None:
-        count = psutil.cpu_count(logical=False)
+        import psutil as _psutil
+    except ImportError:
+        psutil_module = None
+    else:
+        psutil_module = _psutil
+    if psutil_module is not None:
+        count = psutil_module.cpu_count(logical=False)
         if isinstance(count, int) and count > 0:
             return count
     cpu_count = os.cpu_count() or 1
     return max(1, cpu_count)
 
 
-def estimated_model_size_billions(model_name: str, artifact_name: str | None = None) -> float | None:
+def estimated_model_size_billions(
+    model_name: str, artifact_name: str | None = None
+) -> float | None:
     """Estimate parameter count in billions from one repo or artifact name."""
     for candidate in (artifact_name or "", model_name):
         match = MODEL_SIZE_RE.search(candidate)

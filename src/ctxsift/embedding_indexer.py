@@ -17,7 +17,7 @@ from ctxsift.types import (
     ReferencedFileRecord,
     StoredRecord,
 )
-from ctxsift.vector_store import upsert_record_embedding
+from ctxsift.storage.vector import upsert_record_embedding
 
 
 async def index_record_embedding(

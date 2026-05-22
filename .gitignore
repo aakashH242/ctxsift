@@ -1,3 +1,8 @@
+# CtxSift storage and benchmark artifact
+.ctxsift
+.certs
+infrastructure
+
 # Operating system files
 .DS_Store
 Thumbs.db
@@ -19,6 +24,7 @@ __pycache__/
 venv/
 env/
 ENV/
+.venv-cpu
 
 # Packaging / build artifacts
 build/

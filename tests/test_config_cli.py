@@ -5,9 +5,8 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from ctxsift import config_store
+from ctxsift.config import store as config_store
 from ctxsift.cli import app
-
 
 runner = CliRunner()
 
@@ -154,7 +153,7 @@ def test_config_set_supports_local_quantization_key(
     show_result = runner.invoke(app, ["config", "show", "--global"])
 
     assert set_result.exit_code == 0
-    assert "quantization = \"bnb-4bit-nf4\"" in show_result.stdout
+    assert 'quantization = "bnb-4bit-nf4"' in show_result.stdout
 
 
 def test_config_set_supports_local_gguf_filename_key(

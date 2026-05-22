@@ -8,6 +8,7 @@ from pathlib import Path
 import subprocess
 import sys
 import time
+from typing import Any
 
 from ctxsift.daemon.client import DaemonClientError, read_health, request_stop
 from ctxsift.daemon.registry import (
@@ -38,7 +39,6 @@ from ctxsift.daemon.types import (
 )
 from ctxsift.models.local_runtime import resolve_local_runtime
 from ctxsift.types import AppConfig, DaemonConfig, EmbeddingConfig, LocalModelConfig
-
 
 START_POLL_INTERVAL_SECONDS = 0.1
 STOP_POLL_INTERVAL_SECONDS = 0.1
@@ -342,31 +342,43 @@ def _wait_for_registry_removal(path: Path, timeout_ms: int) -> None:
     delete_file_if_present(path)
 
 
-def _start_worker_process(payload: DaemonLaunchPayload, launch_file: Path) -> subprocess.Popen[str]:
+def _start_worker_process(payload: DaemonLaunchPayload, launch_file: Path) -> subprocess.Popen[Any]:
     log_file = Path(payload.log_path)
     log_file.parent.mkdir(parents=True, exist_ok=True)
-    output_handle = log_file.open("a", encoding="utf-8")
-    creationflags = 0
-    popen_kwargs: dict[str, object] = {
-        "args": [sys.executable, "-m", "ctxsift.daemon_worker", "--launch-file", str(launch_file)],
-        "stdin": subprocess.DEVNULL,
-        "stdout": output_handle,
-        "stderr": subprocess.STDOUT,
-        "cwd": str(Path.cwd()),
-        "close_fds": True,
-    }
     if os.name == "nt":
-        creationflags = (
-            subprocess.CREATE_NEW_PROCESS_GROUP
-            | subprocess.DETACHED_PROCESS
-            | subprocess.CREATE_NO_WINDOW
+        create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+        create_new_console = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
+        python_executable = subprocess.list2cmdline([sys.executable])
+        launch_file_arg = subprocess.list2cmdline([str(launch_file)])
+        daemon_command = (
+            f"{python_executable} -m ctxsift.daemon_worker --launch-file {launch_file_arg}"
         )
-        popen_kwargs["creationflags"] = creationflags
-    else:  # pragma: no cover - Windows is primary env, but keep POSIX-safe.
-        popen_kwargs["start_new_session"] = True
-    process = subprocess.Popen(**popen_kwargs)  # type: ignore[arg-type]
-    output_handle.close()
-    return process
+        return subprocess.Popen(
+            args=["cmd.exe", "/k", daemon_command],
+            stdin=subprocess.DEVNULL,
+            cwd=str(Path.cwd()),
+            close_fds=True,
+            creationflags=create_new_process_group | create_new_console,
+        )
+    output_handle = log_file.open("a", encoding="utf-8")
+    try:  # pragma: no cover - Windows is primary env, but keep POSIX-safe.
+        return subprocess.Popen(
+            args=[
+                sys.executable,
+                "-m",
+                "ctxsift.daemon_worker",
+                "--launch-file",
+                str(launch_file),
+            ],
+            stdin=subprocess.DEVNULL,
+            cwd=str(Path.cwd()),
+            close_fds=True,
+            stdout=output_handle,
+            stderr=subprocess.STDOUT,
+            start_new_session=True,
+        )
+    finally:
+        output_handle.close()
 
 
 def _launch_payload(spec: DaemonSpec) -> DaemonLaunchPayload:

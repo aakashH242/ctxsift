@@ -6,7 +6,7 @@ import sys
 
 from ctxsift.execution import CommandExecutionRequest, execute_command
 from ctxsift.git_metadata import GitMetadata
-from ctxsift.run_capture import render_run_payload
+from ctxsift.compression.run_payload import render_run_payload
 from ctxsift.types import WorkspaceContext
 
 

@@ -8,6 +8,7 @@ from typing import Any
 
 import pytest
 
+from ctxsift.compression.intent import CompressionIntent
 from ctxsift.models.base import (
     BackendUnavailableError,
     ModelCompressionInput,
@@ -33,7 +34,6 @@ from ctxsift.models.qwen3_profile import (
 )
 from ctxsift.models.qwen35_profile import (
     build_text_messages as build_qwen35_messages,
-    is_valid_output as is_valid_qwen35_output,
     matches_model_name as matches_qwen35_model_name,
     normalize_output as normalize_qwen35_output,
 )
@@ -65,7 +65,7 @@ from ctxsift.models.transformers_gemma import (
     _runtime_input_device,
 )
 from ctxsift.models.transformers_quantization import build_transformers_load_options
-from ctxsift.types import ExtractedSignal, LocalModelConfig
+from ctxsift.types import ExtractedSignal, LocalModelConfig, LocalQuantizationMode
 
 
 class FakeInputs(dict):
@@ -95,7 +95,9 @@ class FakeTokenizer:
         return "templated prompt"
 
     def __call__(self, text: str, return_tensors: str) -> FakeInputs:
-        return FakeInputs({"input_ids": [[1, 2, 3]], "text": text, "return_tensors": return_tensors})
+        return FakeInputs(
+            {"input_ids": [[1, 2, 3]], "text": text, "return_tensors": return_tensors}
+        )
 
     def decode(self, tokens, skip_special_tokens: bool) -> str:
         return "Model answer"
@@ -120,17 +122,20 @@ class FakeGraniteTokenizer:
         return "templated prompt"
 
     def __call__(self, text: str, return_tensors: str) -> FakeInputs:
-        return FakeInputs({"input_ids": [[1, 2, 3]], "text": text, "return_tensors": return_tensors})
+        return FakeInputs(
+            {"input_ids": [[1, 2, 3]], "text": text, "return_tensors": return_tensors}
+        )
 
     def decode(self, tokens, skip_special_tokens: bool) -> str:
         return "Model answer"
+
 
 class FakeModel:
     """Generation model stub."""
 
     def __init__(self) -> None:
-        self.device = "cpu"
-        self.hf_device_map: dict[str, str] | None = None
+        self.device: object | None = "cpu"
+        self.hf_device_map: dict[str, object] | None = None
         self.to_device: str | None = None
         self.generate_calls: list[dict[str, Any]] = []
         self.eval_called = False
@@ -149,6 +154,7 @@ class FakeModel:
 
 def test_gemma_profile_builds_anchor_prompt() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input='File "src/auth.py", line 9, in login\nAuthError: login failed',
         extracted_signal=ExtractedSignal(
@@ -199,6 +205,7 @@ def test_qwen25_profile_matches_qwen25_model_names() -> None:
 
 def test_qwen25_profile_builds_standard_messages() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="src/config.py:88 ValidationError",
         extracted_signal=ExtractedSignal(
@@ -222,6 +229,7 @@ def test_qwen25_profile_normalizes_headings_and_bullets() -> None:
 
 def test_qwen25_profile_rejects_schema_like_output() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="ValidationError",
         extracted_signal=ExtractedSignal(),
@@ -239,6 +247,7 @@ def test_qwen3_profile_matches_qwen3_model_names() -> None:
 
 def test_qwen3_profile_builds_standard_messages() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="tests/test_cli.py::test_run failed",
         extracted_signal=ExtractedSignal(
@@ -255,11 +264,15 @@ def test_qwen3_profile_builds_standard_messages() -> None:
 
 
 def test_qwen3_profile_strips_reasoning_blocks() -> None:
-    assert normalize_qwen3_output("<think>hidden chain</think>\nSummary:\n- final answer") == "final answer"
+    assert (
+        normalize_qwen3_output("<think>hidden chain</think>\nSummary:\n- final answer")
+        == "final answer"
+    )
 
 
 def test_qwen3_profile_rejects_schema_like_output() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="ValueError",
         extracted_signal=ExtractedSignal(),
@@ -277,6 +290,7 @@ def test_qwen35_profile_matches_qwen35_model_names() -> None:
 
 def test_qwen35_profile_builds_text_only_messages() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="docker build failed in infra/Dockerfile",
         extracted_signal=ExtractedSignal(
@@ -305,6 +319,7 @@ def test_smollm2_profile_matches_smollm2_model_names() -> None:
 
 def test_smollm2_profile_builds_standard_messages() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="pnpm lint failed in src/app.ts",
         extracted_signal=ExtractedSignal(
@@ -327,6 +342,7 @@ def test_smollm2_profile_uses_generic_cleanup() -> None:
 
 def test_smollm2_profile_rejects_schema_like_output() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="lint failed",
         extracted_signal=ExtractedSignal(),
@@ -344,6 +360,7 @@ def test_granite_profile_matches_granite_model_names() -> None:
 
 def test_granite_profile_builds_standard_messages() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="terraform apply failed in infra/main.tf",
         extracted_signal=ExtractedSignal(
@@ -361,11 +378,15 @@ def test_granite_profile_builds_standard_messages() -> None:
 
 
 def test_granite_profile_strips_reasoning_blocks() -> None:
-    assert normalize_granite_output("<think>chain</think><response>final answer</response>") == "final answer"
+    assert (
+        normalize_granite_output("<think>chain</think><response>final answer</response>")
+        == "final answer"
+    )
 
 
 def test_granite_profile_rejects_schema_like_output() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="apply failed",
         extracted_signal=ExtractedSignal(),
@@ -383,6 +404,7 @@ def test_phi_profile_matches_phi_model_names() -> None:
 
 def test_phi_profile_builds_strict_chat_messages() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="uv run failed in src/cli.py",
         extracted_signal=ExtractedSignal(
@@ -405,6 +427,7 @@ def test_phi_profile_uses_generic_cleanup() -> None:
 
 def test_phi_profile_rejects_role_token_leakage() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="run failed",
         extracted_signal=ExtractedSignal(),
@@ -419,14 +442,19 @@ def test_profile_registry_resolves_known_families_and_fallback() -> None:
     assert resolve_text_model_profile("Qwen/Qwen2.5-0.5B-Instruct").family_name == "qwen2.5"
     assert resolve_text_model_profile("Qwen/Qwen3-1.7B").family_name == "qwen3"
     assert resolve_text_model_profile("Qwen/Qwen3.5-0.8B").family_name == "qwen3.5"
-    assert resolve_text_model_profile("HuggingFaceTB/SmolLM2-1.7B-Instruct").family_name == "smollm2"
-    assert resolve_text_model_profile("ibm-granite/granite-3.3-2b-instruct").family_name == "granite"
+    assert (
+        resolve_text_model_profile("HuggingFaceTB/SmolLM2-1.7B-Instruct").family_name == "smollm2"
+    )
+    assert (
+        resolve_text_model_profile("ibm-granite/granite-3.3-2b-instruct").family_name == "granite"
+    )
     assert resolve_text_model_profile("microsoft/Phi-3.5-mini-instruct").family_name == "phi"
     assert resolve_text_model_profile("unknown/model").family_name == FALLBACK_PROFILE.family_name
 
 
 def test_fallback_profile_requires_exact_anchor_preservation() -> None:
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="src/cli.py ValidationError",
         extracted_signal=ExtractedSignal(
@@ -497,6 +525,7 @@ def test_transformers_backend_uses_text_runtime_async(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -515,6 +544,7 @@ def test_transformers_backend_uses_text_runtime_async(
     assert fake_model.generate_calls[0]["do_sample"] is False
     assert fake_model.generate_calls[0]["pad_token_id"] == 0
     assert fake_model.generate_calls[0]["eos_token_id"] == 2
+    assert fake_tokenizer.last_messages is not None
     assert "AuthError" in fake_tokenizer.last_messages[1]["content"]
 
 
@@ -555,6 +585,7 @@ def test_transformers_backend_supports_qwen25_profile(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="ValidationError: Extra inputs are not permitted",
         extracted_signal=ExtractedSignal(
@@ -568,6 +599,7 @@ def test_transformers_backend_supports_qwen25_profile(
     result = asyncio.run(backend.compress(request))
 
     assert result == "Model answer"
+    assert fake_tokenizer.last_messages is not None
     assert "python -m ctxsift compress" in fake_tokenizer.last_messages[1]["content"]
     assert backend._profile.family_name == "qwen2.5"
 
@@ -609,6 +641,7 @@ def test_transformers_backend_supports_qwen3_profile_and_disables_thinking(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="tests/test_cli.py::test_run failed",
         extracted_signal=ExtractedSignal(
@@ -667,6 +700,7 @@ def test_transformers_backend_supports_qwen35_profile(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="docker build failed in infra/Dockerfile",
         extracted_signal=ExtractedSignal(
@@ -720,6 +754,7 @@ def test_transformers_backend_supports_smollm2_profile(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="pnpm lint failed in src/app.ts",
         extracted_signal=ExtractedSignal(
@@ -773,6 +808,7 @@ def test_transformers_backend_supports_granite_profile_and_disables_thinking(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="terraform apply failed in infra/main.tf",
         extracted_signal=ExtractedSignal(
@@ -835,6 +871,7 @@ def test_transformers_backend_supports_phi_profile_with_trust_remote_code(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="uv run failed in src/cli.py",
         extracted_signal=ExtractedSignal(
@@ -894,6 +931,7 @@ def test_transformers_backend_enables_flash_attention_on_gpu_when_available(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -942,8 +980,11 @@ def test_transformers_backend_falls_back_when_flash_attention_init_fails(
         "ctxsift.models.transformers_gemma.text_attention_choice",
         lambda device_label, configured_value: "flash_attention_2",
     )
-    backend = TransformersGemmaBackend(LocalModelConfig(model="google/gemma-4-E2B-it", device="cuda"))
+    backend = TransformersGemmaBackend(
+        LocalModelConfig(model="google/gemma-4-E2B-it", device="cuda")
+    )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1003,15 +1044,20 @@ def test_transformers_backend_uses_bitsandbytes_quantization_without_model_move(
         "ctxsift.models.transformers_quantization._require_module",
         lambda module_name, message: None,
     )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_gemma.resolve_quantized_model_cache",
+        lambda config, model_name: None,
+    )
     backend = TransformersGemmaBackend(
         LocalModelConfig(
             model="google/gemma-4-E2B-it",
             device="cuda",
             dtype="bfloat16",
-            quantization="bnb-4bit-nf4",
+            quantization=LocalQuantizationMode.BNB_4BIT_NF4,
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1071,15 +1117,20 @@ def test_transformers_backend_uses_bnb8_quantization_without_model_move(
         "ctxsift.models.transformers_quantization._load_bitsandbytes_config_class",
         lambda: FakeBitsAndBytesConfig,
     )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_gemma.resolve_quantized_model_cache",
+        lambda config, model_name: None,
+    )
     backend = TransformersGemmaBackend(
         LocalModelConfig(
             model="google/gemma-4-E2B-it",
             device="cuda",
             gguf_filename=None,
-            quantization="bnb-8bit",
+            quantization=LocalQuantizationMode.BNB_8BIT,
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1154,10 +1205,11 @@ def test_transformers_backend_reuses_persisted_quantized_checkpoint(
             model="google/gemma-4-E2B-it",
             device="cuda",
             gguf_filename=None,
-            quantization="bnb-8bit",
+            quantization=LocalQuantizationMode.BNB_8BIT,
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1239,10 +1291,11 @@ def test_transformers_backend_persists_quantized_checkpoint_after_initial_load(
             model="google/gemma-4-E2B-it",
             device="cuda",
             gguf_filename=None,
-            quantization="bnb-8bit",
+            quantization=LocalQuantizationMode.BNB_8BIT,
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1277,7 +1330,11 @@ def test_bitsandbytes_quantization_requires_accelerate(
 
     with pytest.raises(BackendUnavailableError, match="accelerate"):
         build_transformers_load_options(
-            config=LocalModelConfig(device="cuda", gguf_filename=None, quantization="bnb-4bit-nf4"),
+            config=LocalModelConfig(
+                device="cuda",
+                gguf_filename=None,
+                quantization=LocalQuantizationMode.BNB_4BIT_NF4,
+            ),
             resolved_torch_device="cuda:0",
             torch_dtype="auto",
             attention_backend=None,
@@ -1324,10 +1381,11 @@ def test_transformers_backend_fails_closed_when_quantization_dependency_is_missi
             model="google/gemma-4-E2B-it",
             device="cuda",
             gguf_filename=None,
-            quantization="bnb-8bit",
+            quantization=LocalQuantizationMode.BNB_8BIT,
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1369,8 +1427,11 @@ def test_transformers_backend_rejects_invalid_gemma_output(
         "ctxsift.models.transformers_gemma._load_torch_module",
         lambda: fake_torch,
     )
-    backend = TransformersGemmaBackend(LocalModelConfig(model="google/gemma-4-E2B-it", device="cpu"))
+    backend = TransformersGemmaBackend(
+        LocalModelConfig(model="google/gemma-4-E2B-it", device="cpu")
+    )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
@@ -1416,6 +1477,7 @@ def test_transformers_backend_rejects_invalid_qwen25_output(
         LocalModelConfig(model="Qwen/Qwen2.5-0.5B-Instruct", device="cpu")
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="ValidationError",
         extracted_signal=ExtractedSignal(referenced_files=["src/config.py"]),
@@ -1457,10 +1519,9 @@ def test_transformers_backend_rejects_invalid_qwen3_output(
         "ctxsift.models.transformers_gemma._load_torch_module",
         lambda: fake_torch,
     )
-    backend = TransformersTextBackend(
-        LocalModelConfig(model="Qwen/Qwen3-1.7B", device="cpu")
-    )
+    backend = TransformersTextBackend(LocalModelConfig(model="Qwen/Qwen3-1.7B", device="cpu"))
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="pytest failed",
         extracted_signal=ExtractedSignal(command_terms=["pytest"]),
@@ -1502,10 +1563,9 @@ def test_transformers_backend_rejects_invalid_qwen35_output(
         "ctxsift.models.transformers_gemma._load_torch_module",
         lambda: fake_torch,
     )
-    backend = TransformersTextBackend(
-        LocalModelConfig(model="Qwen/Qwen3.5-0.8B", device="cpu")
-    )
+    backend = TransformersTextBackend(LocalModelConfig(model="Qwen/Qwen3.5-0.8B", device="cpu"))
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="docker build failed",
         extracted_signal=ExtractedSignal(command_terms=["docker build"]),
@@ -1551,6 +1611,7 @@ def test_transformers_backend_rejects_invalid_smollm2_output(
         LocalModelConfig(model="HuggingFaceTB/SmolLM2-1.7B-Instruct", device="cpu")
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="pnpm lint failed",
         extracted_signal=ExtractedSignal(command_terms=["pnpm lint"]),
@@ -1600,6 +1661,7 @@ def test_transformers_backend_rejects_invalid_granite_output(
         LocalModelConfig(model="ibm-granite/granite-3.3-2b-instruct", device="cpu")
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="terraform apply failed",
         extracted_signal=ExtractedSignal(command_terms=["terraform apply"]),
@@ -1645,6 +1707,7 @@ def test_transformers_backend_rejects_invalid_phi_output(
         LocalModelConfig(model="microsoft/Phi-3.5-mini-instruct", device="cpu")
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="uv run failed",
         extracted_signal=ExtractedSignal(command_terms=["uv run"]),
@@ -1693,10 +1756,9 @@ def test_transformers_backend_repairs_invalid_first_pass_output(
         "ctxsift.models.transformers_gemma._load_torch_module",
         lambda: fake_torch,
     )
-    backend = TransformersTextBackend(
-        LocalModelConfig(model="Qwen/Qwen3-1.7B", device="cpu")
-    )
+    backend = TransformersTextBackend(LocalModelConfig(model="Qwen/Qwen3-1.7B", device="cpu"))
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="tests/test_cli.py::test_run failed",
         extracted_signal=ExtractedSignal(
@@ -1727,7 +1789,9 @@ def test_apply_text_chat_template_handles_uninspectable_signature() -> None:
     messages = [{"role": "system", "content": "x"}]
 
     with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr("ctxsift.models.transformers_gemma.inspect.signature", raising_signature)
+        monkeypatch.setattr(
+            "ctxsift.models.transformers_gemma.inspect.signature", raising_signature
+        )
         result = _apply_text_chat_template(tokenizer, messages)
 
     assert result == "templated"
@@ -1748,6 +1812,7 @@ def test_transformers_backend_rejects_unknown_dtype(
         )
     )
     request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
         instruction="Summarize failures",
         raw_input="AuthError: login failed",
         extracted_signal=ExtractedSignal(symbols=["AuthError"]),
