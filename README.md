@@ -1,8 +1,8 @@
 
-# CtxSift — Save tokens and extend your Codex sessions
+# Save tokens and extend your Codex sessions
 
 <p align="center">
-  <img src="./docs/src/assets/banner.png" alt="CtxSift" width="100%" />
+  <img src="./docs/src/assets/banner.png" alt="CtxSift" width="75%" />
 </p>
 
 Command outputs and state recollection are the biggest source of token overuse. 
@@ -136,7 +136,6 @@ To view the latest benchmark, open `benchmark/results/viewer.html` to inspect th
 | [granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) **(default)**               | 2.9 | 42.92 | Very fast — the quickest model after Gemma 270M. Quality is middling and rejections are moderate. Worth trying if you need the fastest possible response time and can tolerate some misses. |
 | [Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF)                          | 7.8 | 42.12 | Slower than Qwen3.5 with lower quality. Not the strongest choice unless you specifically want the Qwen2.5 base family. |
 | [Qwen2-500M-Instruct-GGUF](https://huggingface.co/lmstudio-community/Qwen2-500M-Instruct-GGUF)                | 5.9 | 38.67 | High rejection rate (66 out of 280) and the second-lowest score. Not recommended. |
-| [Kiwi-1.0-0.7B-32k-Instruct-GGUF](https://huggingface.co/mradermacher/Kiwi-1.0-0.7B-32k-Instruct-GGUF)        | 24.8 | 34.68 | Slowest and lowest-scoring CPU model tested. Not recommended. |
 
 **GPU models** — full-precision Transformers models running on CUDA. Sorted by score, highest first. Tested on an RTX 3060 Ti (8 GiB).
 
