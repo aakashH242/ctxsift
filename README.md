@@ -1,8 +1,8 @@
 
-# CtxSift — Save tokens and extend your coding sessions
+# CtxSift — Save tokens and extend your Codex sessions
 
 <p align="center">
-  <img src="./docs/src/assets/banner.png" alt="CtxSift" width="50%" />
+  <img src="./docs/src/assets/banner.png" alt="CtxSift" width="100%" />
 </p>
 
 Command outputs and state recollection are the biggest source of token overuse. 
