@@ -36,6 +36,7 @@ def test_config_show_reports_workspace_scope(
 
     assert result.exit_code == 0
     assert "Scope: workspace" in result.stdout
+    assert "Resolved from: defaults" in result.stdout
     assert ".git" in result.stdout
 
 
@@ -51,6 +52,7 @@ def test_config_set_writes_global_file_and_show_reads_it(
 
     assert set_result.exit_code == 0
     assert show_result.exit_code == 0
+    assert "Resolved from: global" in show_result.stdout
     assert "max_output_tokens = 768" in show_result.stdout
     assert isolated_config_paths.exists()
 
@@ -122,6 +124,25 @@ def test_config_show_global_override_skips_workspace_scope(
 
     assert result.exit_code == 0
     assert "Scope: global" in result.stdout
+    assert "Resolved from: defaults" in result.stdout
+
+
+def test_config_show_reports_global_fallback_when_workspace_file_is_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    monkeypatch.chdir(repo_path)
+    runner.invoke(app, ["config", "set", "max_output_tokens", "768", "--global"])
+
+    result = runner.invoke(app, ["config", "show"])
+
+    assert result.exit_code == 0
+    assert "Scope: workspace" in result.stdout
+    assert "Resolved from: global fallback" in result.stdout
+    assert "max_output_tokens = 768" in result.stdout
 
 
 def test_config_set_supports_recall_limit_keys(

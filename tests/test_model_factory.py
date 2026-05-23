@@ -10,7 +10,7 @@ from ctxsift.models.daemon_backend import DaemonCompressionBackend
 from ctxsift.models.factory import create_compression_backend
 from ctxsift.models.llama_cpp_backend import LlamaCppBackend
 from ctxsift.models.litellm_remote import LiteLLMRemoteBackend
-from ctxsift.models.transformers_gemma import TransformersTextBackend
+from ctxsift.models.transformers_backend import TransformersTextBackend
 from ctxsift.types import AppConfig
 
 

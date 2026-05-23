@@ -12,7 +12,7 @@ from ctxsift.compression import pipeline as compression
 from ctxsift.compression import compress_input, summarize_deterministically
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
-from ctxsift.models.transformers_gemma import TransformersTextBackend
+from ctxsift.models.transformers_backend import TransformersTextBackend
 from ctxsift.compression.run_payload import CommandCapture, render_run_payload
 from ctxsift.types import AppConfig, CompressionRequest, LocalModelConfig
 from ctxsift.types import WorkspaceContext
@@ -709,11 +709,11 @@ def test_compress_input_unknown_family_fallback_profile_stores_soft_accepted_out
         },
     )()
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(

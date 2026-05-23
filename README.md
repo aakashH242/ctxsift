@@ -1,5 +1,5 @@
 
-# Save tokens and extend your Codex sessions
+# Save tokens and extend your coding sessions
 
 <p align="center">
   <img src="./docs/src/assets/banner.png" alt="CtxSift" width="75%" />
@@ -80,7 +80,7 @@ Then restart your shell and try `ctxsift` again.
 
 ### First-time setup
 
-Run a guided setup to configure your model provider and workspace settings.
+Run a guided setup to configure your model provider, workspace settings and **install the skill** for your favorite agent harness.
 
 ```bash
 ctxsift configure

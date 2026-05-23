@@ -28,6 +28,7 @@ import { compressionShowcases } from '../data/compression-showcases';
       name="description"
       content="CtxSift compresses raw command outputs into recallable working memory for coding agents."
     />
+    <script defer src="https://umami.tabmate.org/recorder.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9" data-sample-rate="0.4" data-mask-level="moderate" data-max-duration="300000"></script>
   </head>
   <body class="landing-body">
     <div class="page-wrap">
@@ -59,17 +60,30 @@ import { compressionShowcases } from '../data/compression-showcases';
             <nav class="landing-nav">
               <a class="nav-link" href="https://github.com/aakashh242/ctxsift">Source</a>
               <a class="nav-link" href="/docs/">Docs</a>
+              <a class="nav-link" href="/docs/blog/">Blog</a>
               <a class="nav-link" href="/docs/guides/benchmark/">Benchmark</a>
               <a class="nav-link" href="/docs/reference/cli/">CLI</a>
             </nav>
-            <label class="landing-theme-control" for="landing-theme-select">
-              <span class="landing-theme-label">Theme</span>
-              <select id="landing-theme-select" class="landing-theme-select" aria-label="Theme">
-                <option value="auto">Auto</option>
-                <option value="light">Light</option>
-                <option value="dark">Dark</option>
-              </select>
-            </label>
+            <div class="landing-theme-toggle" id="landing-theme-toggle" role="group" aria-label="Theme switcher">
+              <button class="theme-toggle-btn" data-theme="light" aria-label="Light theme" title="Light theme">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="5"></circle>
+                  <line x1="12" y1="1" x2="12" y2="3"></line>
+                  <line x1="12" y1="21" x2="12" y2="23"></line>
+                  <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                  <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                  <line x1="1" y1="12" x2="3" y2="12"></line>
+                  <line x1="21" y1="12" x2="23" y2="12"></line>
+                  <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                  <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+                </svg>
+              </button>
+              <button class="theme-toggle-btn" data-theme="dark" aria-label="Dark theme" title="Dark theme">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                </svg>
+              </button>
+            </div>
           </div>
         </div>
       </header>
@@ -98,19 +112,20 @@ import { compressionShowcases } from '../data/compression-showcases';
               </p>
 
               <div class="landing-actions">
-
-                <a href="/docs/getting-started/installation/" class="landing-action landing-action-primary" id="cta-docs">
-                  Get Started
+                <a href="/installers/ctxsift-install-skill.zip" class="landing-action landing-action-primary"  id="cta-install-skill" download="ctxsift-install-skill.zip">
+                  Install with Agent
                   <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
                     <path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
                   </svg>
                 </a>
+
                 <a href="https://github.com/aakashh242/ctxsift" class="landing-action landing-action-secondary" id="cta-github" target="_blank" rel="noopener">
                   <svg width="15" height="15" viewBox="0 0 98 96" fill="currentColor" aria-hidden="true">
                     <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/>
                   </svg>
                   View on GitHub
                 </a>
+
                 <!-- Live GitHub stars badge -->
                 <a href="https://github.com/aakashh242/ctxsift/stargazers" class="stars-badge" id="cta-stars" target="_blank" rel="noopener" aria-label="GitHub Stars">
                   <img
@@ -122,20 +137,12 @@ import { compressionShowcases } from '../data/compression-showcases';
                 </a>
               </div>
 
-              <!-- stat strip -->
-              <div class="stat-strip" aria-label="Quick stats">
-                <div class="stat-item">
-                  <span class="stat-value">Pipe mode</span>
-                  <span class="stat-label">Drop into existing command pipelines</span>
-                </div>
-                <div class="stat-item">
-                  <span class="stat-value">Command capture</span>
-                  <span class="stat-label">Run commands with retained metadata</span>
-                </div>
-                <div class="stat-item">
-                  <span class="stat-value">Recall search</span>
-                  <span class="stat-label">Query stored findings instead of reruns</span>
-                </div>
+              <div class="support-pill-row" aria-label="Supported agent harnesses">
+                <span class="support-pill">Codex</span>
+                <span class="support-pill">Antigravity</span>
+                <span class="support-pill">Copilot</span>
+                <span class="support-pill">Claude Code</span>
+                <span class="support-pill">Other Agents</span>
               </div>
             </div>
 
@@ -178,6 +185,9 @@ import { compressionShowcases } from '../data/compression-showcases';
                     It was inspired by the original <a href="https://github.com/samuelfaj/distill">Distill</a> project and extends that direction toward local execution,
                     file rereads, and read-after-compression state recovery for coding agents.
                   </p>
+                  <p class="mt-4">
+                    <a class="setup-inline-link" href="/docs/blog/what-motivated-ctxsift/">Read more &rarr;</a>
+                  </p>
                 </div>
               </div>
 
@@ -213,8 +223,7 @@ import { compressionShowcases } from '../data/compression-showcases';
             <div class="landing-kicker">How it works</div>
             <p class="ops-intro">
               CtxSift gives your agent two core operations - compress raw output, then recall it later when it needs to reconstruct state. Recall results carry
-              freshness status so stale context gets down-ranked automatically.
-            </p>
+              freshness status so stale context gets down-ranked automatically. <br><a class="setup-inline-link" href="/docs/blog/command-output-recall/">See why it matters &rarr;</a>
             <div class="ops-timeline">
               <div class="ops-step">
                 <div class="ops-step-badge" aria-hidden="true">&#9889;</div>
@@ -378,13 +387,13 @@ import { compressionShowcases } from '../data/compression-showcases';
               </div>
 
               <div class="route-grid route-grid-setup">
-                <a class="route-link" href="/docs/getting-started/installation/" id="route-local-cpu">
+                <a class="route-link" href="/docs/guides/local-models/#cpu-compression-with-llamacpp" id="route-local-cpu">
                   <span class="route-link-icon">&#128421;</span>
                   <div class="route-link-label">Local CPU</div>
                   <div class="route-link-copy">Start with the built-in local path and get the lowest-friction setup for everyday use.</div>
                   <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
                 </a>
-                <a class="route-link" href="/docs/guides/local-models/" id="route-local-gpu">
+                <a class="route-link" href="/docs/guides/local-models/#gpu-compression-with-transformers" id="route-local-gpu">
                   <span class="route-link-icon">&#9889;</span>
                   <div class="route-link-label">Local GPU</div>
                   <div class="route-link-copy">Use CUDA-backed local models when you want faster inference and stronger on-device options.</div>
@@ -404,8 +413,8 @@ import { compressionShowcases } from '../data/compression-showcases';
           <div class="landing-panel">
                   <p class="mt-2">                <InstallerDownloads
                   variant="landing"
-                  title="Download install script"
-                  description=""
+                  title="Automated Install"
+                  description="Install with standalone scripts or let your agent install it with the install skill."
                 /></p>
         </div>
         </section>
@@ -427,35 +436,251 @@ import { compressionShowcases } from '../data/compression-showcases';
       </footer>
     </div>
 
-    <!-- ============ TYPEWRITER SCRIPT ============ -->
+    <!-- ============ THEME TOGGLE SCRIPT ============ -->
     <script>
-      const landingThemeSelect = document.getElementById('landing-theme-select');
-
-      function applyLandingTheme(mode) {
-        const preferredTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
-        const resolvedTheme = !mode || mode === 'auto' ? preferredTheme : mode;
-        document.documentElement.dataset.theme = resolvedTheme === 'light' ? 'light' : 'dark';
-        document.documentElement.style.colorScheme = resolvedTheme === 'light' ? 'light' : 'dark';
+      function trackLandingEvent(eventName, payload = {}) {
+        try {
+          if (window.umami && typeof window.umami.track === 'function') {
+            window.umami.track(eventName, payload);
+          }
+        } catch {
+          // Keep landing interactions functional even when analytics is unavailable.
+        }
       }
 
-      if (landingThemeSelect) {
-        const storedLandingTheme = localStorage.getItem('starlight-theme') || 'auto';
-        landingThemeSelect.value = storedLandingTheme;
+      const themeToggle = document.getElementById('landing-theme-toggle');
 
-        landingThemeSelect.addEventListener('change', (event) => {
-          const nextTheme = event.target.value;
-          localStorage.setItem('starlight-theme', nextTheme);
-          applyLandingTheme(nextTheme);
+      function applyLandingTheme(theme) {
+        document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
+        document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark';
+      }
+
+      function getBrowserTheme() {
+        return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+
+      if (themeToggle) {
+        // Get stored theme or browser default
+        const storedLandingTheme = localStorage.getItem('starlight-theme');
+        const resolvedTheme = (storedLandingTheme === 'light' || storedLandingTheme === 'dark') 
+          ? storedLandingTheme 
+          : getBrowserTheme();
+        
+        // Update active button
+        function updateActiveButton(theme) {
+          themeToggle.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.theme === theme);
+          });
+        }
+        updateActiveButton(resolvedTheme);
+        applyLandingTheme(resolvedTheme);
+
+        // Handle button clicks
+        themeToggle.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const previousTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+            const nextTheme = btn.dataset.theme;
+            localStorage.setItem('starlight-theme', nextTheme);
+            updateActiveButton(nextTheme);
+            applyLandingTheme(nextTheme);
+            if (previousTheme !== nextTheme) {
+              trackLandingEvent('landing_theme_switch', { from: previousTheme, to: nextTheme });
+            }
+          });
         });
+      }
 
-        const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
-        mediaQuery.addEventListener?.('change', () => {
-          if ((localStorage.getItem('starlight-theme') || 'auto') === 'auto') {
-            applyLandingTheme('auto');
+      const docsCta = document.getElementById('cta-docs');
+      if (docsCta) {
+        docsCta.addEventListener('click', () => {
+          trackLandingEvent('landing_cta_docs_click', { placement: 'hero', cta: 'docs' });
+        });
+      }
+
+      const githubCta = document.getElementById('cta-github');
+      if (githubCta) {
+        githubCta.addEventListener('click', () => {
+          trackLandingEvent('landing_cta_github_click', { target: 'repo' });
+        });
+      }
+
+      const starsCta = document.getElementById('cta-stars');
+      if (starsCta) {
+        starsCta.addEventListener('click', () => {
+          trackLandingEvent('landing_cta_github_click', { target: 'stars' });
+        });
+      }
+
+      const installSkillCta = document.getElementById('cta-install-skill');
+      if (installSkillCta) {
+        installSkillCta.addEventListener('click', () => {
+          trackLandingEvent('landing_install_skill_download', {
+            placement: 'hero',
+            source: 'cta',
+          });
+        });
+      }
+
+      const routeEventMap = {
+        'route-local-cpu': 'local_cpu',
+        'route-local-gpu': 'local_gpu',
+        'route-remote-provider': 'remote_provider',
+      };
+
+      Object.entries(routeEventMap).forEach(([id, route]) => {
+        const routeLink = document.getElementById(id);
+        if (!routeLink) {
+          return;
+        }
+        routeLink.addEventListener('click', () => {
+          trackLandingEvent('landing_route_select', { route });
+        });
+      });
+
+      function inferInstallerPlatform(anchor) {
+        const source = `${anchor.getAttribute('download') || ''} ${anchor.getAttribute('href') || ''}`.toLowerCase();
+        if (source.includes('windows')) {
+          return 'windows';
+        }
+        if (source.includes('mac') || source.includes('darwin')) {
+          return 'macos';
+        }
+        return 'linux';
+      }
+
+      const installerLinks = document.querySelectorAll('#installer [data-installer-primary], #installer [data-installer-link], #installer [data-installer-skill]');
+      installerLinks.forEach((link) => {
+        link.addEventListener('click', () => {
+          if (link.hasAttribute('data-installer-skill')) {
+            trackLandingEvent('landing_install_skill_download', {
+              placement: 'installer',
+              source: 'installer_block',
+            });
+            return;
+          }
+          const source = link.hasAttribute('data-installer-primary') ? 'primary' : 'secondary';
+          const platform = link.getAttribute('data-installer-link') || inferInstallerPlatform(link);
+          trackLandingEvent('landing_installer_download', {
+            platform,
+            source,
+            section: 'installer',
+          });
+        });
+      });
+
+      const navLinks = document.querySelectorAll('.landing-nav .nav-link');
+      navLinks.forEach((link) => {
+        const href = link.getAttribute('href') || '';
+        let navTarget = '';
+        if (href.includes('github.com/aakashh242/ctxsift')) {
+          navTarget = 'source';
+        } else if (href === '/docs/') {
+          navTarget = 'docs';
+        } else if (href === '/docs/guides/benchmark/') {
+          navTarget = 'benchmark';
+        } else if (href === '/docs/reference/cli/') {
+          navTarget = 'cli';
+        }
+
+        if (!navTarget) {
+          return;
+        }
+
+        link.addEventListener('click', () => {
+          trackLandingEvent('landing_nav_click', { link: navTarget });
+        });
+      });
+
+      document.addEventListener('click', (event) => {
+        const anchor = event.target.closest('a[href]');
+        if (!anchor) {
+          return;
+        }
+
+        const href = anchor.getAttribute('href') || '';
+        let target = '';
+        if (href.includes('pypi.org/project/ctxsift')) {
+          target = 'pypi';
+        } else if (href.includes('huggingface.co')) {
+          target = 'huggingface';
+        } else if (href.includes('/benchmark-viewer.html')) {
+          target = 'benchmark_viewer';
+        } else if (href.includes('LICENSE.md')) {
+          target = 'license';
+        }
+
+        if (!target) {
+          return;
+        }
+
+        trackLandingEvent('landing_outbound_click', { target });
+      });
+
+      const scrollDepthMilestones = [25, 50, 75, 100];
+      const firedDepthMilestones = new Set();
+
+      function emitScrollDepth() {
+        const documentHeight = document.documentElement.scrollHeight - window.innerHeight;
+        if (documentHeight <= 0) {
+          return;
+        }
+
+        const scrollPercent = Math.round((window.scrollY / documentHeight) * 100);
+        scrollDepthMilestones.forEach((milestone) => {
+          if (scrollPercent >= milestone && !firedDepthMilestones.has(milestone)) {
+            firedDepthMilestones.add(milestone);
+            trackLandingEvent('landing_scroll_depth', { percent: milestone });
           }
         });
+
+        if (firedDepthMilestones.size === scrollDepthMilestones.length) {
+          window.removeEventListener('scroll', emitScrollDepth);
+        }
       }
 
+      window.addEventListener('scroll', emitScrollDepth, { passive: true });
+      emitScrollDepth();
+
+      const sectionIds = [
+        'hero',
+        'why-ctxsift-exists',
+        'how-it-works',
+        'supported-models',
+        'setup-paths',
+        'installer',
+      ];
+
+      const seenSections = new Set();
+      const sectionObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) {
+              return;
+            }
+
+            const section = entry.target.id;
+            if (seenSections.has(section)) {
+              return;
+            }
+
+            seenSections.add(section);
+            trackLandingEvent('landing_section_view', { section: section.replace(/-/g, '_') });
+            sectionObserver.unobserve(entry.target);
+          });
+        },
+        { threshold: 0.35 },
+      );
+
+      sectionIds.forEach((sectionId) => {
+        const sectionElement = document.getElementById(sectionId);
+        if (sectionElement) {
+          sectionObserver.observe(sectionElement);
+        }
+      });
+    </script>
+
+    <!-- ============ TYPEWRITER SCRIPT ============ -->
+    <script>
       const lines = [
         { kind: 'typed', text: '$ uv tool install ctxsift', type: 'cmd' },
         { kind: 'instant', text: 'Installed ctxsift 0.1.0', type: 'result' },
@@ -485,12 +710,13 @@ import { compressionShowcases } from '../data/compression-showcases';
         { kind: 'instant', text: 'tests/jobs/test_reconcile.py::TestReconcile::test_retries_deadlock', type: 'result' },
       ];
 
+      const isLightTheme = document.documentElement.getAttribute('data-theme') === 'light';
       const COLOR = {
-        cmd:    '#7dd3fc',
-        out:    '#94a3b8',
-        result: '#86efac',
+        cmd:    isLightTheme ? '#1d4ed8' : '#7dd3fc',
+        out:    isLightTheme ? '#1e293b' : '#94a3b8',
+        result: isLightTheme ? '#15803d' : '#86efac',
         blank:  '',
-        user:   '#e2e8f0',
+        user:   isLightTheme ? '#0f172a' : '#e2e8f0',
       };
 
       function escHtml(s) {

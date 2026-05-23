@@ -82,6 +82,8 @@ class ResolvedConfig:
     read_path: Path
     write_path: Path
     file_exists: bool
+    global_file_exists: bool
+    workspace_file_exists: bool
     config: AppConfig
 
 
@@ -284,6 +286,8 @@ def resolve_config(request: ConfigResolutionRequest) -> ResolvedConfig:
         read_path=_read_path_for_scope(scope, paths, workspace),
         write_path=_write_path_for_scope(scope, paths, workspace),
         file_exists=_read_path_for_scope(scope, paths, workspace).exists(),
+        global_file_exists=paths.read_path.exists(),
+        workspace_file_exists=Path(workspace.workspace_config_path).exists(),
         config=config,
     )
 
@@ -335,6 +339,7 @@ def render_resolved_config(result: ResolvedConfig) -> str:
     """Render a resolved config view for CLI output."""
     lines = [
         f"Scope: {result.scope.value}",
+        f"Resolved from: {_resolved_source_label(result)}",
         f"Read path: {result.read_path}",
         f"Write path: {result.write_path}",
         "",
@@ -350,6 +355,7 @@ def render_resolved_config_rich(result: ResolvedConfig):
     toml = render_toml_document(redacted).rstrip()
     return Group(
         _render_config_meta("Scope", result.scope.value, "bold green"),
+        _render_config_meta("Resolved from", _resolved_source_label(result), "bold yellow"),
         _render_config_meta("Read path", str(result.read_path), _path_style(result.read_path)),
         _render_config_meta("Write path", str(result.write_path), "cyan"),
         Text(""),
@@ -567,3 +573,15 @@ def _render_config_meta(label: str, value: str, value_style: str) -> Text:
 
 def _path_style(path: Path) -> str:
     return "green" if path.exists() else "yellow"
+
+
+def _resolved_source_label(result: ResolvedConfig) -> str:
+    if result.scope is ConfigScope.GLOBAL:
+        if result.file_exists:
+            return "global"
+        return "defaults"
+    if result.workspace_file_exists:
+        return "workspace"
+    if result.global_file_exists:
+        return "global fallback"
+    return "defaults"

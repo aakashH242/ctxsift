@@ -22,6 +22,7 @@ class AgentSkillHost(str, Enum):
     ANTIGRAVITY = "antigravity"
     CLAUDE_CODE = "claude-code"
     CODEX = "codex"
+    OTHER = "other"
 
 
 class AgentSkillScope(str, Enum):
@@ -29,6 +30,7 @@ class AgentSkillScope(str, Enum):
 
     GLOBAL = "global"
     WORKSPACE = "workspace"
+    CUSTOM = "custom"
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,7 @@ class AgentSkillSelection:
 
     host: AgentSkillHost
     scope: AgentSkillScope
+    target: Path | None = None
 
 
 @dataclass(frozen=True)
@@ -68,14 +71,13 @@ def prompt_for_agent_skill_install(workspace_root: Path) -> AgentSkillInstallPla
             return None
         typer.echo("")
         typer.echo(
-            "Agents: copilot, antigravity, claude-code, codex\n"
+            "Agents: copilot, antigravity, claude-code, codex, other\n"
             "Enter one or more names separated by commas."
         )
         selections = _prompt_selected_hosts()
         configured_selections: list[AgentSkillSelection] = []
         for host in selections:
-            scope = _prompt_scope_for_host(host, workspace_root)
-            configured_selections.append(AgentSkillSelection(host=host, scope=scope))
+            configured_selections.append(_prompt_selection_for_host(host, workspace_root))
         return AgentSkillInstallPlan(selections=tuple(configured_selections))
     except (click.Abort, EOFError):
         return None
@@ -93,7 +95,7 @@ def install_agent_skills(
         try:
             results.append(_install_selection(selection, workspace_root))
         except OSError as error:
-            target = _target_path_for_host(selection.host, selection.scope, workspace_root)
+            target = _target_path_for_selection(selection, workspace_root)
             results.append(
                 AgentSkillInstallResult(
                     host=selection.host,
@@ -121,6 +123,8 @@ def _install_selection(
         return _install_claude_code_skill(selection.scope, workspace_root)
     if selection.host is AgentSkillHost.CODEX:
         return _install_codex_skill(selection.scope, workspace_root)
+    if selection.host is AgentSkillHost.OTHER:
+        return _install_custom_skill(selection)
     raise ValueError(f"Unsupported agent host: {selection.host}")
 
 
@@ -190,6 +194,18 @@ def _install_antigravity_skill(
     )
 
 
+def _install_custom_skill(selection: AgentSkillSelection) -> AgentSkillInstallResult:
+    target = _require_custom_target(selection)
+    changed = _write_text_file(target, _render_ctxsift_skill_markdown())
+    return AgentSkillInstallResult(
+        host=AgentSkillHost.OTHER,
+        scope=AgentSkillScope.CUSTOM,
+        ok=True,
+        target=target,
+        detail=_render_install_detail("Custom target", AgentSkillScope.CUSTOM, target, changed),
+    )
+
+
 def _prompt_selected_hosts() -> tuple[AgentSkillHost, ...]:
     while True:
         raw_value = typer.prompt(
@@ -227,6 +243,8 @@ def _parse_host(raw_value: str) -> AgentSkillHost:
         "claude": AgentSkillHost.CLAUDE_CODE,
         "claude-code": AgentSkillHost.CLAUDE_CODE,
         "codex": AgentSkillHost.CODEX,
+        "other": AgentSkillHost.OTHER,
+        "custom": AgentSkillHost.OTHER,
     }
     host = aliases.get(normalized)
     if host is None:
@@ -240,6 +258,8 @@ def _prompt_scope_for_host(host: AgentSkillHost, workspace_root: Path) -> AgentS
         target = _codex_skill_path(AgentSkillScope.GLOBAL, workspace_root)
         typer.echo(f"Codex currently installs only at global scope: {target}")
         return AgentSkillScope.GLOBAL
+    if host is AgentSkillHost.OTHER:
+        return AgentSkillScope.CUSTOM
     target_note = _scope_target_note(host, workspace_root)
     typer.echo(f"{_display_host_name(host)} targets:\n{target_note}")
     while True:
@@ -256,6 +276,44 @@ def _prompt_scope_for_host(host: AgentSkillHost, workspace_root: Path) -> AgentS
         if raw_value in {"workspace", "w"}:
             return AgentSkillScope.WORKSPACE
         typer.echo("Invalid value. Choose `workspace` or `global`.", err=True)
+
+
+def _prompt_selection_for_host(
+    host: AgentSkillHost,
+    workspace_root: Path,
+) -> AgentSkillSelection:
+    scope = _prompt_scope_for_host(host, workspace_root)
+    if host is not AgentSkillHost.OTHER:
+        return AgentSkillSelection(host=host, scope=scope)
+    target = _prompt_custom_target_path(workspace_root)
+    typer.echo(f"Custom skill target: {target}")
+    return AgentSkillSelection(host=host, scope=scope, target=target)
+
+
+def _prompt_custom_target_path(workspace_root: Path) -> Path:
+    while True:
+        raw_value = typer.prompt(
+            "Custom skill path (SKILL.md file path or directory)",
+            default=str(workspace_root / ".agents" / "skills" / "ctxsift"),
+        ).strip()
+        try:
+            return _normalize_custom_target_path(raw_value, workspace_root)
+        except ValueError as error:
+            typer.echo(str(error), err=True)
+
+
+def _normalize_custom_target_path(raw_value: str, workspace_root: Path) -> Path:
+    if not raw_value:
+        raise ValueError("Custom skill path cannot be empty.")
+    raw_path = Path(raw_value).expanduser()
+    candidate = raw_path if raw_path.is_absolute() else workspace_root / raw_path
+    if _looks_like_directory_input(raw_value, candidate):
+        return candidate / "SKILL.md"
+    return candidate
+
+
+def _looks_like_directory_input(raw_value: str, candidate: Path) -> bool:
+    return raw_value.endswith(("/", "\\")) or candidate.is_dir()
 
 
 def _scope_target_note(host: AgentSkillHost, workspace_root: Path) -> str:
@@ -277,7 +335,24 @@ def _target_path_for_host(
         return _claude_code_skill_path(scope, workspace_root)
     if host is AgentSkillHost.CODEX:
         return _codex_skill_path(scope, workspace_root)
+    if host is AgentSkillHost.OTHER:
+        raise ValueError("Custom targets must be resolved from the selection, not host/scope.")
     raise ValueError(f"Unsupported agent host: {host}")
+
+
+def _target_path_for_selection(
+    selection: AgentSkillSelection,
+    workspace_root: Path,
+) -> Path:
+    if selection.host is AgentSkillHost.OTHER:
+        return _require_custom_target(selection)
+    return _target_path_for_host(selection.host, selection.scope, workspace_root)
+
+
+def _require_custom_target(selection: AgentSkillSelection) -> Path:
+    if selection.target is None:
+        raise ValueError("Custom skill installation requires an explicit target path.")
+    return selection.target
 
 
 def _copilot_skill_path(scope: AgentSkillScope, workspace_root: Path) -> Path:
@@ -348,4 +423,6 @@ def _display_host_name(host: AgentSkillHost) -> str:
         return "Claude Code"
     if host is AgentSkillHost.CODEX:
         return "Codex"
+    if host is AgentSkillHost.OTHER:
+        return "Other"
     raise ValueError(f"Unsupported agent host: {host}")
