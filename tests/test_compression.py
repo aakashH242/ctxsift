@@ -12,7 +12,7 @@ from ctxsift.compression import pipeline as compression
 from ctxsift.compression import compress_input, summarize_deterministically
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
-from ctxsift.models.transformers_gemma import TransformersTextBackend
+from ctxsift.models.transformers_backend import TransformersTextBackend
 from ctxsift.compression.run_payload import CommandCapture, render_run_payload
 from ctxsift.types import AppConfig, CompressionRequest, LocalModelConfig
 from ctxsift.types import WorkspaceContext
@@ -243,7 +243,65 @@ def test_compress_input_run_mode_sends_only_output_text_to_model_backend(
     result = asyncio.run(compress_input(request))
 
     assert result.compressed_output == "Model summary"
+    assert compression._run_payload_output_text(request.raw_input) == "hello\n\noops"
     assert seen["raw_input"] == "hello\n\noops"
+
+
+def test_compress_input_run_mode_preserves_literal_fence_lines_in_command_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+    seen: dict[str, object] = {}
+
+    class FakeBackend:
+        provider_name = "transformers"
+        model_name = "google/gemma-test"
+        cache_model_id = "google/gemma-test"
+
+        async def compress(self, request) -> str:
+            seen["raw_input"] = request.raw_input
+            return "Model summary"
+
+    monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
+    capture = CommandCapture(
+        command=["python", "-c", "print('hello')"],
+        cwd=str(repo_path),
+        stdout="before\n```\nafter\n",
+        stderr="warn\n",
+        exit_code=1,
+        duration_ms=7,
+    )
+    workspace = WorkspaceContext(
+        cwd=str(repo_path),
+        workspace_root=str(repo_path),
+        is_git_repo=True,
+        git_dir=str(repo_path / ".git"),
+        workspace_config_path=str(repo_path / ".git" / "ctxsift" / "config.toml"),
+        db_path=str(repo_path / ".git" / "ctxsift" / "ctxsift.db"),
+    )
+    request = CompressionRequest(
+        intent=CompressionIntent.SUMMARY,
+        instruction="Summarize the failure",
+        raw_input=render_run_payload(
+            capture,
+            workspace,
+            GitMetadata(git_head="abc123", git_branch="main", git_dirty=False),
+        ),
+        mode="run",
+        cwd=str(repo_path),
+        command="python -c print('hello')",
+        command_args=capture.command,
+        command_exit_code=capture.exit_code,
+        command_duration_ms=capture.duration_ms,
+    )
+
+    result = asyncio.run(compress_input(request))
+
+    assert result.compressed_output == "Model summary"
+    assert compression._run_payload_output_text(request.raw_input) == "before\n```\nafter\n\nwarn"
+    assert seen["raw_input"] == "before\n```\nafter\n\nwarn"
 
 
 def test_compress_input_uses_remote_backend_when_base_url_is_configured(
@@ -709,11 +767,11 @@ def test_compress_input_unknown_family_fallback_profile_stores_soft_accepted_out
         },
     )()
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(

@@ -57,7 +57,7 @@ from ctxsift.models.smollm2_profile import (
 )
 from ctxsift.models.text_model_profiles import FALLBACK_PROFILE, resolve_text_model_profile
 from ctxsift.models.text_profile_common import preserves_exact_anchors
-from ctxsift.models.transformers_gemma import (
+from ctxsift.models.transformers_backend import (
     TransformersGemmaBackend,
     TransformersTextBackend,
     _apply_text_chat_template,
@@ -510,11 +510,11 @@ def test_transformers_backend_uses_text_runtime_async(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersGemmaBackend(
@@ -571,11 +571,11 @@ def test_transformers_backend_supports_qwen25_profile(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -627,11 +627,11 @@ def test_transformers_backend_supports_qwen3_profile_and_disables_thinking(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -686,11 +686,11 @@ def test_transformers_backend_supports_qwen35_profile(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -740,11 +740,11 @@ def test_transformers_backend_supports_smollm2_profile(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -794,11 +794,11 @@ def test_transformers_backend_supports_granite_profile_and_disables_thinking(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -857,11 +857,11 @@ def test_transformers_backend_supports_phi_profile_with_trust_remote_code(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -912,15 +912,15 @@ def test_transformers_backend_enables_flash_attention_on_gpu_when_available(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.text_attention_choice",
+        "ctxsift.models.transformers_backend.text_attention_choice",
         lambda device_label, configured_value: "flash_attention_2",
     )
     backend = TransformersGemmaBackend(
@@ -969,15 +969,15 @@ def test_transformers_backend_falls_back_when_flash_attention_init_fails(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.text_attention_choice",
+        "ctxsift.models.transformers_backend.text_attention_choice",
         lambda device_label, configured_value: "flash_attention_2",
     )
     backend = TransformersGemmaBackend(
@@ -1029,11 +1029,11 @@ def test_transformers_backend_uses_bitsandbytes_quantization_without_model_move(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
@@ -1045,7 +1045,7 @@ def test_transformers_backend_uses_bitsandbytes_quantization_without_model_move(
         lambda module_name, message: None,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.resolve_quantized_model_cache",
+        "ctxsift.models.transformers_backend.resolve_quantized_model_cache",
         lambda config, model_name: None,
     )
     backend = TransformersGemmaBackend(
@@ -1106,11 +1106,11 @@ def test_transformers_backend_uses_bnb8_quantization_without_model_move(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
@@ -1118,7 +1118,7 @@ def test_transformers_backend_uses_bnb8_quantization_without_model_move(
         lambda: FakeBitsAndBytesConfig,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.resolve_quantized_model_cache",
+        "ctxsift.models.transformers_backend.resolve_quantized_model_cache",
         lambda config, model_name: None,
     )
     backend = TransformersGemmaBackend(
@@ -1176,11 +1176,11 @@ def test_transformers_backend_reuses_persisted_quantized_checkpoint(
     (cache_dir / "config.json").write_text("{}", encoding="utf-8")
     (cache_dir / "ctxsift-quantized-model.json").write_text("{}", encoding="utf-8")
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
@@ -1188,15 +1188,15 @@ def test_transformers_backend_reuses_persisted_quantized_checkpoint(
         lambda: type("FakeBitsAndBytesConfig", (), {"__init__": lambda self, **kwargs: None}),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.resolve_quantized_model_cache",
+        "ctxsift.models.transformers_backend.resolve_quantized_model_cache",
         lambda config, model_name: SimpleNamespace(model_dir=cache_dir),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.has_persisted_quantized_model",
+        "ctxsift.models.transformers_backend.has_persisted_quantized_model",
         lambda cache: True,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.cached_model_source",
+        "ctxsift.models.transformers_backend.cached_model_source",
         lambda cache: str(cache.model_dir),
     )
 
@@ -1255,11 +1255,11 @@ def test_transformers_backend_persists_quantized_checkpoint_after_initial_load(
     )
     cache_dir = tmp_path / "quant-cache"
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
@@ -1267,15 +1267,15 @@ def test_transformers_backend_persists_quantized_checkpoint_after_initial_load(
         lambda: FakeBitsAndBytesConfig,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.resolve_quantized_model_cache",
+        "ctxsift.models.transformers_backend.resolve_quantized_model_cache",
         lambda config, model_name: SimpleNamespace(model_dir=cache_dir),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.has_persisted_quantized_model",
+        "ctxsift.models.transformers_backend.has_persisted_quantized_model",
         lambda cache: False,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.persist_quantized_model_cache",
+        "ctxsift.models.transformers_backend.persist_quantized_model_cache",
         lambda cache, model, tokenizer, model_name, config: persisted.update(
             {
                 "persisted_cache_dir": cache.model_dir,
@@ -1361,15 +1361,15 @@ def test_transformers_backend_fails_closed_when_quantization_dependency_is_missi
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma.text_attention_choice",
+        "ctxsift.models.transformers_backend.text_attention_choice",
         lambda device_label, configured_value: "flash_attention_2",
     )
     monkeypatch.setattr(
@@ -1420,11 +1420,11 @@ def test_transformers_backend_rejects_invalid_gemma_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersGemmaBackend(
@@ -1466,11 +1466,11 @@ def test_transformers_backend_rejects_invalid_qwen25_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -1512,11 +1512,11 @@ def test_transformers_backend_rejects_invalid_qwen3_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(LocalModelConfig(model="Qwen/Qwen3-1.7B", device="cpu"))
@@ -1556,11 +1556,11 @@ def test_transformers_backend_rejects_invalid_qwen35_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(LocalModelConfig(model="Qwen/Qwen3.5-0.8B", device="cpu"))
@@ -1600,11 +1600,11 @@ def test_transformers_backend_rejects_invalid_smollm2_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -1650,11 +1650,11 @@ def test_transformers_backend_rejects_invalid_granite_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -1696,11 +1696,11 @@ def test_transformers_backend_rejects_invalid_phi_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(
@@ -1749,11 +1749,11 @@ def test_transformers_backend_repairs_invalid_first_pass_output(
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_transformers_components",
+        "ctxsift.models.transformers_backend._load_transformers_components",
         lambda: (FakeAutoModel, FakeAutoTokenizer),
     )
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersTextBackend(LocalModelConfig(model="Qwen/Qwen3-1.7B", device="cpu"))
@@ -1790,7 +1790,7 @@ def test_apply_text_chat_template_handles_uninspectable_signature() -> None:
 
     with pytest.MonkeyPatch.context() as monkeypatch:
         monkeypatch.setattr(
-            "ctxsift.models.transformers_gemma.inspect.signature", raising_signature
+            "ctxsift.models.transformers_backend.inspect.signature", raising_signature
         )
         result = _apply_text_chat_template(tokenizer, messages)
 
@@ -1802,7 +1802,7 @@ def test_transformers_backend_rejects_unknown_dtype(
 ) -> None:
     fake_torch = SimpleNamespace(cuda=SimpleNamespace(is_available=lambda: False))
     monkeypatch.setattr(
-        "ctxsift.models.transformers_gemma._load_torch_module",
+        "ctxsift.models.transformers_backend._load_torch_module",
         lambda: fake_torch,
     )
     backend = TransformersGemmaBackend(

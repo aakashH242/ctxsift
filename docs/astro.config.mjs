@@ -100,6 +100,14 @@ export default defineConfig({
                     ],
                 },
                 {
+                    label: 'Blog',
+                    items: [
+                        { label: 'Blog Home', slug: 'docs/blog' },
+                        { label: 'What Motivated CtxSift', slug: 'docs/blog/what-motivated-ctxsift' },
+                        { label: 'Command-Output Recall: The Missing Layer After Compression', slug: 'docs/blog/command-output-recall' },
+                    ],
+                },
+                {
                     label: 'Reference',
                     items: [
                         { label: 'CLI', slug: 'docs/reference/cli' },

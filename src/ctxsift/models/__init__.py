@@ -10,7 +10,7 @@ _MODULE_EXPORTS = {
     "hf_hub_cache": "ctxsift.models.hf_hub_cache",
     "litellm_remote": "ctxsift.models.litellm_remote",
     "quantized_model_cache": "ctxsift.models.quantized_model_cache",
-    "transformers_gemma": "ctxsift.models.transformers_gemma",
+    "transformers_backend": "ctxsift.models.transformers_backend",
     "transformers_quantization": "ctxsift.models.transformers_quantization",
 }
 

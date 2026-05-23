@@ -7,7 +7,7 @@ from ctxsift.models.daemon_backend import DaemonCompressionBackend
 from ctxsift.models.llama_cpp_backend import LlamaCppBackend
 from ctxsift.models.litellm_remote import LiteLLMRemoteBackend
 from ctxsift.models.local_runtime import resolve_local_runtime
-from ctxsift.models.transformers_gemma import TransformersTextBackend
+from ctxsift.models.transformers_backend import TransformersTextBackend
 from ctxsift.types import AppConfig, LocalModelConfig
 
 

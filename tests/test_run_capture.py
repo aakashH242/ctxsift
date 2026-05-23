@@ -65,4 +65,5 @@ def test_render_run_payload_includes_workspace_git_and_output_sections(tmp_path:
     assert "Git dirty: True" in payload
     assert "Shell mode: False" in payload
     assert "Stdout:" in payload
+    assert "Length:" in payload
     assert "hello" in payload

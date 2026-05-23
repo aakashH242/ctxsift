@@ -7,7 +7,7 @@ interface Props {
 
 const {
   variant = 'docs',
-  title = 'Download installer script',
+  title = 'Download install script or install skill',
   description = 'The installer asks for a version and package extras, then runs uv tool install for that choice.',
 } = Astro.props;
 
@@ -33,6 +33,14 @@ const secondaryClass = variant === 'landing'
       data-installer-primary
     >
       Download for Linux
+    </a>
+    <a
+      class={secondaryClass}
+      href="/installers/ctxsift-install-skill.zip"
+      download="ctxsift-install-skill.zip"
+      data-installer-skill
+    >
+      Install with Agent
     </a>
     <div class="installer-platform-links">
       <a class={secondaryClass} href="/installers/ctxsift-linux.sh" download="ctxsift-install-linux.sh" data-installer-link="linux">Linux</a>

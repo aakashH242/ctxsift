@@ -86,6 +86,11 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            PUBLIC_SITE_URL=${{ vars.PUBLIC_SITE_URL || 'https://ctxsift.dev' }}
+            PUBLIC_LANDING_URL=${{ vars.PUBLIC_LANDING_URL || vars.PUBLIC_SITE_URL || 'https://ctxsift.dev' }}
+            PUBLIC_REPO_URL=${{ vars.PUBLIC_REPO_URL || 'https://github.com/aakashh242/ctxsift' }}
+            PUBLIC_INSTALL_PACKAGE=${{ vars.PUBLIC_INSTALL_PACKAGE || 'ctxsift' }}
 
       - name: Create and push tag
         shell: bash

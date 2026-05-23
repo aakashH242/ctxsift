@@ -7,6 +7,8 @@ from dataclasses import dataclass
 import os
 from pathlib import Path
 import shutil
+import signal
+import subprocess
 import time
 
 SHELL_SYNTAX_LABELS = (
@@ -109,6 +111,8 @@ def capture_launch_failure(
 def _validate_request(request: CommandExecutionRequest) -> None:
     if not request.argv:
         raise CommandValidationError("`ctxsift compress` requires a command after `--`.")
+    if request.timeout_ms is not None and request.timeout_ms < 1:
+        raise CommandValidationError("Command timeout must be at least 1 ms when provided.")
     if request.shell:
         _validate_shell_command(request.argv)
         return
@@ -132,13 +136,20 @@ async def _execute_subprocess(request: CommandExecutionRequest) -> CommandExecut
         cwd=str(request.cwd),
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
+        start_new_session=not _is_windows(),
+        creationflags=_windows_creationflags(),
     )
-    stdout_bytes, stderr_bytes = await process.communicate()
+    try:
+        stdout_bytes, stderr_bytes = await _communicate_with_timeout(process, request.timeout_ms)
+        exit_code = int(process.returncode or 0)
+    except asyncio.TimeoutError:
+        stdout_bytes, stderr_bytes = await _capture_timeout_result(process, request.timeout_ms)
+        exit_code = 124
     duration_ms = int((time.perf_counter() - start_time) * 1000)
     return CommandExecutionResult(
         stdout=stdout_bytes.decode("utf-8", errors="replace"),
         stderr=stderr_bytes.decode("utf-8", errors="replace"),
-        exit_code=int(process.returncode or 0),
+        exit_code=exit_code,
         duration_ms=duration_ms,
         command_display=_command_display(request),
         argv=request.argv,
@@ -159,6 +170,84 @@ def _command_display(request: CommandExecutionRequest) -> str:
     return " ".join(request.argv)
 
 
+async def _communicate_with_timeout(
+    process: asyncio.subprocess.Process,
+    timeout_ms: int | None,
+) -> tuple[bytes, bytes]:
+    if timeout_ms is None:
+        return await process.communicate()
+    return await asyncio.wait_for(process.communicate(), timeout=max(timeout_ms, 1) / 1000)
+
+
+async def _capture_timeout_result(
+    process: asyncio.subprocess.Process,
+    timeout_ms: int | None,
+) -> tuple[bytes, bytes]:
+    await _terminate_process(process)
+    stdout_bytes, stderr_bytes = await _drain_terminated_process(process)
+    stderr_text = stderr_bytes.decode("utf-8", errors="replace")
+    timeout_text = _append_timeout_detail(stderr_text, _timeout_message(timeout_ms))
+    return stdout_bytes, timeout_text.encode("utf-8")
+
+
+async def _terminate_process(process: asyncio.subprocess.Process) -> None:
+    if process.returncode is not None:
+        return
+    if _is_windows():
+        await _terminate_windows_process_tree(process.pid)
+        return
+    killpg = getattr(os, "killpg", None)
+    if killpg is None:
+        process.kill()
+        return
+    sigkill = getattr(signal, "SIGKILL", signal.SIGTERM)
+    try:
+        killpg(process.pid, sigkill)
+    except ProcessLookupError:
+        return
+
+
+async def _terminate_windows_process_tree(pid: int | None) -> None:
+    if pid is None:
+        return
+    taskkill = shutil.which("taskkill")
+    if taskkill is None:
+        return
+    killer = await asyncio.create_subprocess_exec(
+        taskkill,
+        "/T",
+        "/F",
+        "/PID",
+        str(pid),
+        stdout=asyncio.subprocess.DEVNULL,
+        stderr=asyncio.subprocess.DEVNULL,
+    )
+    await killer.wait()
+
+
+async def _drain_terminated_process(
+    process: asyncio.subprocess.Process,
+) -> tuple[bytes, bytes]:
+    try:
+        return await asyncio.wait_for(process.communicate(), timeout=5)
+    except asyncio.TimeoutError:
+        process.kill()
+        return await process.communicate()
+
+
+def _timeout_message(timeout_ms: int | None) -> str:
+    if timeout_ms is None:
+        return "ctxsift terminated the command after a timeout."
+    return f"ctxsift terminated the command after exceeding the timeout of {timeout_ms} ms."
+
+
+def _append_timeout_detail(stderr_text: str, timeout_detail: str) -> str:
+    stripped = stderr_text.rstrip()
+    if not stripped:
+        return timeout_detail + "\n"
+    return stripped + "\n" + timeout_detail + "\n"
+
+
 def _shell_launch_argv(command: str) -> tuple[str, ...]:
     if _is_windows():
         executable = _windows_shell_executable()
@@ -174,6 +263,12 @@ def _windows_shell_executable() -> str:
         if resolved:
             return resolved
     return "cmd.exe"
+
+
+def _windows_creationflags() -> int:
+    if not _is_windows():
+        return 0
+    return int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 
 
 def _contains_env_reference(token: str) -> bool:

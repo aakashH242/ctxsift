@@ -1,0 +1,64 @@
+---
+title: "Command-Output Recall: The Missing Layer After Compression"
+description: Why CtxSift stores compressed command results instead of only returning one-time distilled output.
+---
+
+In the previous post, I wrote about what motivated CtxSift and why I started looking at command-output compression in the first place. The short version is that long-running coding-agent sessions burn through context and usage windows faster when the agent keeps reading large command outputs and then, after a compaction event or task switch, starts re-reading files and re-running commands to recollect state. Compressing command output helped with the first part of the problem. It reduced how much noise the agent saw during the current step. But after using that workflow for a while, I realized that compression alone did not solve the recollection problem. It only made the immediate command response smaller.
+
+## Compression Solves The Immediate Problem
+
+This became more visible when I started using distilled command outputs more often. For example, if the agent runs `pytest -q` and pipes the result through a compression command with an instruction like `return only the failing tests and the first useful error`, the current step becomes much cleaner. The agent no longer has to process thousands of lines of warnings, captured stdout, repeated stack frames or unrelated plugin noise. It gets the important parts and continues. That is a good tradeoff for the active context window. But the same tradeoff becomes weaker once the agent has to recover state later. The distilled result was useful at that moment, but unless the agent kept enough of it in memory, it still had no stable place to go back to when the session moved forward, got compacted or drifted into another task.
+
+That was the part I kept noticing in actual usage. I would save tokens during the command execution, but then the agent would spend them again during recollection. It would ask to re-run the test, re-open the same file, inspect the same package error or re-check the same Docker logs because the distilled output was no longer available in a form it could search and reuse. This is not really the agent doing something wrong. If it does not remember the exact failure, and if the files may have changed, rechecking is the safe thing to do. The problem is that the previous command already produced useful evidence and that evidence got treated like a disposable answer instead of something the agent could recall later.
+
+## The Missing Part Was Recall
+
+That is the difference I wanted CtxSift to explore. A compressed command output should not only be a smaller response to the current prompt. It should be a small record of command evidence that can be recalled later. If `pytest` failed with a specific test id, exception name and file path, that information should not vanish after the current reasoning step. If `pnpm install` failed because of a peer dependency conflict, the important package names and versions should be available later without reading the full install log again. If `kubectl describe pod` showed a crash reason, event message and container name, the agent should be able to recover that previous evidence before deciding whether it needs to run the command again.
+
+This is what I mean by command-output recall. Not a full memory system, not chat history, not raw log storage and not a knowledge graph for the whole project. Just a local, workspace-scoped way to store compressed command results with enough metadata for the agent to find them again. The core idea is simple: when the agent compresses a noisy command output, CtxSift stores the compressed result along with command metadata, referenced files, extracted terms, git/workspace context and freshness information. Later, instead of immediately rerunning another noisy command, the agent can ask CtxSift what it already knows from previous command captures.
+
+A typical flow looks like this:
+
+```bash
+ctxsift compress --intent summary \
+  "Summarize the real pytest blocker. Preserve failing test ids, exception names, file paths, line numbers and exit code exactly." \
+  -- pytest -q
+```
+
+The important part here is not only that the output is compressed. The important part is that the compressed result becomes a reusable record. Later, after a compaction event or after switching back to the task, the agent can do something like:
+
+```bash
+ctxsift recall "latest pytest failure in auth tests"
+```
+
+or:
+
+```bash
+ctxsift recall --files app/auth.py "previous failure touching login middleware"
+```
+
+This changes the workflow from `rerun first, reason later` to `recall first, then decide`. The agent may still rerun the command. In fact, many times it should, especially if files changed or the previous result is stale. But there is a difference between rerunning because it is necessary and rerunning because the agent has no memory of what happened before. CtxSift is meant to help with the second case.
+
+## Command Evidence, Not Final Answers
+
+The word evidence matters here. I do not want the stored record to behave like a final answer. A final answer says something like `fix app/auth.py`, which may or may not still be correct later. Evidence is more grounded. It says that at a certain time, in a certain workspace, on a certain branch/head, this command exited with this code and produced these compressed findings. It preserves the boring exact strings that the agent needs to reason safely: failing test node ids, file paths, line numbers, exception names, package names, versions, container names, resource names, exit codes and first meaningful errors. Those strings are not glamorous, but they are the things that get lost when compression is too aggressive or too summary-like.
+
+This is also why I do not think maximum token reduction should be the only goal. It is easy to make output shorter by deleting details. The harder part is making it shorter while preserving the anchors that matter. Bad compression is worse than no compression because it gives the agent confidence without evidence. If a stack trace is long, the agent does not need every repeated frame, but it may need the first application frame, the exception name, the file path and the line where the failure surfaced. If a test run has twenty warnings and one actual assertion failure, the warnings can probably be compressed aggressively, but the assertion diff and the failing test id should survive exactly. CtxSift's compression side is built around that kind of instruction-driven extraction rather than only heuristic truncation.
+
+## Freshness Matters
+
+Freshness is the other reason recall cannot be treated as normal memory. Old command evidence can become stale very quickly in a coding session. A test failure from ten minutes ago may still be useful, but if the mentioned file changed since capture, it should not be treated as current truth. A Docker error from another branch may help identify a pattern, but it is not the same as an error from the current branch. A package install failure from before a lockfile update may be historical context, not an active blocker. So CtxSift tries to keep record metadata around the compressed output instead of storing text alone. The compressed result is useful, but the context around it is what tells the agent how much to trust it.
+
+That is why I think of CtxSift as a small companion layer rather than a replacement for agent memory. Codex, Claude Code, Cursor and other tools already have their own ways of managing conversation state, summaries and compaction. I did not want CtxSift to compete with that. I wanted it to cover one specific gap: command evidence that is too noisy to keep in full context, but too useful to throw away after one distilled response. The agent's own memory can continue doing what it does. CtxSift just gives it a small local place to check before it burns more context rediscovering something it already saw.
+
+## Recall Before Rerun
+
+The intended rule for the agent is therefore not `use CtxSift for every command`. That would be annoying and wasteful. There is no point wrapping `pwd`, tiny `ls` outputs or quick one-line checks. The useful boundary is noisy or expensive commands: `pytest`, `mypy`, `ruff`, `npm test`, `pnpm install`, `docker compose logs`, `kubectl describe pod`, `terraform plan`, `cargo test`, `go test` and similar outputs where the raw result can grow quickly and where the same finding often gets needed again later. For those commands, the better habit is recall before rerun. Check whether there is previous compressed evidence, check whether it is fresh enough, and only then decide whether a new command run is needed.
+
+In practice, this gives the agent a more stable path through long sessions. During the active task, command output gets compressed into only what is needed. During recollection, the agent can query old compressed records instead of starting from zero. During changes, stale records can still be useful as historical evidence but should not be trusted blindly. This is the loop I wanted to create: compress the command output when it is noisy, store the useful result locally, then make it searchable when the agent has to rebuild state.
+
+## Why This Is Not Just Token Saving
+
+That is the main reason I do not describe CtxSift as only a token saver. Token saving is part of it, but the bigger problem is state recovery. The agent does not just need fewer tokens in the current response. It needs a cheaper way to remember what previous commands already proved. If every compaction event causes the agent to re-read the same files and re-run the same commands, then compression only moved the cost around. Command-output recall is my attempt to reduce that second cost as well.
+
+The mental model is still simple: compress when necessary, recall when useful, rerun when freshness demands it. That is all CtxSift is trying to add to the workflow. Not magic, not a full memory brain and not a replacement for the coding agent. Just a small local cache of compressed command evidence so the agent does not keep paying the same token tax again and again.

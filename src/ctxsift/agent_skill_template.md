@@ -1,6 +1,9 @@
 ---
 name: ctxsift
-description: Use this skill when terminal/tool output is noisy, repetitive, expensive to reread, or when prior command findings may already be recoverable with `ctxsift recall`. Prefer CtxSift when you need selected facts, exact lines, identifiers, JSON, YAML, tables, commands, failing tests, stack-trace causes, or a compact summary from large raw output.
+description: This skill helps you focus and keep the session context clutter-free to save the user tokens. \
+  When you need only some info from a command output but not the whole raw output, use the `compress` action this skill teaches you. \
+  When you need to recollect latest state, previous work, prior findings etc, use the `recall` action this skill teaches you before you re-read files or re-run commands.
+license: MIT
 ---
 
 # CtxSift Skill
@@ -13,7 +16,7 @@ Do not use CtxSift just because a command exists. If the raw output is already s
 
 ## Decision workflow
 
-Before rerunning a noisy or expensive command, first try recall:
+CRITICAL: Before rerunning a noisy or expensive command, first try recall:
 
 ```bash
 ctxsift recall "<query>"
@@ -177,27 +180,27 @@ ctxsift compress --intent exact-format "Return only the kubectl command to delet
 
 ## Rules
 
-Use `ctxsift recall` before rerunning a command when prior compressed output may already contain the answer.
+- Use `ctxsift recall` before rerunning a command when prior compressed output may already contain the answer.
 
-Use `ctxsift compress` for non-interactive commands when the raw output is large, repetitive, noisy, or when only selected facts are needed.
+- Use `ctxsift compress` for non-interactive commands when the raw output is large, repetitive, noisy, or when only selected facts are needed.
 
-Prefer command-capture argv mode when the agent is launching the command.
+- Prefer command-capture argv mode when the agent is launching the command.
 
-Prefer argv mode over `--shell` unless shell parsing is required.
+- Prefer argv mode over `--shell` unless shell parsing is required.
 
-Use `--shell` only for shell syntax such as pipes, redirects, glob expansion, command substitution, `&&`, `||`, or compound commands.
+- Use `--shell` only for shell syntax such as pipes, redirects, glob expansion, command substitution, `&&`, `||`, or compound commands.
 
-Use pipe mode only as a fallback when output already exists or command-capture is impractical.
+- Use pipe mode only as a fallback when output already exists or command-capture is impractical.
 
-Do not use CtxSift for small commands whose raw output is already concise, such as `pwd`, `git branch`, `git status --short`, simple `ls`, or short single-file inspection.
+- Do not use CtxSift for small commands whose raw output is already concise, such as `pwd`, `git branch`, `git status --short`, simple `ls`, or short single-file inspection.
 
-Do not use CtxSift for interactive commands, TUI commands, REPLs, prompts, long-running daemons, watchers, or commands that require live user input.
+- Do not use CtxSift for interactive commands, TUI commands, REPLs, prompts, long-running daemons, watchers, or commands that require live user input.
 
-Do not use CtxSift when debugging CtxSift itself, command quoting, terminal formatting, ANSI color behavior, progress bars, streaming output, or exact raw CLI behavior.
+- Do not use CtxSift when debugging CtxSift itself, command quoting, terminal formatting, ANSI color behavior, progress bars, streaming output, or exact raw CLI behavior.
 
-When investigating failures, preserve exact identifiers: failing test node IDs, file paths, line numbers, exception names, package names, resource names, exit codes, and the first real error.
+- When investigating failures, preserve exact identifiers: failing test node IDs, file paths, line numbers, exception names, package names, resource names, exit codes, and the first real error.
 
-If CtxSift fails, errors, hangs, or appears misconfigured, fall back to the raw command once and continue. Do not get stuck repeatedly trying to compress the same command.
+- If CtxSift fails, errors, hangs, or appears misconfigured, fall back to the raw command once and continue. Do not get stuck repeatedly trying to compress the same command.
 
 ## Common examples
 

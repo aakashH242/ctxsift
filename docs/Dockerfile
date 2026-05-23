@@ -21,6 +21,7 @@ RUN pnpm install --frozen-lockfile
 
 COPY docs/ ./
 COPY benchmark/ ../benchmark/
+COPY SKILL.md ../SKILL.md
 
 RUN pnpm build
 

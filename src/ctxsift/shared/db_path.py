@@ -8,9 +8,13 @@ from pathlib import Path
 def resolved_db_path(
     workspace_db_path: str | None,
     config_db_path: str | None,
+    workspace_root: str | Path,
 ) -> Path:
     """Resolve the effective database path from workspace and config sources."""
     selected = config_db_path or workspace_db_path
     if not selected:
         raise ValueError("Could not resolve a ctxsift database path.")
-    return Path(selected).expanduser()
+    candidate = Path(selected).expanduser()
+    if candidate.is_absolute():
+        return candidate
+    return Path(workspace_root).expanduser() / candidate

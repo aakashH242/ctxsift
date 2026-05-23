@@ -40,7 +40,7 @@ def render_run_payload(
         sections.append(f"Git dirty: {git_metadata.git_dirty}")
     sections.append("")
     sections.extend(_capture_sections(execution))
-    return "\n".join(sections).strip()
+    return "\n".join(sections)
 
 
 def _capture_sections(execution: CommandExecutionResult | CommandCapture) -> list[str]:
@@ -51,16 +51,14 @@ def _capture_sections(execution: CommandExecutionResult | CommandCapture) -> lis
         f"Exit code: {execution.exit_code}",
         f"Duration ms: {execution.duration_ms}",
         "",
-        "Stdout:",
-        "```text",
-        execution.stdout,
-        "```",
+        _output_section("Stdout", execution.stdout),
         "",
-        "Stderr:",
-        "```text",
-        execution.stderr,
-        "```",
+        _output_section("Stderr", execution.stderr),
     ]
+
+
+def _output_section(label: str, content: str) -> str:
+    return f"{label}:\nLength: {len(content)}\n{content}"
 
 
 def _command_display(execution: CommandExecutionResult | CommandCapture) -> str:
