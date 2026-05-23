@@ -40,6 +40,7 @@ DETERMINISTIC_PROVIDER = "deterministic"
 MODEL_PROMPT_VERSION = "gemma-transformers-v1"
 DETERMINISTIC_PROMPT_VERSION = "deterministic-v1"
 WHITESPACE_RE = re.compile(r"\s+")
+RUN_OUTPUT_HEADER_RE = re.compile(r"(?m)^(Stdout|Stderr):\nLength: (\d+)\n")
 
 
 async def compress_input(request: CompressionRequest) -> CompressionResult:
@@ -51,7 +52,11 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             cli_overrides=_compression_overrides(request),
         )
     )
-    db_path = resolved_db_path(workspace.db_path, resolved_config.config.db_path)
+    db_path = resolved_db_path(
+        workspace.db_path,
+        resolved_config.config.db_path,
+        workspace.workspace_root,
+    )
     await initialize_database(db_path)
 
     normalized_instruction = normalize_instruction(request.instruction)
@@ -412,6 +417,9 @@ def _fallback_source_text(request: CompressionRequest) -> str:
 
 
 def _run_payload_output_text(raw_input: str) -> str | None:
+    parsed_sections = _length_delimited_output_sections(raw_input)
+    if parsed_sections is not None:
+        return "\n".join(section for section in parsed_sections if section).strip()
     lines = raw_input.splitlines()
     sections: list[str] = []
     index = 0
@@ -451,7 +459,15 @@ def _read_run_output_block(lines: list[str], start_index: int) -> tuple[list[str
 
 
 def _run_payload_metadata_text(raw_input: str) -> str:
+    length_delimited_match = RUN_OUTPUT_HEADER_RE.search(raw_input)
+    if length_delimited_match is not None:
+        metadata_prefix = raw_input[: length_delimited_match.start()]
+        return _filtered_metadata_text(metadata_prefix.splitlines())
     lines = raw_input.splitlines()
+    return _filtered_metadata_text(lines)
+
+
+def _filtered_metadata_text(lines: list[str]) -> str:
     metadata_lines: list[str] = []
     index = 0
     while index < len(lines):
@@ -470,6 +486,27 @@ def _run_payload_metadata_text(raw_input: str) -> str:
             metadata_lines.append(line)
         index += 1
     return "\n".join(metadata_lines).strip()
+
+
+def _length_delimited_output_sections(raw_input: str) -> list[str] | None:
+    sections: list[str] = []
+    saw_output_section = False
+    position = 0
+    while True:
+        match = RUN_OUTPUT_HEADER_RE.search(raw_input, position)
+        if match is None:
+            break
+        saw_output_section = True
+        content_start = match.end()
+        content_length = int(match.group(2))
+        content_end = content_start + content_length
+        if content_end > len(raw_input):
+            return None
+        sections.append(raw_input[content_start:content_end])
+        position = content_end
+    if not saw_output_section:
+        return None
+    return sections
 
 
 def _summary_lines(raw_input: str, signal: ExtractedSignal) -> list[str]:

@@ -184,14 +184,28 @@ def test_embedding_backend_default_lifecycle_hooks_are_noops() -> None:
 
 
 def test_resolved_db_path_prefers_config_override(tmp_path: Path) -> None:
-    path = resolved_db_path(str(tmp_path / "workspace.db"), str(tmp_path / "config.db"))
+    path = resolved_db_path(
+        str(tmp_path / "workspace.db"),
+        str(tmp_path / "config.db"),
+        tmp_path,
+    )
 
     assert path == (tmp_path / "config.db")
 
 
+def test_resolved_db_path_resolves_relative_override_from_workspace_root(tmp_path: Path) -> None:
+    path = resolved_db_path(
+        str(tmp_path / "workspace.db"),
+        ".ctxsift/custom.db",
+        tmp_path,
+    )
+
+    assert path == tmp_path / ".ctxsift" / "custom.db"
+
+
 def test_resolved_db_path_requires_some_source() -> None:
     with pytest.raises(ValueError, match="Could not resolve"):
-        resolved_db_path(None, None)
+        resolved_db_path(None, None, Path.cwd())
 
 
 def test_sha256_helpers_cover_text_small_files_and_large_files(tmp_path: Path) -> None:

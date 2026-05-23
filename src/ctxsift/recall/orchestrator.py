@@ -31,7 +31,11 @@ async def recall_records(
     workspace = detect_workspace_context(cwd)
     resolved_config = resolve_config(ConfigResolutionRequest(cwd=Path(workspace.cwd)))
     recall_config = resolved_config.config.recall
-    db_path = resolved_db_path(workspace.db_path, resolved_config.config.db_path)
+    db_path = resolved_db_path(
+        workspace.db_path,
+        resolved_config.config.db_path,
+        workspace.workspace_root,
+    )
     await initialize_database(db_path)
     try:
         await schedule_retention_cleanup(
