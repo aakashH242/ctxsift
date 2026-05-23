@@ -83,7 +83,12 @@ ctxsift config set remote.reasoning_mode auto
 Some hosted models (like OpenAI's `o1`/`o3-mini` or DeepSeek `R1`) perform internal chain-of-thought reasoning before producing output. 
 - **`true`**: Force CtxSift to use API options compatible with reasoning models (e.g. passing reasoning token limits or structured outputs adjustments).
 - **`false`**: Force standard system-message chat completion.
-- **`auto`** (Default): Automatically enables reasoning support if the model name matches typical reasoning models (e.g. matches `o1`, `o3`, or `deepseek-r1`).
+- **`auto`** (Default): Automatically enables reasoning support when the configured model name matches well-known reasoning families. Today that includes:
+  - OpenAI reasoning families such as `o1`, `o3`, `o4-mini`, and the `gpt-5*` family except chat-style variants like `gpt-5-chat` or `gpt-5-instant`.
+  - DeepSeek reasoning aliases such as `deepseek-reasoner` and `deepseek-r1`.
+  - Common "thinking" model names such as Gemini `gemini-2.5-*`, Anthropic `claude-sonnet-4` / `claude-opus-4` / `claude-3-7-sonnet`, and explicit aliases that contain terms like `thinking`, `reasoning`, or `reasoner`.
+
+If you use a custom deployment name that hides the underlying family, `auto` may not detect it. In that case, set `remote.reasoning_mode` to `true` or `false` explicitly.
 
 ---
 
