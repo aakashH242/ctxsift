@@ -36,7 +36,7 @@ def workspace_config_exists(cwd: Path) -> bool:
 
 def environment_config_exists(env: dict[str, str] | None = None) -> bool:
     """Return whether any ctxsift config env var is present."""
-    source = env or os.environ
+    source = os.environ if env is None else env
     return any(bool(source.get(name)) for name in ENVIRONMENT_KEY_MAP)
 
 

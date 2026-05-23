@@ -94,14 +94,14 @@ def test_git_workspace_path_uses_dot_git_ctxsift(tmp_path: Path) -> None:
     workspace = detect_workspace_context(repo_path)
 
     assert workspace.is_git_repo is True
-    assert workspace.workspace_config_path.endswith(".git\\ctxsift\\config.toml")
+    assert Path(workspace.workspace_config_path) == repo_path / ".git" / "ctxsift" / "config.toml"
 
 
 def test_non_git_workspace_path_uses_ctxsift_directory(tmp_path: Path) -> None:
     workspace = detect_workspace_context(tmp_path)
 
     assert workspace.is_git_repo is False
-    assert workspace.workspace_config_path.endswith(".ctxsift\\config.toml")
+    assert Path(workspace.workspace_config_path) == tmp_path / ".ctxsift" / "config.toml"
 
 
 def test_config_resolution_uses_expected_precedence(

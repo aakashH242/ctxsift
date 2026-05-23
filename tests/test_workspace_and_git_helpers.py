@@ -35,8 +35,9 @@ def test_detect_workspace_context_uses_ctxsift_directory_for_non_git_workspace(
     context = detect_workspace_context(tmp_path)
 
     assert context.is_git_repo is False
-    assert context.workspace_config_path.endswith(".ctxsift\\config.toml")
-    assert context.db_path is not None and context.db_path.endswith(".ctxsift\\ctxsift.db")
+    assert Path(context.workspace_config_path) == tmp_path / ".ctxsift" / "config.toml"
+    assert context.db_path is not None
+    assert Path(context.db_path) == tmp_path / ".ctxsift" / "ctxsift.db"
 
 
 def test_detect_workspace_context_uses_git_directory_for_repo_workspace(tmp_path: Path) -> None:
@@ -47,7 +48,7 @@ def test_detect_workspace_context_uses_git_directory_for_repo_workspace(tmp_path
 
     assert context.is_git_repo is True
     assert context.git_dir == str(git_dir.resolve())
-    assert context.workspace_config_path.endswith(".git\\ctxsift\\config.toml")
+    assert Path(context.workspace_config_path) == git_dir.resolve() / "ctxsift" / "config.toml"
 
 
 def test_find_git_root_walks_up_parent_directories(tmp_path: Path) -> None:

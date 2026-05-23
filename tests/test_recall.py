@@ -309,6 +309,27 @@ def test_recall_records_include_vector_only_candidates(
     assert "vector" in results[0].matched_fields
 
 
+def test_build_hybrid_records_ignores_missing_vector_backed_record_ids(tmp_path: Path) -> None:
+    request = HybridRecallRequest(
+        lexical_records=[],
+        all_records=[],
+        vector_hits=[VectorSearchHit(record_id=999, distance=0.01)],
+        freshness_by_record_id={},
+        file_filters=[],
+        limit=10,
+        normalized_query="semantic-only query",
+        search_terms=["semantic", "only", "query"],
+        max_vector_distance=0.75,
+        min_score=120,
+        weak_fallback_min_score=90,
+        weak_fallback_limit=1,
+    )
+
+    results = build_hybrid_records(request)
+
+    assert results == []
+
+
 def test_recall_records_schedule_background_retention_cleanup(
     tmp_path: Path,
     monkeypatch,

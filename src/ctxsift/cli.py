@@ -172,16 +172,16 @@ def _resolve_configure_write_ignore(
 @app.command(context_settings={"allow_extra_args": True, "ignore_unknown_options": True})
 def compress(
     ctx: typer.Context,
+    instruction: Annotated[
+        str, typer.Argument(help="Compression instruction for the provided input.")
+    ],
     intent: Annotated[
-        CompressionIntent,
+        CompressionIntent | None,
         typer.Option(
             "--intent",
             help="Explicit output contract for the compression result.",
         ),
-    ],
-    instruction: Annotated[
-        str, typer.Argument(help="Compression instruction for the provided input.")
-    ],
+    ] = None,
     shell: Annotated[
         bool,
         typer.Option(
@@ -195,6 +195,13 @@ def compress(
     ] = None,
 ) -> None:
     """Compress stdin or command output using an instruction."""
+    if intent is None:
+        typer.echo(
+            "Missing option '--intent'. Choose from: "
+            f"{_render_compress_intent_choices()}",
+            err=True,
+        )
+        raise typer.Exit(code=2)
     command = tuple(_command_args(ctx.args))
     if not bootstrap_config_available(Path.cwd()):
         _handle_missing_bootstrap_config_for_compress(
@@ -231,6 +238,10 @@ def compress(
         )
     )
     typer.echo(result.compressed_output)
+
+
+def _render_compress_intent_choices() -> str:
+    return ", ".join(intent.value for intent in CompressionIntent)
 
 
 @app.command()

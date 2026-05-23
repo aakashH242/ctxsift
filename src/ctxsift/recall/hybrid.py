@@ -63,7 +63,7 @@ def build_hybrid_records(request: HybridRecallRequest) -> list[RecallRecord]:
             if _vector_hit_allowed(hit, lexical_ranks, request.max_vector_distance)
         ]
     )
-    candidate_ids = _candidate_ids(lexical_ranks, vector_ranks)
+    candidate_ids = _candidate_ids(lexical_ranks, vector_ranks, record_map)
     recall_records = [
         _build_recall_record(record_map[record_id], request, lexical_ranks, vector_ranks)
         for record_id in candidate_ids
@@ -83,8 +83,9 @@ def build_hybrid_records(request: HybridRecallRequest) -> list[RecallRecord]:
 def _candidate_ids(
     lexical_ranks: dict[int, int],
     vector_ranks: dict[int, int],
+    record_map: dict[int, RecallStorageRecord],
 ) -> list[int]:
-    return list({*lexical_ranks, *vector_ranks})
+    return [record_id for record_id in {*(lexical_ranks), *(vector_ranks)} if record_id in record_map]
 
 
 def _vector_hit_allowed(

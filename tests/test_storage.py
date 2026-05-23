@@ -16,14 +16,14 @@ def test_git_workspace_context_sets_default_db_path(tmp_path: Path) -> None:
     workspace = detect_workspace_context(repo_path)
 
     assert workspace.db_path is not None
-    assert workspace.db_path.endswith(".git\\ctxsift\\ctxsift.db")
+    assert Path(workspace.db_path) == repo_path / ".git" / "ctxsift" / "ctxsift.db"
 
 
 def test_non_git_workspace_context_sets_default_db_path(tmp_path: Path) -> None:
     workspace = detect_workspace_context(tmp_path)
 
     assert workspace.db_path is not None
-    assert workspace.db_path.endswith(".ctxsift\\ctxsift.db")
+    assert Path(workspace.db_path) == tmp_path / ".ctxsift" / "ctxsift.db"
 
 
 def test_initialize_database_creates_schema_and_version(tmp_path: Path) -> None:

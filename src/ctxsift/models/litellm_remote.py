@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from ctxsift.models.base import (
@@ -95,7 +96,10 @@ class LiteLLMRemoteBackend(ModelBackend):
                 max_tokens=request.max_output_tokens,
                 timeout=self._options.timeout_ms / 1000,
                 num_retries=self._options.retries,
-                reasoning_effort=_reasoning_effort(self._options.reasoning_mode),
+                reasoning_effort=_reasoning_effort(
+                    self._options.reasoning_mode,
+                    self.model_name,
+                ),
             )
         except BackendUnavailableError:
             raise
@@ -134,15 +138,60 @@ def _response_text(response: Any) -> str:
     return ""
 
 
-def _reasoning_effort(reasoning_mode: str) -> str | None:
+_OPENAI_O_SERIES_RE = re.compile(r"^o\d+(?:$|[-._])")
+_EXPLICIT_REASONING_MARKERS = ("reasoner", "reasoning", "thinking", "qwq")
+_ANTHROPIC_REASONING_PREFIXES = (
+    "claude-opus-4",
+    "claude-sonnet-4",
+    "claude-3-7-sonnet",
+)
+_GEMINI_REASONING_PREFIXES = ("gemini-2.5-",)
+_DEEPSEEK_REASONING_PREFIXES = ("deepseek-r1", "deepseek-reasoner")
+
+
+def _reasoning_effort(reasoning_mode: str, model_name: str) -> str | None:
     normalized = reasoning_mode.strip().casefold()
     if normalized == "auto":
-        return None
+        return "medium" if _is_auto_reasoning_model(model_name) else None
     if normalized == "true":
         return "medium"
     if normalized == "false":
         return "none"
     raise BackendUnavailableError(f"Unsupported remote reasoning mode '{reasoning_mode}'.")
+
+
+def _is_auto_reasoning_model(model_name: str) -> bool:
+    return any(_is_reasoning_model_alias(alias) for alias in _model_aliases(model_name))
+
+
+def _model_aliases(model_name: str) -> tuple[str, ...]:
+    normalized = model_name.strip().casefold().replace("_", "-")
+    if not normalized:
+        return ()
+    slash_segments = tuple(segment for segment in normalized.split("/") if segment)
+    return (normalized, *slash_segments)
+
+
+def _is_reasoning_model_alias(alias: str) -> bool:
+    return (
+        _is_openai_reasoning_alias(alias)
+        or alias.startswith(_DEEPSEEK_REASONING_PREFIXES)
+        or alias.startswith(_GEMINI_REASONING_PREFIXES)
+        or alias.startswith(_ANTHROPIC_REASONING_PREFIXES)
+        or any(marker in alias for marker in _EXPLICIT_REASONING_MARKERS)
+    )
+
+
+def _is_openai_reasoning_alias(alias: str) -> bool:
+    if _OPENAI_O_SERIES_RE.match(alias) is not None:
+        return True
+    if not alias.startswith("gpt-5"):
+        return False
+    return not (
+        alias.startswith("gpt-5-chat")
+        or alias.startswith("gpt-5-instant")
+        or "chatgpt" in alias
+    )
 
 
 def _load_litellm_acompletion():

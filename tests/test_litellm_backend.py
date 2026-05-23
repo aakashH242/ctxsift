@@ -12,6 +12,7 @@ from ctxsift.models.litellm_remote import (
     LiteLLMRemoteBackend,
     _LiteLLMLoggingWorkerErrorFilter,
     _configure_litellm_runtime,
+    _reasoning_effort,
 )
 from ctxsift.types import ExtractedSignal
 
@@ -136,6 +137,34 @@ def test_litellm_remote_backend_wraps_provider_errors(
                 )
             )
         )
+
+
+@pytest.mark.parametrize(
+    ("model_name", "expected"),
+    [
+        ("o3-mini", "medium"),
+        ("openai/gpt-5-mini", "medium"),
+        ("openrouter/openai/gpt-5.1-codex", "medium"),
+        ("novita/deepseek/deepseek-r1", "medium"),
+        ("gemini-2.5-pro", "medium"),
+        ("claude-sonnet-4-20250514", "medium"),
+        ("gpt-5-chat", None),
+        ("gpt-5-instant", None),
+        ("gpt-4o-mini", None),
+        ("deepseek-chat", None),
+        ("claude-3-5-haiku-20241022", None),
+    ],
+)
+def test_reasoning_effort_auto_detects_reasoning_model_families(
+    model_name: str,
+    expected: str | None,
+) -> None:
+    assert _reasoning_effort("auto", model_name) == expected
+
+
+def test_reasoning_effort_true_and_false_override_model_detection() -> None:
+    assert _reasoning_effort("true", "gpt-4o-mini") == "medium"
+    assert _reasoning_effort("false", "o3-mini") == "none"
 
 
 def test_litellm_runtime_configuration_suppresses_logging_worker_noise() -> None:

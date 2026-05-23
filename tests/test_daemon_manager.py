@@ -166,7 +166,7 @@ def test_start_worker_process_uses_new_console_on_windows(
     manager._start_worker_process(payload, tmp_path / "launch.json")
 
     assert captured["creationflags"] == 0x00000210
-    assert captured["args"][0:2] == ["cmd.exe", "/k"]
+    assert captured["args"][0:2] == ["cmd.exe", "/c"]
     assert "ctxsift.daemon_worker" in captured["args"][2]
     assert "--launch-file" in captured["args"][2]
     assert r"C:\Python312\python.exe" in captured["args"][2]

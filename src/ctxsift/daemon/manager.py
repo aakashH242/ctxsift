@@ -343,8 +343,10 @@ def _wait_for_registry_removal(path: Path, timeout_ms: int) -> None:
 
 
 def _start_worker_process(payload: DaemonLaunchPayload, launch_file: Path) -> subprocess.Popen[Any]:
-    log_file = Path(payload.log_path)
+    path_type = type(launch_file)
+    log_file = path_type(payload.log_path)
     log_file.parent.mkdir(parents=True, exist_ok=True)
+    current_directory = os.getcwd()
     if os.name == "nt":
         create_new_process_group = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
         create_new_console = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x00000010)
@@ -354,9 +356,9 @@ def _start_worker_process(payload: DaemonLaunchPayload, launch_file: Path) -> su
             f"{python_executable} -m ctxsift.daemon_worker --launch-file {launch_file_arg}"
         )
         return subprocess.Popen(
-            args=["cmd.exe", "/k", daemon_command],
+            args=["cmd.exe", "/c", daemon_command],
             stdin=subprocess.DEVNULL,
-            cwd=str(Path.cwd()),
+            cwd=current_directory,
             close_fds=True,
             creationflags=create_new_process_group | create_new_console,
         )
@@ -371,7 +373,7 @@ def _start_worker_process(payload: DaemonLaunchPayload, launch_file: Path) -> su
                 str(launch_file),
             ],
             stdin=subprocess.DEVNULL,
-            cwd=str(Path.cwd()),
+            cwd=current_directory,
             close_fds=True,
             stdout=output_handle,
             stderr=subprocess.STDOUT,
