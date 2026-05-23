@@ -6,6 +6,7 @@ import tailwindcss from '@tailwindcss/vite';
 
 // https://astro.build/config
 export default defineConfig({
+    site: process.env.PUBLIC_SITE_URL || process.env.PUBLIC_LANDING_URL || 'https://ctxsift.dev',
     integrations: [
         starlight({
             title: 'CtxSift',
