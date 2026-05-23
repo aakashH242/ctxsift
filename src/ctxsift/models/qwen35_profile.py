@@ -7,7 +7,6 @@ from ctxsift.models.text_profile_common import (
     build_standard_text_messages,
     deterministic_generation_kwargs,
     normalize_profile_output,
-    validate_instruction_aware_output,
 )
 from ctxsift.models.text_profile_types import TextModelProfile
 
@@ -28,19 +27,9 @@ def generation_kwargs(tokenizer: object, max_output_tokens: int) -> dict[str, in
     return deterministic_generation_kwargs(tokenizer, max_output_tokens)
 
 
-def normalize_output(request: ModelCompressionInput | str, text: str | None = None) -> str:
+def normalize_output(request: ModelCompressionInput, text: str) -> str:
     """Apply Qwen3.5-specific cleanup to generated text."""
-    if text is None:
-        return normalize_profile_output(str(request))
-    if isinstance(request, str):
-        raise TypeError("request context is required when text is provided")
     return normalize_profile_output(request, text)
-
-
-def is_valid_output(request: ModelCompressionInput, text: str) -> bool:
-    """Backward-compatible boolean validation shim for the shared validator."""
-    normalized = normalize_output(request, text)
-    return validate_instruction_aware_output(request, normalized).status != "rejected"
 
 
 PROFILE = TextModelProfile(

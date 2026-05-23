@@ -40,7 +40,6 @@ class GlobalConfigPaths:
     """Read and write paths for global config discovery."""
 
     read_path: Path
-    legacy_path: Path
     write_path: Path
 
 
@@ -366,24 +365,12 @@ def render_resolved_config_rich(result: ResolvedConfig):
 def discover_global_config_paths() -> GlobalConfigPaths:
     """Resolve global config read and write paths."""
     write_path = platform_global_config_path()
-    legacy_path = legacy_global_config_path()
-    if write_path.exists():
-        read_path = write_path
-    elif legacy_path.exists():
-        read_path = legacy_path
-    else:
-        read_path = write_path
-    return GlobalConfigPaths(read_path=read_path, legacy_path=legacy_path, write_path=write_path)
+    return GlobalConfigPaths(read_path=write_path, write_path=write_path)
 
 
 def platform_global_config_path() -> Path:
     """Return the platform-native global config path."""
     return user_config_path("ctxsift") / "config.toml"
-
-
-def legacy_global_config_path() -> Path:
-    """Return the legacy global config path."""
-    return Path.home() / ".config" / "ctxsift" / "config.toml"
 
 
 def load_toml_file(path: Path) -> dict[str, Any]:
@@ -392,7 +379,7 @@ def load_toml_file(path: Path) -> dict[str, Any]:
         return {}
     with path.open("rb") as handle:
         data = tomllib.load(handle)
-    return _sanitize_legacy_config_dict(dict(data))
+    return dict(data)
 
 
 def save_toml_file(path: Path, data: Mapping[str, Any]) -> None:
@@ -480,20 +467,6 @@ def _drop_none_values(data: Mapping[str, Any]) -> dict[str, Any]:
             continue
         compacted[key] = value
     return compacted
-
-
-def _sanitize_legacy_config_dict(data: dict[str, Any]) -> dict[str, Any]:
-    """Drop removed config keys from persisted config documents."""
-    local_config = data.get("local")
-    if not isinstance(local_config, Mapping):
-        return data
-    sanitized_local = dict(local_config)
-    sanitized_local.pop("backend", None)
-    if sanitized_local == local_config:
-        return data
-    sanitized = dict(data)
-    sanitized["local"] = sanitized_local
-    return sanitized
 
 
 def environment_layer(env: Mapping[str, str] | None = None) -> dict[str, Any]:

@@ -7,7 +7,6 @@ from typing import Any
 
 __all__ = [
     "CanonicalCompressionMode",
-    "CommandCapture",
     "CompressionIntent",
     "StructuredIntentKind",
     "canonical_mode_for_intent",
@@ -36,7 +35,7 @@ def __getattr__(name: str) -> Any:
     if name in {"compress_input", "normalize_instruction", "summarize_deterministically"}:
         module = import_module("ctxsift.compression.pipeline")
         return getattr(module, name)
-    if name in {"CommandCapture", "render_run_payload"}:
+    if name == "render_run_payload":
         module = import_module("ctxsift.compression.run_payload")
         return getattr(module, name)
     raise AttributeError(name)

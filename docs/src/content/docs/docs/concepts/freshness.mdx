@@ -38,7 +38,7 @@ graph TD
 
 ### Tier 1: Git-aware workspace check (Highest Priority)
 If the workspace is a Git repository, CtxSift runs:
-```bash
+```bash frame="none"
 git status --porcelain -- <file_path>
 ```
 If Git reports the file is modified (`M`), added (`A`), renamed (`R`), or untracked (`??`), it is marked as **changed**. If it is deleted (`D`), it is marked as **deleted**.
@@ -96,7 +96,7 @@ If even one critical file is deleted, the entire record is treated as `stale_del
 ### `unverifiable`
 - **What it means:** No file references were stored with this record.
 - **Score impact:** Recalls get a **−1% penalty** to their score.
-- **How to use it:** This typically happens for pipe-mode runs where you compressed arbitrary text without file contexts, or generic instructions like `ctxsift compress "summarize how to deploy"`. Judge these records purely by the readability of their content.
+- **How to use it:** This typically happens for pipe-mode runs where you compressed arbitrary text without file contexts, or generic instructions like `ctxsift compress --intent summary "summarize how to deploy"`. Judge these records purely by the readability of their content.
 
 ### `unknown`
 - **What it means:** CtxSift could not verify the files on disk, or the workspace path is no longer reachable.

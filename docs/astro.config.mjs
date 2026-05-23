@@ -29,6 +29,25 @@ export default defineConfig({
                 },
                 {
                     tag: 'script',
+                    attrs: {
+                        defer: true,
+                        src: 'https://umami.tabmate.org/script.js',
+                        'data-website-id': '02598b51-968c-46ac-8323-f21035b348b9',
+                    },
+                },
+                {
+                    tag: 'script',
+                    attrs: {
+                        defer: true,
+                        src: 'https://umami.tabmate.org/recorder.js',
+                        'data-website-id': '02598b51-968c-46ac-8323-f21035b348b9',
+                        'data-sample-rate': '0.4',
+                        'data-mask-level': 'moderate',
+                        'data-max-duration': '300000',
+                    },
+                },
+                {
+                    tag: 'script',
                     attrs: { type: 'module' },
                     content: `
                         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';

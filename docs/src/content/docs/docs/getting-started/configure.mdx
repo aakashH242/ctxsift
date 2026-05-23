@@ -5,25 +5,30 @@ description: Set up CtxSift's model provider, runtime settings, and workspace co
 
 import { Aside } from '@astrojs/starlight/components';
 
-Run the guided setup once to get everything working:
+CtsSift has a guided setup that you can run to get everything setup after install. Typically, you will only need to run
+this once.
 
-```bash
+```bash frame="none"
 ctxsift configure
 ```
 
-This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill. You only need to run it once per setup.
+This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill.
+This will also pre-download the required models so that you can get start using it right away.
 
-After running it, verify everything is reachable:
+After running it, verify everything is working:
 
-```bash
+```bash frame="none"
 ctxsift doctor
 ```
 
 ---
 
-## Agent skill installation during configure
+## Agent skill installation
 
-`ctxsift configure` can install the CtxSift `SKILL.md` for supported agent hosts as part of the same guided flow.
+> If you prefer manual installation, download the skill from [here](https://raw.githubusercontent.com/aakashH242/ctxsift/refs/heads/main/src/ctxsift/agent_skill_template.md).
+
+
+`ctxsift configure` can install the CtxSift skill for supported agent hosts as part of the same guided flow.
 
 During configure, you will be asked:
 
@@ -64,10 +69,6 @@ Installed CtxSift skill for Copilot (workspace) at /path/to/repo/.github/skills/
 Already current CtxSift skill for Codex (global) at /home/user/.codex/skills/ctxsift/SKILL.md
 ```
 
-If you prefer downloading the skill package manually, use:
-
-- `/installers/ctxsift-install-skill.zip`
-
 ---
 
 ## How config works
@@ -90,14 +91,14 @@ Environment variable > Workspace config > Global config > Default
 
 To see what CtxSift is actually resolving (secrets redacted):
 
-```bash
+```bash frame="none"
 ctxsift config show           # workspace-aware resolved config
 ctxsift config show --global  # global config file only
 ```
 
 To write one key at a time:
 
-```bash
+```bash frame="none"
 ctxsift config set <key> <value>           # writes to workspace config
 ctxsift config set <key> <value> --global  # writes to global config
 ```
@@ -123,7 +124,7 @@ CPU mode uses embedded `llama.cpp` with a GGUF model. You supply a Hugging Face 
 `local.gguf_filename` is **required** when `local.device` is `cpu`. CtxSift will validate this and fail with a clear error if it is missing.
 </Aside>
 
-```bash
+```bash frame="none"
 ctxsift config set local.model unsloth/Qwen3.5-0.8B-GGUF --global
 ctxsift config set local.gguf_filename Qwen3.5-0.8B-Q8_0.gguf --global
 ```
@@ -143,7 +144,7 @@ CUDA mode uses Transformers. Supply a standard Hugging Face text-generation mode
 | `local.quantization` | `none` | `CTXSIFT_LOCAL_QUANTIZATION` |
 | `local.model_cache_path` | _(empty)_ | `CTXSIFT_MODEL_CACHE_PATH` |
 
-```bash
+```bash frame="none"
 ctxsift config set local.model LiquidAI/LFM2.5-1.2B-Instruct --global
 ctxsift config set local.device cuda --global
 ```
@@ -176,7 +177,7 @@ Set `remote.base_url` to switch from local to a hosted provider via LiteLLM.
 | `remote.api_version` | _(empty)_ | `CTXSIFT_LLM_API_VERSION` |
 | `remote.reasoning_mode` | `auto` | `CTXSIFT_LLM_REASONING_MODE` |
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url https://api.openai.com/v1 --global
 ctxsift config set remote.model_name gpt-4o-mini --global
 ctxsift config set remote.api_key YOUR_KEY --global
@@ -202,7 +203,7 @@ These apply to all compression regardless of local or remote mode.
 | `timeout_ms` | `90000` | `CTXSIFT_TIMEOUT_MS` |
 | `retries` | `1` | `CTXSIFT_RETRIES` |
 
-```bash
+```bash frame="none"
 ctxsift config set max_output_tokens 768
 ctxsift config set timeout_ms 120000
 ```
@@ -265,7 +266,7 @@ CtxSift serves local models through background daemons — one per effective run
 
 When `daemon.enabled` is `false`, CtxSift falls back to in-process model loading — slower cold starts and no cross-workspace model reuse.
 
-```bash
+```bash frame="none"
 ctxsift daemon status
 ctxsift daemon stop --all
 ```
@@ -286,7 +287,7 @@ Controls how long compressed records are kept before background cleanup removes 
 
 All env vars at a glance:
 
-```bash
+```bash frame="none"
 # General
 CTXSIFT_MAX_OUTPUT_TOKENS=512
 CTXSIFT_TIMEOUT_MS=90000

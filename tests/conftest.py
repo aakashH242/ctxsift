@@ -32,9 +32,7 @@ def isolate_ctxsift_config(
     """Keep tests independent from developer-machine config and env overrides."""
 
     platform_path = tmp_path / "platform-config" / "config.toml"
-    legacy_path = tmp_path / "legacy-config" / "config.toml"
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
     for env_name in config_store.ENVIRONMENT_KEY_MAP:
         monkeypatch.delenv(env_name, raising=False)

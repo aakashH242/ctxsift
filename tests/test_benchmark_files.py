@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from pathlib import Path
 import sys
+
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -12,10 +15,12 @@ from benchmark.loader import load_cases, load_scenarios
 from benchmark.report import render_markdown_report
 from benchmark.scoring import (
     brevity_ratio,
+    case_benchmark_score,
     final_benchmark_score,
     instruction_following_score,
     summary_quality_ratio,
 )
+from benchmark.semantic_quality import _semantic_plan
 from benchmark.runner import (
     _ANSI_BLUE,
     _ANSI_GREEN,
@@ -29,13 +34,17 @@ from benchmark.runner import (
     select_scenarios,
 )
 from benchmark.schemas import (
+    BenchmarkCase,
+    BenchmarkJudgement,
     BenchmarkScenario,
     CaseMetrics,
+    OutputViewMetrics,
+    ScoreViewSummary,
     ScenarioResult,
     ScenarioSummary,
     WarmupMetrics,
 )
-from benchmark.viewer import LoadedResult, render_html_report
+from benchmark.viewer import LoadedResult, load_results, render_html_report
 from ctxsift.compression.intent import CompressionIntent
 from ctxsift.extraction import ExtractionContext
 from ctxsift.models.base import (
@@ -87,20 +96,50 @@ class _PreloadFailingBackend(ModelBackend):
 def test_load_cases_reads_starter_dataset() -> None:
     dataset_path = Path("benchmark/dataset.jsonl")
     cases = load_cases(dataset_path)
+    cases_by_id = {case.case_id: case for case in cases}
 
     assert len(cases) >= 10
     assert cases[0].case_id == "python-01"
+    assert cases[0].intent == CompressionIntent.RECALL
     assert len(cases[0].must_preserve_tokens) >= 3
     assert cases[0].domain == "python"
+    assert cases_by_id["python-02"].intent == CompressionIntent.SUMMARY
+    assert cases_by_id["curl-02"].intent == CompressionIntent.RECALL
+    assert cases_by_id["ruff-01"].intent == CompressionIntent.RECALL
+
+
+def test_load_cases_requires_valid_explicit_intent(tmp_path: Path) -> None:
+    dataset_path = tmp_path / "dataset.jsonl"
+    dataset_path.write_text(
+        "\n".join(
+            [
+                '{"case_id":"missing-intent","domain":"python","title":"x","instruction":"y","raw_input":"z","must_preserve_tokens":[],"ideal_summary":"a"}',
+                '{"case_id":"bad-intent","domain":"python","title":"x","instruction":"y","raw_input":"z","must_preserve_tokens":[],"ideal_summary":"a","intent":"not-a-real-intent"}',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="missing-intent is missing required intent"):
+        load_cases(dataset_path)
+
+    dataset_path.write_text(
+        '{"case_id":"bad-intent","domain":"python","title":"x","instruction":"y","raw_input":"z","must_preserve_tokens":[],"ideal_summary":"a","intent":"not-a-real-intent"}',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="bad-intent has invalid intent"):
+        load_cases(dataset_path)
 
 
 def test_load_scenarios_reads_matrix() -> None:
     matrix_path = Path("benchmark/matrix.json")
     scenarios = load_scenarios(matrix_path)
 
-    assert any(scenario.name == "cpu-smollm2-360m-no-quant" for scenario in scenarios)
-    assert any(scenario.name == "gpu-qwen3-1.7b-no-quant" for scenario in scenarios)
+    assert any(scenario.name == "cpu-smollm2-360m" for scenario in scenarios)
+    assert any(scenario.name == "gpu-qwen3-1.7b" for scenario in scenarios)
     assert any(scenario.phase == "gpu-screen" for scenario in scenarios)
+    assert not any(scenario.track == "cpu" and "gpu" in scenario.phase for scenario in scenarios)
 
 
 def test_select_scenarios_filters_by_name_and_phase() -> None:
@@ -309,9 +348,30 @@ def test_render_markdown_report_includes_summary_and_case_rows() -> None:
             avg_summary_quality_ratio=1.0,
             avg_instruction_following_score=1.0,
             avg_brevity_ratio=1.0,
+            avg_thought_leakage_density=0.08,
+            avg_thought_marker_count=1.0,
             final_score=95.99,
             peak_cpu_rss_bytes=1234,
             peak_gpu_bytes=None,
+            raw_view=ScoreViewSummary(
+                case_count=1,
+                success_count=1,
+                accepted_count=0,
+                soft_accepted_count=1,
+                rejected_count=0,
+                exact_pass_count=1,
+                avg_exact_preservation_ratio=1.0,
+                avg_summary_quality_ratio=0.75,
+                avg_format_adherence_score=1.0,
+                avg_instruction_following_score=0.8,
+                avg_brevity_ratio=0.9,
+                avg_thought_leakage_density=0.22,
+                avg_thought_marker_count=2.0,
+                avg_case_score=0.75,
+                p10_case_score=0.75,
+                quality_core=0.75,
+                final_score=81.25,
+            ),
         ),
         cases=(
             CaseMetrics(
@@ -331,6 +391,22 @@ def test_render_markdown_report_includes_summary_and_case_rows() -> None:
                 validation_flags=(),
                 missing_tokens=(),
                 brevity_ratio=1.0,
+                thought_leakage_density=0.08,
+                thought_marker_count=1,
+                raw_view=OutputViewMetrics(
+                    output="AuthError src/auth.py 42",
+                    exact_preservation_ratio=1.0,
+                    summary_quality_ratio=0.75,
+                    format_adherence_score=1.0,
+                    instruction_following_score=0.8,
+                    validation_status="soft_accepted",
+                    validation_flags=("plain_text_style_mismatch",),
+                    missing_tokens=(),
+                    brevity_ratio=0.9,
+                    thought_leakage_density=0.22,
+                    thought_marker_count=2,
+                    case_score=0.75,
+                ),
             ),
         ),
     )
@@ -341,9 +417,13 @@ def test_render_markdown_report_includes_summary_and_case_rows() -> None:
     assert "avg_inference_ms" in report
     assert "avg_summary_quality_ratio" in report
     assert "final_score" in report
+    assert "raw_final_score" in report
+    assert "recovery_lift" in report
+    assert "avg_thought_leakage_density" in report
     assert "torch_num_threads" in report
     assert "`python-traceback-01`" in report
     assert result.to_dict()["summary"]["final_score"] == 95.99
+    assert result.to_dict()["summary"]["raw_view"]["final_score"] == 81.25
 
 
 def test_summary_quality_ratio_penalizes_anchor_only_output() -> None:
@@ -427,33 +507,300 @@ def test_instruction_following_score_respects_output_modes() -> None:
 
 def test_final_benchmark_score_prioritizes_preservation_and_instruction() -> None:
     robust_score = final_benchmark_score(
-        case_count=10,
-        success_count=10,
-        avg_exact_preservation_ratio=0.95,
-        avg_summary_quality_ratio=0.75,
-        avg_instruction_following_score=0.95,
-        avg_brevity_ratio=0.9,
-        accepted_count=9,
-        soft_accepted_count=1,
-        avg_inference_ms=400.0,
-        p95_inference_ms=800.0,
+        case_scores=[0.93, 0.91, 0.96, 0.88, 0.92, 0.94, 0.90, 0.95, 0.89, 0.87],
+        observed_latency_ms=400.0,
     )
     pretty_but_unreliable_score = final_benchmark_score(
-        case_count=10,
-        success_count=10,
-        avg_exact_preservation_ratio=0.45,
-        avg_summary_quality_ratio=0.95,
-        avg_instruction_following_score=0.55,
-        avg_brevity_ratio=0.9,
-        accepted_count=5,
-        soft_accepted_count=3,
-        avg_inference_ms=400.0,
-        p95_inference_ms=800.0,
+        case_scores=[0.98, 0.97, 0.96, 0.94, 0.92, 0.41, 0.36, 0.29, 0.24, 0.18],
+        observed_latency_ms=400.0,
     )
 
     assert robust_score > pretty_but_unreliable_score
-    assert 0.0 <= pretty_but_unreliable_score <= 100.0
     assert 0.0 <= robust_score <= 100.0
+    assert 0.0 <= pretty_but_unreliable_score <= 100.0
+
+
+def test_load_results_rejects_legacy_result_payload_without_case_scores(tmp_path: Path) -> None:
+    legacy_payload = {
+        "scenario": {"name": "legacy-scenario"},
+        "warmup": {"load_ms": 1.0},
+        "summary": {
+            "case_count": 1,
+            "success_count": 1,
+            "accepted_count": 1,
+            "soft_accepted_count": 0,
+            "rejected_count": 0,
+            "exact_pass_count": 1,
+            "avg_inference_ms": 10.0,
+            "p95_inference_ms": 10.0,
+            "avg_exact_preservation_ratio": 1.0,
+            "avg_summary_quality_ratio": 1.0,
+            "avg_format_adherence_score": 1.0,
+            "avg_instruction_following_score": 1.0,
+            "avg_brevity_ratio": 1.0,
+            "avg_thought_leakage_density": 0.0,
+            "avg_thought_marker_count": 0.0,
+            "avg_case_score": 1.0,
+            "p10_case_score": 1.0,
+            "quality_core": 1.0,
+            "latency_factor": 1.0,
+            "final_score": 100.0,
+        },
+        "cases": [
+            {
+                "case_id": "legacy-01",
+                "title": "legacy",
+                "domain": "python",
+                "inference_ms": 10.0,
+                "exact_preservation_ratio": 1.0,
+                "summary_quality_ratio": 1.0,
+                "format_adherence_score": 1.0,
+                "instruction_following_score": 1.0,
+                "brevity_ratio": 1.0,
+                "thought_leakage_density": 0.0,
+                "thought_marker_count": 0,
+                "validation_status": "accepted",
+                "family": "summary",
+            }
+        ],
+    }
+    result_path = tmp_path / "legacy.json"
+    result_path.write_text(json.dumps(legacy_payload), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing required object field 'raw_view'"):
+        load_results(result_path)
+
+
+def test_case_benchmark_score_penalizes_visible_thought_density() -> None:
+    clean_score = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=0.9,
+        semantic_score=0.9,
+        format_score=0.9,
+        brevity_score=0.9,
+        instruction_score=1.0,
+        thought_leakage_density=0.0,
+    )
+    noisy_score = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=0.9,
+        semantic_score=0.9,
+        format_score=0.9,
+        brevity_score=0.9,
+        instruction_score=1.0,
+        thought_leakage_density=0.3,
+    )
+
+    assert noisy_score < clean_score
+
+
+def test_case_benchmark_score_uses_intent_contract_weights() -> None:
+    summary_score = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=0.2,
+        semantic_score=0.9,
+        format_score=0.2,
+        brevity_score=1.0,
+        instruction_score=1.0,
+    )
+    exact_format_score = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=0.2,
+        semantic_score=0.9,
+        format_score=0.2,
+        brevity_score=1.0,
+        instruction_score=1.0,
+    )
+    exact_lines_score = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_LINES,
+        anchor_score=0.9,
+        semantic_score=0.2,
+        format_score=0.9,
+        brevity_score=1.0,
+        instruction_score=1.0,
+    )
+
+    assert summary_score > exact_format_score
+    assert exact_lines_score > summary_score
+
+
+def test_case_benchmark_score_penalizes_instruction_following_by_intent() -> None:
+    plain_clean = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=0.9,
+        semantic_score=0.9,
+        format_score=0.9,
+        brevity_score=0.9,
+        instruction_score=1.0,
+    )
+    plain_sloppy = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=0.9,
+        semantic_score=0.9,
+        format_score=0.9,
+        brevity_score=0.9,
+        instruction_score=0.5,
+    )
+    strict_clean = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=0.9,
+        semantic_score=0.9,
+        format_score=0.0,
+        brevity_score=0.9,
+        instruction_score=1.0,
+    )
+    strict_sloppy = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=0.9,
+        semantic_score=0.9,
+        format_score=0.0,
+        brevity_score=0.9,
+        instruction_score=0.5,
+    )
+
+    assert plain_sloppy < plain_clean
+    assert strict_sloppy < strict_clean
+    assert (strict_sloppy / strict_clean) < (plain_sloppy / plain_clean)
+
+
+def test_case_benchmark_score_uses_instruction_penalty_floors() -> None:
+    plain_zero = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=1.0,
+        brevity_score=1.0,
+        instruction_score=0.0,
+    )
+    strict_zero = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=0.0,
+        brevity_score=1.0,
+        instruction_score=0.0,
+    )
+    strict_zero_good_format = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=1.0,
+        brevity_score=1.0,
+        instruction_score=0.0,
+    )
+    plain_clamped = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.SUMMARY,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=1.0,
+        brevity_score=1.0,
+        instruction_score=-0.5,
+    )
+    strict_clamped = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=1.0,
+        brevity_score=1.0,
+        instruction_score=2.0,
+    )
+
+    assert plain_zero == pytest.approx(0.75)
+    assert strict_zero == pytest.approx(0.12)
+    assert strict_zero_good_format == pytest.approx(1.0)
+    assert plain_clamped == pytest.approx(plain_zero)
+    assert strict_clamped == pytest.approx(1.0)
+
+
+def test_strict_instruction_penalty_only_bites_when_format_is_weak() -> None:
+    strict_bad_format = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=0.0,
+        brevity_score=1.0,
+        instruction_score=0.5,
+    )
+    strict_mid_format = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=0.5,
+        brevity_score=1.0,
+        instruction_score=0.5,
+    )
+    strict_good_format = case_benchmark_score(
+        validation_status="accepted",
+        intent=CompressionIntent.EXACT_FORMAT,
+        anchor_score=1.0,
+        semantic_score=1.0,
+        format_score=1.0,
+        brevity_score=1.0,
+        instruction_score=0.5,
+    )
+
+    assert strict_bad_format == pytest.approx(0.21)
+    assert strict_mid_format == pytest.approx(0.5525)
+    assert strict_good_format == pytest.approx(1.0)
+
+
+def test_semantic_plan_uses_bullet_list_intent_not_family() -> None:
+    case = BenchmarkCase(
+        case_id="diagnosis-bullets",
+        domain="diagnosis",
+        title="diagnosis",
+        instruction="Return at most two bullets.",
+        raw_input="problem",
+        must_preserve_tokens=(),
+        ideal_summary="Root cause and one fix.",
+        family="explanation",
+        intent=CompressionIntent.BULLET_LIST,
+        output_mode="bullet_list",
+        expected_output="- root cause\n- one fix",
+        judgement=BenchmarkJudgement(format_check="bullet_shape"),
+    )
+
+    plan = _semantic_plan(case, "- root cause\n- one fix")
+
+    assert plan.semantic_score(None, 0.0) == 1.0
+    assert plan.embedding_output_text == "[0]=root cause\n[1]=one fix"
+
+
+def test_semantic_plan_uses_exact_lines_intent_not_family() -> None:
+    case = BenchmarkCase(
+        case_id="exact-lines-contract",
+        domain="exact-format",
+        title="exact lines",
+        instruction="Return only the first two lines exactly.",
+        raw_input="alpha\nbeta\ngamma",
+        must_preserve_tokens=(),
+        ideal_summary="alpha\nbeta",
+        family="exact_format",
+        intent=CompressionIntent.EXACT_LINES,
+        output_mode="exact_lines",
+        expected_output="alpha\nbeta",
+    )
+
+    plan = _semantic_plan(case, "alpha\nbeta")
+
+    assert plan.embedding_output_text is None
+    assert plan.semantic_score(None, 0.0) == 1.0
 
 
 def test_warmup_backend_ignores_probe_failures_after_preload() -> None:
@@ -530,14 +877,41 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
         summary={
             "case_count": 1,
             "success_count": 1,
+            "accepted_count": 1,
+            "soft_accepted_count": 0,
+            "rejected_count": 0,
             "exact_pass_count": 1,
             "avg_inference_ms": 42.0,
             "p95_inference_ms": 42.0,
             "final_score": 88.8,
             "avg_exact_preservation_ratio": 1.0,
             "avg_summary_quality_ratio": 0.75,
+            "avg_format_adherence_score": 0.9,
             "avg_instruction_following_score": 0.5,
-            "max_exact_preservation_ratio": 1.0,
+            "avg_brevity_ratio": 0.95,
+            "avg_thought_leakage_density": 0.07,
+            "avg_thought_marker_count": 0.5,
+            "avg_case_score": 0.88,
+            "p10_case_score": 0.88,
+            "quality_core": 0.88,
+            "latency_factor": 1.0,
+            "raw_view": {
+                "accepted_count": 0,
+                "soft_accepted_count": 1,
+                "rejected_count": 0,
+                "exact_pass_count": 1,
+                "avg_exact_preservation_ratio": 1.0,
+                "avg_summary_quality_ratio": 0.66,
+                "avg_format_adherence_score": 0.8,
+                "avg_instruction_following_score": 0.42,
+                "avg_brevity_ratio": 0.90,
+                "avg_thought_leakage_density": 0.21,
+                "avg_thought_marker_count": 1.5,
+                "avg_case_score": 0.72,
+                "p10_case_score": 0.72,
+                "quality_core": 0.72,
+                "final_score": 81.2,
+            },
         },
         cases=[
             {
@@ -547,7 +921,25 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
                 "inference_ms": 42.0,
                 "exact_preservation_ratio": 1.0,
                 "summary_quality_ratio": 0.75,
+                "format_adherence_score": 0.9,
                 "instruction_following_score": 0.5,
+                "brevity_ratio": 0.95,
+                "thought_leakage_density": 0.07,
+                "thought_marker_count": 1,
+                "validation_status": "accepted",
+                "family": "summary",
+                "case_score": 0.88,
+                "raw_view": {
+                    "exact_preservation_ratio": 1.0,
+                    "summary_quality_ratio": 0.66,
+                    "format_adherence_score": 0.8,
+                    "instruction_following_score": 0.42,
+                    "brevity_ratio": 0.90,
+                    "case_score": 0.72,
+                    "thought_leakage_density": 0.21,
+                    "thought_marker_count": 2,
+                    "validation_status": "soft_accepted",
+                },
                 "error": None,
             }
         ],
@@ -566,14 +958,41 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
         summary={
             "case_count": 1,
             "success_count": 1,
+            "accepted_count": 1,
+            "soft_accepted_count": 0,
+            "rejected_count": 0,
             "exact_pass_count": 1,
             "avg_inference_ms": 24.0,
             "p95_inference_ms": 24.0,
             "final_score": 93.5,
             "avg_exact_preservation_ratio": 1.0,
             "avg_summary_quality_ratio": 0.82,
+            "avg_format_adherence_score": 0.97,
             "avg_instruction_following_score": 0.91,
-            "max_exact_preservation_ratio": 1.0,
+            "avg_brevity_ratio": 0.98,
+            "avg_thought_leakage_density": 0.0,
+            "avg_thought_marker_count": 0.0,
+            "avg_case_score": 0.94,
+            "p10_case_score": 0.94,
+            "quality_core": 0.94,
+            "latency_factor": 1.0,
+            "raw_view": {
+                "accepted_count": 1,
+                "soft_accepted_count": 0,
+                "rejected_count": 0,
+                "exact_pass_count": 1,
+                "avg_exact_preservation_ratio": 1.0,
+                "avg_summary_quality_ratio": 0.80,
+                "avg_format_adherence_score": 0.94,
+                "avg_instruction_following_score": 0.88,
+                "avg_brevity_ratio": 0.96,
+                "avg_thought_leakage_density": 0.0,
+                "avg_thought_marker_count": 0.0,
+                "avg_case_score": 0.88,
+                "p10_case_score": 0.88,
+                "quality_core": 0.88,
+                "final_score": 90.1,
+            },
         },
         cases=[
             {
@@ -583,7 +1002,25 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
                 "inference_ms": 24.0,
                 "exact_preservation_ratio": 1.0,
                 "summary_quality_ratio": 0.82,
+                "format_adherence_score": 0.97,
                 "instruction_following_score": 0.91,
+                "brevity_ratio": 0.98,
+                "thought_leakage_density": 0.0,
+                "thought_marker_count": 0,
+                "validation_status": "accepted",
+                "family": "summary",
+                "case_score": 0.94,
+                "raw_view": {
+                    "exact_preservation_ratio": 1.0,
+                    "summary_quality_ratio": 0.80,
+                    "format_adherence_score": 0.94,
+                    "instruction_following_score": 0.88,
+                    "brevity_ratio": 0.96,
+                    "case_score": 0.88,
+                    "thought_leakage_density": 0.0,
+                    "thought_marker_count": 0,
+                    "validation_status": "accepted",
+                },
                 "error": None,
             }
         ],
@@ -608,10 +1045,15 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
     assert "distribution-band preserve" in html_report
     assert "model-head-score" in html_report
     assert "finalScore" in html_report
+    assert "rawFinalScore" in html_report
+    assert "recoveryLift" in html_report
     assert "summaryQualityRatio" in html_report
     assert "instructionFollowingScore" in html_report
+    assert "including safe visible-thought cleanup when possible" in html_report
+    assert "Recovered / raw score" in html_report
+    assert "Recovered thought" in html_report
     assert (
-        "100 x quality_core x latency, where quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)"
+        "100 x quality_core x latency, where case_score already includes validation, thought, and instruction penalties, and quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)"
         in html_report
     )
     assert "Highest final score across CPU scenarios." not in html_report

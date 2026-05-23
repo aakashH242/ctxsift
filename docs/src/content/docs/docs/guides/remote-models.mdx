@@ -17,7 +17,7 @@ CtxSift integrates with **LiteLLM** to handle remote requests. This means any pr
 
 Remote mode requires `litellm` and other networking dependencies. Install them using the `remote` extra:
 
-```bash
+```bash frame="none"
 uv tool install "ctxsift[remote]"
 ```
 
@@ -27,7 +27,7 @@ uv tool install "ctxsift[remote]"
 
 To route compression requests to a remote provider, you must configure the base URL, model name, and API key.
 
-```bash
+```bash frame="none"
 # Configure the API base endpoint
 ctxsift config set remote.base_url https://api.openai.com/v1
 
@@ -48,7 +48,7 @@ Here are configuration commands for common model providers:
 
 ### OpenAI
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url "https://api.openai.com/v1"
 ctxsift config set remote.model_name "gpt-4o-mini"
 ctxsift config set remote.api_key "sk-proj-..."
@@ -56,7 +56,7 @@ ctxsift config set remote.api_key "sk-proj-..."
 
 ### Anthropic
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url "https://api.anthropic.com/v1"
 ctxsift config set remote.model_name "claude-3-5-haiku-20241022"
 ctxsift config set remote.api_key "sk-ant-..."
@@ -66,7 +66,7 @@ ctxsift config set remote.api_key "sk-ant-..."
 
 If you are hosting a model locally but on a separate server or container, route requests to the OpenAI-compatible proxy port:
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url "http://localhost:11434/v1" # Ollama port
 ctxsift config set remote.model_name "qwen2.5-coder:1.5b"
 ctxsift config set remote.api_key "ollama" # Dummy key
@@ -76,7 +76,7 @@ ctxsift config set remote.api_key "ollama" # Dummy key
 
 ## The `reasoning_mode` setting
 
-```bash
+```bash frame="none"
 ctxsift config set remote.reasoning_mode auto
 ```
 
@@ -104,7 +104,7 @@ sequenceDiagram
     participant Provider as Remote LLM API
     participant LocalDB as Local SQLite DB (sqlite-vec)
     
-    User/Agent->>CLI: ctxsift compress "summarize errors" -- pytest
+    User/Agent->>CLI: ctxsift compress --intent recall "summarize the failing tests and first useful error for later recall" -- pytest
     CLI->>Provider: Send raw command output & instruction
     Provider-->>CLI: Return compressed summary
     CLI->>LocalDB: Compute local vector embedding & store record

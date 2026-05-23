@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 
 from benchmark.schemas import BenchmarkCase, BenchmarkJudgement, BenchmarkManifest, BenchmarkScenario
+from ctxsift.compression.intent import CompressionIntent
 
 
 def load_manifest(dataset_path: Path, matrix_path: Path) -> BenchmarkManifest:
@@ -19,11 +20,12 @@ def load_manifest(dataset_path: Path, matrix_path: Path) -> BenchmarkManifest:
 def load_cases(dataset_path: Path) -> list[BenchmarkCase]:
     """Load the benchmark dataset from a JSONL file."""
     cases: list[BenchmarkCase] = []
-    for line in dataset_path.read_text(encoding="utf-8").splitlines():
+    for line_number, line in enumerate(dataset_path.read_text(encoding="utf-8").splitlines(), start=1):
         stripped = line.strip()
         if not stripped:
             continue
         payload = json.loads(stripped)
+        case_id = str(payload.get("case_id", f"<line {line_number}>"))
         cases.append(
             BenchmarkCase(
                 case_id=payload["case_id"],
@@ -35,6 +37,7 @@ def load_cases(dataset_path: Path) -> list[BenchmarkCase]:
                 ideal_summary=payload["ideal_summary"],
                 tags=tuple(payload.get("tags", [])),
                 family=str(payload.get("family", "summary")),
+                intent=_load_intent(payload, dataset_path=dataset_path, case_id=case_id, line_number=line_number),
                 ecosystem=str(payload.get("ecosystem", "")),
                 difficulty=str(payload.get("difficulty", "medium")),
                 output_mode=str(payload.get("output_mode", "plain_text")),
@@ -46,6 +49,26 @@ def load_cases(dataset_path: Path) -> list[BenchmarkCase]:
             )
         )
     return cases
+
+
+def _load_intent(
+    payload: dict[str, object],
+    *,
+    dataset_path: Path,
+    case_id: str,
+    line_number: int,
+) -> CompressionIntent:
+    raw_intent = payload.get("intent")
+    if raw_intent is None:
+        raise ValueError(
+            f"{dataset_path}:{line_number} case {case_id} is missing required intent."
+        )
+    try:
+        return CompressionIntent(str(raw_intent))
+    except ValueError as error:
+        raise ValueError(
+            f"{dataset_path}:{line_number} case {case_id} has invalid intent {raw_intent!r}."
+        ) from error
 
 
 def _load_judgement(payload: object) -> BenchmarkJudgement:

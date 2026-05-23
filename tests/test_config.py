@@ -58,13 +58,9 @@ def test_global_config_prefers_platform_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
     platform_path.parent.mkdir(parents=True)
-    legacy_path.parent.mkdir(parents=True)
     platform_path.write_text("max_output_tokens = 640\n", encoding="utf-8")
-    legacy_path.write_text("max_output_tokens = 320\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
     paths = config_store.discover_global_config_paths()
 
@@ -72,19 +68,15 @@ def test_global_config_prefers_platform_path(
     assert paths.write_path == platform_path
 
 
-def test_global_config_falls_back_to_legacy_path(
+def test_global_config_uses_platform_path_when_file_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text("max_output_tokens = 320\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
     paths = config_store.discover_global_config_paths()
 
-    assert paths.read_path == legacy_path
+    assert paths.read_path == platform_path
     assert paths.write_path == platform_path
 
 
@@ -118,11 +110,6 @@ def test_config_resolution_uses_expected_precedence(
     platform_path.parent.mkdir(parents=True)
     platform_path.write_text("max_output_tokens = 128\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(
-        config_store,
-        "legacy_global_config_path",
-        lambda: tmp_path / "legacy" / "config.toml",
-    )
 
     result = resolve_config(
         ConfigResolutionRequest(

@@ -43,6 +43,8 @@ from benchmark.schemas import (
     BenchmarkCase,
     BenchmarkScenario,
     CaseMetrics,
+    OutputViewMetrics,
+    ScoreViewSummary,
     ScenarioResult,
     ScenarioSummary,
     WarmupMetrics,
@@ -54,6 +56,7 @@ from ctxsift.extraction import ExtractionContext, extract_signal
 from ctxsift.models import create_compression_backend, create_local_backend
 from ctxsift.models.base import (
     BackendUnavailableError,
+    CompressionTrace,
     ModelBackend,
     ModelCompressionInput,
     ModelOutputRejectedError,
@@ -62,6 +65,7 @@ from ctxsift.models.text_profile_common import (
     validate_instruction_aware_output,
     validation_flags,
 )
+from ctxsift.models.thought_leakage import visible_thought_leak_stats
 from ctxsift.types import AppConfig, LocalModelConfig, LocalQuantizationMode
 from ctxsift.workspace import detect_workspace_context
 
@@ -398,7 +402,9 @@ async def run_scenario(
         f"avg_instruction={summary.avg_instruction_following_score:.3f} "
         f"quality_core={summary.quality_core:.3f} "
         f"latency_factor={summary.latency_factor:.3f} "
-        f"final_score={summary.final_score:.2f}"
+        f"final_score={summary.final_score:.2f} "
+        f"raw_score={summary.raw_view.final_score:.2f} "
+        f"lift={summary.final_score - summary.raw_view.final_score:+.2f}"
     )
     return ScenarioResult(
         scenario=scenario,
@@ -715,12 +721,11 @@ async def _warmup_backend(
     context: ExtractionContext,
 ) -> WarmupMetrics:
     request = _model_request(
+        intent=CompressionIntent.RECALL,
         instruction="Summarize the failure for later recall.",
         raw_input="pytest failed in tests/test_auth.py::test_login\nE AuthError: invalid token",
         max_output_tokens=scenario.max_output_tokens,
         context=context,
-        family="recall",
-        output_mode="plain_text",
     )
     reset_gpu_peak_memory(torch_module)
     started = time.perf_counter()
@@ -751,14 +756,15 @@ async def _run_case(
     torch_module: object | None,
 ) -> CaseMetrics:
     async with semaphore:
+        trace = CompressionTrace()
         request = _model_request(
+            intent=case.intent,
             instruction=case.instruction,
             raw_input=case.raw_input,
             max_output_tokens=scenario.max_output_tokens,
             context=context,
-            family=case.family,
-            output_mode=case.output_mode,
             required_anchors=case.anchor_tokens,
+            trace=trace,
         )
         reset_gpu_peak_memory(torch_module)
         started = time.perf_counter()
@@ -773,49 +779,22 @@ async def _run_case(
         except BackendUnavailableError as backend_error:
             output = ""
             error = str(backend_error)
-        validation = (
-            rejected_validation
-            if rejected_validation is not None
-            else validate_instruction_aware_output(request, output)
+        recovered_output = output or trace.recovered_selected_output
+        raw_output = trace.raw_selected_output or trace.first_pass_raw_output
+        recovered_view = _score_case_view(
+            request=request,
+            case=case,
+            output=recovered_output,
+            validation_override=(
+                rejected_validation if rejected_validation is not None and not recovered_output else None
+            ),
+        )
+        raw_view = _score_case_view(
+            request=request,
+            case=case,
+            output=raw_output,
         )
         elapsed_ms = (time.perf_counter() - started) * 1000
-        missing = missing_tokens(output, case.anchor_tokens)
-        preserve_ratio = exact_ratio(case.anchor_tokens, missing)
-        quality_ratio = summary_quality_ratio(output, case.scoring_target, case.anchor_tokens)
-        format_ratio = format_adherence_score(
-            request,
-            output,
-            family=case.family,
-            output_mode=case.output_mode,
-            expected_output=case.scoring_target,
-            format_check=case.judgement.format_check,
-            pass_rule=case.judgement.pass_rule,
-        )
-        brevity = brevity_ratio(
-            output,
-            case.scoring_target,
-            case.anchor_tokens,
-            case.judgement.max_extra_tokens,
-        )
-        instruction_ratio = instruction_following_score(
-            request,
-            output,
-            family=case.family,
-            output_mode=case.output_mode,
-            expected_output=case.scoring_target,
-            required_anchors=case.anchor_tokens,
-            format_check=case.judgement.format_check,
-            pass_rule=case.judgement.pass_rule,
-            max_extra_tokens=case.judgement.max_extra_tokens,
-        )
-        case_score = case_benchmark_score(
-            validation_status=validation.status,
-            family=case.family,
-            anchor_score=preserve_ratio,
-            semantic_score=quality_ratio,
-            format_score=format_ratio,
-            brevity_score=brevity,
-        )
         return CaseMetrics(
             case_id=case.case_id,
             title=case.title,
@@ -825,18 +804,21 @@ async def _run_case(
             inference_ms=elapsed_ms,
             cpu_rss_bytes=current_process_rss_bytes(),
             gpu_peak_bytes=gpu_peak_memory_bytes(torch_module),
-            output=output,
-            exact_preservation_ratio=preserve_ratio,
-            summary_quality_ratio=quality_ratio,
-            format_adherence_score=format_ratio,
-            instruction_following_score=instruction_ratio,
-            validation_status=validation.status,
-            validation_flags=validation_flags(validation),
-            missing_tokens=missing,
+            output=recovered_output,
+            exact_preservation_ratio=recovered_view.exact_preservation_ratio,
+            summary_quality_ratio=recovered_view.summary_quality_ratio,
+            format_adherence_score=recovered_view.format_adherence_score,
+            instruction_following_score=recovered_view.instruction_following_score,
+            validation_status=recovered_view.validation_status,
+            validation_flags=recovered_view.validation_flags,
+            missing_tokens=recovered_view.missing_tokens,
             error=error,
-            brevity_ratio=brevity,
+            brevity_ratio=recovered_view.brevity_ratio,
             family=case.family,
-            case_score=case_score,
+            thought_leakage_density=recovered_view.thought_leakage_density,
+            thought_marker_count=recovered_view.thought_marker_count,
+            case_score=recovered_view.case_score,
+            raw_view=raw_view,
         )
 
 
@@ -848,119 +830,143 @@ async def _apply_semantic_quality_scores(
 ) -> list[CaseMetrics]:
     if semantic_scorer is None or not case_results:
         return case_results
-    semantic_scores = await semantic_scorer.score_cases(
+    recovered_scores = await semantic_scorer.score_cases(
         cases,
         [case_result.output for case_result in case_results],
     )
+    raw_scores = await semantic_scorer.score_cases(
+        cases,
+        [case_result.raw_view.output for case_result in case_results],
+    )
     updated_results: list[CaseMetrics] = []
-    for benchmark_case, case_result, semantic_score in zip(
+    for benchmark_case, case_result, recovered_score, raw_score in zip(
         cases,
         case_results,
-        semantic_scores,
+        recovered_scores,
+        raw_scores,
         strict=True,
     ):
+        raw_view = case_result.raw_view
+        updated_raw_view = replace(
+            raw_view,
+            summary_quality_ratio=raw_score,
+            case_score=case_benchmark_score(
+                validation_status=raw_view.validation_status,
+                intent=benchmark_case.intent,
+                anchor_score=raw_view.exact_preservation_ratio,
+                semantic_score=raw_score,
+                format_score=raw_view.format_adherence_score,
+                brevity_score=raw_view.brevity_ratio,
+                instruction_score=raw_view.instruction_following_score,
+                thought_leakage_density=raw_view.thought_leakage_density,
+            ),
+        )
         updated_results.append(
             replace(
                 case_result,
-                summary_quality_ratio=semantic_score,
+                summary_quality_ratio=recovered_score,
                 case_score=case_benchmark_score(
                     validation_status=case_result.validation_status,
-                    family=benchmark_case.family,
+                    intent=benchmark_case.intent,
                     anchor_score=case_result.exact_preservation_ratio,
-                    semantic_score=semantic_score,
+                    semantic_score=recovered_score,
                     format_score=case_result.format_adherence_score,
                     brevity_score=case_result.brevity_ratio,
+                    instruction_score=case_result.instruction_following_score,
+                    thought_leakage_density=case_result.thought_leakage_density,
                 ),
+                raw_view=updated_raw_view,
             )
         )
     return updated_results
 
 
+def _score_case_view(
+    *,
+    request: ModelCompressionInput,
+    case: BenchmarkCase,
+    output: str,
+    validation_override=None,
+) -> OutputViewMetrics:
+    validation = validation_override or validate_instruction_aware_output(request, output)
+    thought_stats = visible_thought_leak_stats(output)
+    missing = missing_tokens(output, case.anchor_tokens)
+    preserve_ratio = exact_ratio(case.anchor_tokens, missing)
+    quality_ratio = summary_quality_ratio(output, case.scoring_target, case.anchor_tokens)
+    format_ratio = format_adherence_score(
+        request,
+        output,
+        intent=case.intent,
+        output_mode=case.output_mode,
+        expected_output=case.scoring_target,
+        format_check=case.judgement.format_check,
+        pass_rule=case.judgement.pass_rule,
+    )
+    brevity = brevity_ratio(
+        output,
+        case.scoring_target,
+        case.anchor_tokens,
+        case.judgement.max_extra_tokens,
+    )
+    instruction_ratio = instruction_following_score(
+        request,
+        output,
+        intent=case.intent,
+        output_mode=case.output_mode,
+        expected_output=case.scoring_target,
+        required_anchors=case.anchor_tokens,
+        format_check=case.judgement.format_check,
+        pass_rule=case.judgement.pass_rule,
+        max_extra_tokens=case.judgement.max_extra_tokens,
+    )
+    case_score = case_benchmark_score(
+        validation_status=validation.status,
+        intent=case.intent,
+        anchor_score=preserve_ratio,
+        semantic_score=quality_ratio,
+        format_score=format_ratio,
+        brevity_score=brevity,
+        instruction_score=instruction_ratio,
+        thought_leakage_density=thought_stats.density,
+    )
+    return OutputViewMetrics(
+        output=output,
+        exact_preservation_ratio=preserve_ratio,
+        summary_quality_ratio=quality_ratio,
+        format_adherence_score=format_ratio,
+        instruction_following_score=instruction_ratio,
+        validation_status=validation.status,
+        validation_flags=validation_flags(validation),
+        missing_tokens=missing,
+        brevity_ratio=brevity,
+        thought_leakage_density=thought_stats.density,
+        thought_marker_count=thought_stats.marker_count,
+        case_score=case_score,
+    )
+
+
 def _model_request(
     *,
+    intent: CompressionIntent,
     instruction: str,
     raw_input: str,
     max_output_tokens: int,
     context: ExtractionContext,
-    family: str = "summary",
-    output_mode: str = "plain_text",
     required_anchors: tuple[str, ...] = (),
     evaluation_context: Literal["benchmark"] = "benchmark",
+    trace: CompressionTrace | None = None,
 ) -> ModelCompressionInput:
     signal = extract_signal(raw_input, context)
     return ModelCompressionInput(
-        intent=_benchmark_intent(
-            family=family,
-            output_mode=output_mode,
-            instruction=instruction,
-        ),
+        intent=intent,
         instruction=instruction,
         raw_input=raw_input,
         extracted_signal=signal,
         max_output_tokens=max_output_tokens,
         required_anchors=required_anchors,
         evaluation_context=evaluation_context,
+        trace=trace,
     )
-
-
-def _benchmark_intent(
-    *,
-    family: str,
-    output_mode: str,
-    instruction: str,
-) -> CompressionIntent:
-    normalized_output_mode = output_mode.strip().casefold().replace("_", "-")
-    if normalized_output_mode == "json":
-        return CompressionIntent.JSON
-    if normalized_output_mode == "yaml":
-        return CompressionIntent.YAML
-    if normalized_output_mode == "table":
-        return CompressionIntent.TABLE
-    if normalized_output_mode == "bullet-list":
-        return CompressionIntent.BULLET_LIST
-    if normalized_output_mode == "exact-lines":
-        return CompressionIntent.EXACT_LINES
-    if normalized_output_mode in {"regex-constrained", "single-line"}:
-        return CompressionIntent.EXACT_FORMAT
-    if family == "recall":
-        return CompressionIntent.RECALL
-
-    normalized = instruction.casefold()
-    if any(token in normalized for token in ("json", "valid json only")):
-        return CompressionIntent.JSON
-    if "yaml" in normalized:
-        return CompressionIntent.YAML
-    if "table" in normalized:
-        return CompressionIntent.TABLE
-    if "bullet" in normalized or "bullets" in normalized:
-        return CompressionIntent.BULLET_LIST
-    if any(
-        token in normalized
-        for token in (
-            "quote exactly",
-            "verbatim",
-            "exact lines",
-            "exact line",
-            "copy the lines",
-            "extract the lines",
-        )
-    ):
-        return CompressionIntent.EXACT_LINES
-    if any(
-        token in normalized
-        for token in (
-            "return only",
-            "output only",
-            "single line",
-            "exact match",
-            "regex-constrained",
-            "no prose, bullets, backticks, or extra whitespace",
-        )
-    ):
-        return CompressionIntent.EXACT_FORMAT
-    if "recall" in normalized:
-        return CompressionIntent.RECALL
-    return CompressionIntent.SUMMARY
 
 
 def _rejected_validation_from_error(error: str):
@@ -1041,56 +1047,107 @@ def _preview_error_text(error: str, limit: int = 220) -> str:
 def _summarize(cases: list[CaseMetrics]) -> ScenarioSummary:
     case_count = len(cases)
     success_cases = [case for case in cases if case.error is None]
-    accepted_cases = [case for case in cases if case.validation_status == "accepted"]
-    soft_accepted_cases = [case for case in cases if case.validation_status == "soft_accepted"]
-    rejected_cases = [case for case in cases if case.validation_status == "rejected"]
     inference_times = [case.inference_ms for case in success_cases]
-    exact_scores = [case.exact_preservation_ratio for case in cases]
-    quality_scores = [case.summary_quality_ratio for case in cases]
-    format_scores = [case.format_adherence_score for case in cases]
-    instruction_scores = [case.instruction_following_score for case in cases]
-    brevity_scores = [case.brevity_ratio for case in cases]
-    case_scores = [case.case_score for case in cases]
     success_count = len(success_cases)
+    recovered_summary = _summarize_case_views(
+        [
+            OutputViewMetrics(
+                output=case.output,
+                exact_preservation_ratio=case.exact_preservation_ratio,
+                summary_quality_ratio=case.summary_quality_ratio,
+                format_adherence_score=case.format_adherence_score,
+                instruction_following_score=case.instruction_following_score,
+                validation_status=case.validation_status,
+                validation_flags=case.validation_flags,
+                missing_tokens=case.missing_tokens,
+                brevity_ratio=case.brevity_ratio,
+                thought_leakage_density=case.thought_leakage_density,
+                thought_marker_count=case.thought_marker_count,
+                case_score=case.case_score,
+            )
+            for case in cases
+        ],
+        success_count=success_count,
+    )
+    raw_summary = _summarize_case_views(
+        [case.raw_view for case in cases],
+        success_count=success_count,
+    )
     avg_inference_ms = mean(inference_times) if inference_times else 0.0
     p95_inference_ms = percentile(inference_times, 0.95)
-    avg_exact_preservation_ratio = mean(exact_scores) if exact_scores else 0.0
-    avg_summary_quality_ratio = mean(quality_scores) if quality_scores else 0.0
-    avg_format_adherence_score = mean(format_scores) if format_scores else 0.0
-    avg_instruction_following_score = mean(instruction_scores) if instruction_scores else 0.0
-    avg_brevity_ratio = mean(brevity_scores) if brevity_scores else 0.0
-    avg_case_score = mean(case_scores) if case_scores else 0.0
-    p10_case_score = percentile(case_scores, 0.10)
-    quality_core = quality_core_score(case_scores)
     latency_factor = latency_factor_score(avg_inference_ms) if inference_times else 0.85
     peak_cpu = _max_optional(case.cpu_rss_bytes for case in cases)
     peak_gpu = _max_optional(case.gpu_peak_bytes for case in cases)
     return ScenarioSummary(
         case_count=case_count,
         success_count=success_count,
-        accepted_count=len(accepted_cases),
-        soft_accepted_count=len(soft_accepted_cases),
-        rejected_count=len(rejected_cases),
-        exact_pass_count=sum(1 for case in cases if case.exact_preservation_ratio == 1.0),
+        accepted_count=recovered_summary.accepted_count,
+        soft_accepted_count=recovered_summary.soft_accepted_count,
+        rejected_count=recovered_summary.rejected_count,
+        exact_pass_count=recovered_summary.exact_pass_count,
         avg_inference_ms=avg_inference_ms,
         p95_inference_ms=p95_inference_ms,
-        avg_exact_preservation_ratio=avg_exact_preservation_ratio,
-        avg_summary_quality_ratio=avg_summary_quality_ratio,
-        avg_format_adherence_score=avg_format_adherence_score,
-        avg_instruction_following_score=avg_instruction_following_score,
-        avg_brevity_ratio=avg_brevity_ratio,
-        avg_case_score=avg_case_score,
-        p10_case_score=p10_case_score,
-        quality_core=quality_core,
+        avg_exact_preservation_ratio=recovered_summary.avg_exact_preservation_ratio,
+        avg_summary_quality_ratio=recovered_summary.avg_summary_quality_ratio,
+        avg_format_adherence_score=recovered_summary.avg_format_adherence_score,
+        avg_instruction_following_score=recovered_summary.avg_instruction_following_score,
+        avg_brevity_ratio=recovered_summary.avg_brevity_ratio,
+        avg_thought_leakage_density=recovered_summary.avg_thought_leakage_density,
+        avg_thought_marker_count=recovered_summary.avg_thought_marker_count,
+        avg_case_score=recovered_summary.avg_case_score,
+        p10_case_score=recovered_summary.p10_case_score,
+        quality_core=recovered_summary.quality_core,
         latency_factor=latency_factor,
         final_score=final_benchmark_score(
-            case_count=case_count,
-            success_count=success_count,
-            case_scores=case_scores,
+            case_scores=[case.case_score for case in cases],
             observed_latency_ms=avg_inference_ms,
         ),
         peak_cpu_rss_bytes=peak_cpu,
         peak_gpu_bytes=peak_gpu,
+        raw_view=replace(
+            raw_summary,
+            final_score=final_benchmark_score(
+                case_scores=[case.raw_view.case_score for case in cases],
+                observed_latency_ms=avg_inference_ms,
+            ),
+        ),
+    )
+
+
+def _summarize_case_views(
+    views: list[OutputViewMetrics],
+    *,
+    success_count: int,
+) -> ScoreViewSummary:
+    exact_scores = [view.exact_preservation_ratio for view in views]
+    quality_scores = [view.summary_quality_ratio for view in views]
+    format_scores = [view.format_adherence_score for view in views]
+    instruction_scores = [view.instruction_following_score for view in views]
+    brevity_scores = [view.brevity_ratio for view in views]
+    thought_density_scores = [view.thought_leakage_density for view in views]
+    thought_marker_counts = [view.thought_marker_count for view in views]
+    case_scores = [view.case_score for view in views]
+    accepted_count = sum(1 for view in views if view.validation_status == "accepted")
+    soft_accepted_count = sum(1 for view in views if view.validation_status == "soft_accepted")
+    rejected_count = sum(1 for view in views if view.validation_status == "rejected")
+    return ScoreViewSummary(
+        case_count=len(views),
+        success_count=success_count,
+        accepted_count=accepted_count,
+        soft_accepted_count=soft_accepted_count,
+        rejected_count=rejected_count,
+        exact_pass_count=sum(1 for view in views if view.exact_preservation_ratio == 1.0),
+        avg_exact_preservation_ratio=mean(exact_scores) if exact_scores else 0.0,
+        avg_summary_quality_ratio=mean(quality_scores) if quality_scores else 0.0,
+        avg_format_adherence_score=mean(format_scores) if format_scores else 0.0,
+        avg_instruction_following_score=mean(instruction_scores) if instruction_scores else 0.0,
+        avg_brevity_ratio=mean(brevity_scores) if brevity_scores else 0.0,
+        avg_thought_leakage_density=mean(thought_density_scores) if thought_density_scores else 0.0,
+        avg_thought_marker_count=mean(thought_marker_counts) if thought_marker_counts else 0.0,
+        avg_case_score=mean(case_scores) if case_scores else 0.0,
+        p10_case_score=percentile(case_scores, 0.10),
+        quality_core=quality_core_score(case_scores),
+        final_score=0.0,
     )
 
 
@@ -1120,7 +1177,23 @@ def _failed_scenario_result(
             error=error,
             brevity_ratio=0.0,
             family=case.family,
+            thought_leakage_density=0.0,
+            thought_marker_count=0,
             case_score=0.0,
+            raw_view=OutputViewMetrics(
+                output="",
+                exact_preservation_ratio=0.0,
+                summary_quality_ratio=0.0,
+                format_adherence_score=0.0,
+                instruction_following_score=0.0,
+                validation_status="rejected",
+                validation_flags=("warmup_failed",),
+                missing_tokens=case.anchor_tokens,
+                brevity_ratio=0.0,
+                thought_leakage_density=0.0,
+                thought_marker_count=0,
+                case_score=0.0,
+            ),
         )
         for case in cases
     )
@@ -1138,6 +1211,8 @@ def _failed_scenario_result(
         avg_format_adherence_score=0.0,
         avg_instruction_following_score=0.0,
         avg_brevity_ratio=0.0,
+        avg_thought_leakage_density=0.0,
+        avg_thought_marker_count=0.0,
         avg_case_score=0.0,
         p10_case_score=0.0,
         quality_core=0.0,
@@ -1145,6 +1220,25 @@ def _failed_scenario_result(
         final_score=0.0,
         peak_cpu_rss_bytes=current_process_rss_bytes(),
         peak_gpu_bytes=None,
+        raw_view=ScoreViewSummary(
+            case_count=len(cases),
+            success_count=0,
+            accepted_count=0,
+            soft_accepted_count=0,
+            rejected_count=len(cases),
+            exact_pass_count=0,
+            avg_exact_preservation_ratio=0.0,
+            avg_summary_quality_ratio=0.0,
+            avg_format_adherence_score=0.0,
+            avg_instruction_following_score=0.0,
+            avg_brevity_ratio=0.0,
+            avg_thought_leakage_density=0.0,
+            avg_thought_marker_count=0.0,
+            avg_case_score=0.0,
+            p10_case_score=0.0,
+            quality_core=0.0,
+            final_score=0.0,
+        ),
     )
     return ScenarioResult(
         scenario=scenario,

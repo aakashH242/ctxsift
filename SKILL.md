@@ -64,7 +64,7 @@ uv tool install "ctxsift[all]"
 
 If `ctxsift` is not found after installation, run:
 
-```bash
+```bash frame="none"
 uv tool update-shell
 ```
 
@@ -75,18 +75,18 @@ Then restart your shell and try `ctxsift` again.
 Unless you are allowed explicitly, ask your user to run the below command to perform the first-time setup.
 You can always recommend which model to use, based on the user's selected mode, by browsing the latest benchmark data from the link given above.
 
-```bash
+```bash frame="none"
 ctxsift configure
 ```
 
 ## Verify and test your setup
 
-```bash
+```bash frame="none"
 # Verify
 ctxsift doctor
 
 # Test compression
-echo "alpha\nbeta\ngamma" | ctxsift compress "Return only the first line, no explanations."
+echo "alpha\nbeta\ngamma" | ctxsift compress --intent exact-lines "Return only the first line, no explanations."
 ```
 
 # Troubleshooting

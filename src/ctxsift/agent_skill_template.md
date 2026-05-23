@@ -18,7 +18,7 @@ Do not use CtxSift just because a command exists. If the raw output is already s
 
 CRITICAL: Before rerunning a noisy or expensive command, first try recall:
 
-```bash
+```bash frame="none"
 ctxsift recall "<query>"
 ```
 
@@ -26,19 +26,19 @@ If recall gives the needed fact, use it instead of rerunning the original comman
 
 If fresh output is needed and the agent is launching the command, prefer command-capture mode:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent <intent> "<instruction>" -- <command> <args>
 ```
 
 If the command requires shell parsing, use shell command-capture mode:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent <intent> --shell "<instruction>" -- "<shell command>"
 ```
 
 If the output already exists or direct command-capture is impractical, use pipe fallback:
 
-```bash
+```bash frame="none"
 <command> 2>&1 | ctxsift compress --intent <intent> "<instruction>"
 ```
 
@@ -50,7 +50,7 @@ If the command is small, interactive, TUI-based, or the exact raw output itself 
 
 Use this when no shell syntax is needed.
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-lines "Return only the failing test node ids, one per line. No prose." -- pytest -q
 ```
 
@@ -60,7 +60,7 @@ This lets CtxSift capture command metadata such as argv, exit code, duration, wo
 
 Use `--shell` only when the command needs shell parsing, such as pipes, redirects, command substitution, glob expansion, `&&`, `||`, or other shell-only syntax.
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary --shell "Summarize only the final failing lines. Preserve the first real error exactly." -- "pytest -q 2>&1 | tail -n 80"
 ```
 
@@ -68,13 +68,13 @@ ctxsift compress --intent summary --shell "Summarize only the final failing line
 
 Use pipe mode only when the command has already run, the output already exists, or wrapping the command directly is impractical.
 
-```bash
+```bash frame="none"
 pytest -q 2>&1 | ctxsift compress --intent exact-lines "Return only the failing test node ids, one per line. No prose."
 ```
 
 ## Recall command
 
-```bash
+```bash frame="none"
 ctxsift recall [OPTIONS] QUERY
 ```
 
@@ -89,7 +89,7 @@ Useful options:
 
 Examples:
 
-```bash
+```bash frame="none"
 ctxsift recall "latest pytest failure in auth tests"
 ctxsift recall "terraform risky resources from previous plan"
 ctxsift recall "docker build blocker dramatiq_abort"
@@ -101,7 +101,7 @@ Use recall before repeating prior exploration, especially after interruptions, c
 
 ## Compress command
 
-```bash
+```bash frame="none"
 ctxsift compress --intent <intent> [--max-output-tokens <N>] [--shell] "<instruction>" [-- <command> <args>]
 ```
 
@@ -118,21 +118,20 @@ Always include `-- <command>` in command-capture mode. Without a command or pipe
 
 Choose the narrowest intent that matches the needed output.
 
-Use `exact-lines` when exact source lines, failing test IDs, stack-trace lines, error lines, resource names, or command lines must be preserved.
+Use `summary` for readable current-step explanations when the exact output shape is not critical.
 
-Use `exact-format` when the answer must match a strict text shape, such as one command, one verdict, or one filename.
+Use `recall` when compressing evidence mainly so it can be found again later with `ctxsift recall`, especially after context compaction or task switching.
 
-Use `json` when the next step will parse the result as JSON.
+Use `exact-lines` when every returned line must already exist in the raw input, such as failing test IDs, stack-trace lines, error lines, package names, resource names, or command lines.
 
-Use `yaml` when the next step expects YAML.
+Use `exact-format` when the answer must match one strict textual shape, such as one command, one verdict, one filename, or one token per line.
 
-Use `table` when comparing multiple rows or resources.
+Use the structured intents when the next step benefits from a predictable schema or display shape:
 
-Use `bullet-list` when a compact human-readable list is enough.
-
-Use `summary` for short explanations of large output.
-
-Use `recall` when compressing output specifically for future retrieval.
+* `json`: machine-readable objects or arrays for downstream parsing.
+* `yaml`: structured config-like output.
+* `table`: side-by-side comparison across rows and columns.
+* `bullet-list`: compact human-readable checklist or findings list.
 
 ## Prompting rules
 
@@ -150,31 +149,31 @@ Prefer exact constraints:
 
 Bad:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary "What matters here?" -- pytest -q
 ```
 
 Good:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-lines "Return only the failing test node ids, one per line. No prose." -- pytest -q
 ```
 
 Good:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent json "Return valid JSON only with keys file, line, code, and message. No markdown." -- npm run build
 ```
 
 Good:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary "Summarize the real blocker in 2 short sentences. Preserve exactly: ModuleNotFoundError, dramatiq_abort." -- pytest -q
 ```
 
 Good:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-format "Return only the kubectl command to delete the failing pod. No prose." -- kubectl get pods -A
 ```
 
@@ -206,63 +205,63 @@ ctxsift compress --intent exact-format "Return only the kubectl command to delet
 
 ### Pytest failures
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-lines "Return only the failing test node ids, one per line. No prose." -- pytest -q
 ```
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary "Summarize the real pytest blocker in 3 bullets. Preserve failing test ids, exception names, and file paths exactly." -- pytest -q
 ```
 
 ### Typecheck or lint errors
 
-```bash
+```bash frame="none"
 ctxsift compress --intent json "Return valid JSON only. Each item must have file, line, code, and message. No markdown." -- mypy .
 ```
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-lines "Return only the ruff error lines that require code changes. No prose." -- ruff check .
 ```
 
 ### Build failures
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-format "Return only the first real build failure and the file, package, or module involved. No prose." -- npm run build
 ```
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary "Summarize the build blocker in 2 short sentences. Preserve exact package names and error codes." -- docker build .
 ```
 
 ### Git diffs
 
-```bash
+```bash frame="none"
 ctxsift compress --intent bullet-list "Summarize risky changes in at most 5 bullets. Mention only files with behavioral or security impact." -- git diff
 ```
 
-```bash
+```bash frame="none"
 ctxsift compress --intent table "Return a table with columns file, change_type, risk, and reason. Include only meaningful code changes." -- git diff --stat
 ```
 
 ### Kubernetes
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-format "Return only the pod name and namespace for pods not Ready or not Running. No prose." -- kubectl get pods -A
 ```
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary --shell "Summarize the first real Kubernetes error. Preserve pod names, namespaces, and event reasons exactly." -- "kubectl describe pod my-pod -n default 2>&1 | tail -n 120"
 ```
 
 ### Terraform
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-format "Return only: SAFE, REVIEW, or UNSAFE, followed by the exact risky resources. No prose." -- terraform plan
 ```
 
 ### Existing raw output
 
-```bash
+```bash frame="none"
 pytest -q 2>&1 | ctxsift compress --intent exact-lines "Return only the failing test node ids, one per line. No prose."
 ```
 
@@ -272,7 +271,7 @@ CtxSift should usually already be configured by the user.
 
 Use these only when needed:
 
-```bash
+```bash frame="none"
 ctxsift doctor
 ctxsift daemon status
 ctxsift daemon start

@@ -25,7 +25,7 @@ class WorkspaceSetupResult:
 def global_config_exists() -> bool:
     """Return whether a real saved global config file exists."""
     paths = discover_global_config_paths()
-    return paths.write_path.exists() or paths.legacy_path.exists()
+    return paths.write_path.exists()
 
 
 def workspace_config_exists(cwd: Path) -> bool:

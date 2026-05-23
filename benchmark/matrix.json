@@ -1,7 +1,36 @@
 {
   "scenarios": [
+
+
+                {
+      "name": "cpu-LFM2.5-350M",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "LiquidAI/LFM2.5-350M-GGUF",
+      "gguf_filename": "LFM2.5-350M-Q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
+                    {
+      "name": "cpu-LFM2-350M-Extract",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "LiquidAI/LFM2-350M-Extract-GGUF",
+      "gguf_filename": "LFM2-350M-Extract-Q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
+                    {
+      "name": "cpu-LFM2-700M",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "LiquidAI/LFM2-700M-GGUF",
+      "gguf_filename": "LFM2-700M-Q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
         {
-      "name": "cpu-smollm2-360m-no-quant",
+      "name": "cpu-smollm2-360m",
       "track": "cpu",
       "phase": "cpu-screen",
       "model": "unsloth/SmolLM2-360M-Instruct-GGUF",
@@ -10,7 +39,7 @@
       "device": "cpu"
     },
           {
-    "name": "cpu-granite-4.0-350m-no-quant",
+    "name": "cpu-granite-4.0-350m",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "ibm-granite/granite-4.0-350m-GGUF",
@@ -18,17 +47,9 @@
     "quantization": "none",
     "device": "cpu"
   },
-              {
-    "name": "cpu-qwen2-500m-no-quant",
-    "track": "cpu",
-    "phase": "cpu-screen",
-    "model": "lmstudio-community/Qwen2-500M-Instruct-GGUF",
-    "gguf_filename": "Qwen2-500M-Instruct-Q8_0.gguf",
-    "quantization": "none",
-    "device": "cpu"
-  },
+
           {
-    "name": "cpu-qwen3-0.6b-no-quant",
+    "name": "cpu-qwen3-0.6b",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "unsloth/Qwen3-0.6B-GGUF",
@@ -37,7 +58,7 @@
     "device": "cpu"
   },
       {
-    "name": "cpu-qwen2.5-coder-0.5b-instruct-128k-no-quant",
+    "name": "cpu-qwen2.5-coder-0.5b-instruct-128k",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF",
@@ -46,7 +67,7 @@
     "device": "cpu"
   },
           {
-    "name": "cpu-qwen2.5-0.5b-instruct-no-quant",
+    "name": "cpu-qwen2.5-0.5b-instruct",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
@@ -55,7 +76,7 @@
     "device": "cpu"
   },
           {
-    "name": "cpu-qwen3.5-0.8b-no-quant",
+    "name": "cpu-qwen3.5-0.8b",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "unsloth/Qwen3.5-0.8B-GGUF",
@@ -64,7 +85,7 @@
     "device": "cpu"
   },
   {
-    "name": "cpu-gemma3-270m-it-no-quant",
+    "name": "cpu-gemma3-270m-it",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "unsloth/gemma-3-270m-it-GGUF",
@@ -73,7 +94,7 @@
     "device": "cpu"
   },
       {
-    "name": "cpu-gemma-3-1b-it-no-quant",
+    "name": "cpu-gemma-3-1b-it",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "unsloth/gemma-3-1b-it-GGUF",
@@ -82,7 +103,7 @@
     "device": "cpu"
   },
           {
-    "name": "cpu-lfm2.5-1.2b-instruct-no-quant",
+    "name": "cpu-lfm2.5-1.2b-instruct",
     "track": "cpu",
     "phase": "cpu-screen",
     "model": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
@@ -90,8 +111,18 @@
     "quantization": "none",
     "device": "cpu"
   },
+
+            {
+      "name": "gpu-supra-50M-instruct",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "SupraLabs/Supra-50M-Instruct",
+
+      "quantization": "none",
+      "device": "cuda"
+    },
                   {
-    "name": "gpu-lfm2.5-1.2b-instruct-no-quant",
+    "name": "gpu-lfm2.5-1.2b-instruct",
     "track": "gpu",
     "phase": "gpu-screen",
     "model": "LiquidAI/LFM2.5-1.2B-Instruct",
@@ -99,7 +130,7 @@
     "device": "cuda"
   },
               {
-    "name": "gpu-granite-4.0-micro-no-quant",
+    "name": "gpu-granite-4.0-micro",
     "track": "gpu",
     "phase": "gpu-screen",
     "model": "ibm-granite/granite-4.0-micro",
@@ -107,7 +138,7 @@
     "device": "cuda"
   },
       {
-    "name": "gpu-gemma-3-1b-it-no-quant",
+    "name": "gpu-gemma-3-1b-it",
     "track": "gpu",
     "phase": "gpu-screen",
     "model": "unsloth/gemma-3-1b-it",
@@ -116,7 +147,7 @@
   },
 
     {
-      "name": "gpu-granite-3.3-2b-instruct-no-quant",
+      "name": "gpu-granite-3.3-2b-instruct",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "ibm-granite/granite-3.3-2b-instruct",
@@ -124,7 +155,7 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-qwen2.5-1.5b-no-quant",
+      "name": "gpu-qwen2.5-1.5b",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "Qwen/Qwen2.5-1.5B-Instruct",
@@ -132,7 +163,7 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-qwen3-1.7b-no-quant",
+      "name": "gpu-qwen3-1.7b",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "Qwen/Qwen3-1.7B",
@@ -140,7 +171,7 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-qwen3.5-2b-no-quant",
+      "name": "gpu-qwen3.5-2b",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "Qwen/Qwen3.5-2B",
@@ -148,7 +179,7 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-qwen3.5-0.8b-no-quant",
+      "name": "gpu-qwen3.5-0.8b",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "Qwen/Qwen3.5-0.8B",
@@ -156,10 +187,18 @@
       "device": "cuda"
     },
     {
-      "name": "gpu-smollm2-1.7b-no-quant",
+      "name": "gpu-smollm2-1.7b",
       "track": "gpu",
       "phase": "gpu-screen",
       "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "quantization": "none",
+      "device": "cuda"
+    },
+        {
+      "name": "gpu-phi-4-mini-reasoning",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "microsoft/Phi-4-mini-reasoning",
       "quantization": "none",
       "device": "cuda"
     },

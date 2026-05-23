@@ -2,28 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from ctxsift.execution import CommandExecutionResult
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.types import WorkspaceContext
 
 
-@dataclass(frozen=True)
-class CommandCapture:
-    """Backwards-compatible synthetic capture used by tests and fixtures."""
-
-    command: list[str]
-    cwd: str
-    stdout: str
-    stderr: str
-    exit_code: int
-    duration_ms: int
-    shell: bool = False
-
-
 def render_run_payload(
-    execution: CommandExecutionResult | CommandCapture,
+    execution: CommandExecutionResult,
     workspace: WorkspaceContext,
     git_metadata: GitMetadata,
 ) -> str:
@@ -43,10 +28,10 @@ def render_run_payload(
     return "\n".join(sections)
 
 
-def _capture_sections(execution: CommandExecutionResult | CommandCapture) -> list[str]:
+def _capture_sections(execution: CommandExecutionResult) -> list[str]:
     return [
-        f"Command: {_command_display(execution)}",
-        f"Shell mode: {_shell_mode(execution)}",
+        f"Command: {execution.command_display}",
+        f"Shell mode: {execution.shell}",
         f"Cwd: {execution.cwd}",
         f"Exit code: {execution.exit_code}",
         f"Duration ms: {execution.duration_ms}",
@@ -59,15 +44,3 @@ def _capture_sections(execution: CommandExecutionResult | CommandCapture) -> lis
 
 def _output_section(label: str, content: str) -> str:
     return f"{label}:\nLength: {len(content)}\n{content}"
-
-
-def _command_display(execution: CommandExecutionResult | CommandCapture) -> str:
-    if isinstance(execution, CommandExecutionResult):
-        return execution.command_display
-    return " ".join(execution.command)
-
-
-def _shell_mode(execution: CommandExecutionResult | CommandCapture) -> bool:
-    if isinstance(execution, CommandExecutionResult):
-        return execution.shell
-    return execution.shell

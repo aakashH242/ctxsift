@@ -11,6 +11,7 @@ import pytest
 from ctxsift.compression.intent import CompressionIntent
 from ctxsift.models.base import (
     BackendUnavailableError,
+    CompressionTrace,
     ModelCompressionInput,
     ModelOutputRejectedError,
 )
@@ -22,13 +23,11 @@ from ctxsift.models.gemma_profile import (
 )
 from ctxsift.models.qwen25_profile import (
     build_text_messages as build_qwen25_messages,
-    is_valid_output as is_valid_qwen25_output,
     matches_model_name as matches_qwen25_model_name,
     normalize_output as normalize_qwen25_output,
 )
 from ctxsift.models.qwen3_profile import (
     build_text_messages as build_qwen3_messages,
-    is_valid_output as is_valid_qwen3_output,
     matches_model_name as matches_qwen3_model_name,
     normalize_output as normalize_qwen3_output,
 )
@@ -39,24 +38,24 @@ from ctxsift.models.qwen35_profile import (
 )
 from ctxsift.models.granite_profile import (
     build_text_messages as build_granite_messages,
-    is_valid_output as is_valid_granite_output,
     matches_model_name as matches_granite_model_name,
     normalize_output as normalize_granite_output,
 )
 from ctxsift.models.phi_profile import (
     build_text_messages as build_phi_messages,
-    is_valid_output as is_valid_phi_output,
     matches_model_name as matches_phi_model_name,
     normalize_output as normalize_phi_output,
 )
 from ctxsift.models.smollm2_profile import (
     build_text_messages as build_smollm2_messages,
-    is_valid_output as is_valid_smollm2_output,
     matches_model_name as matches_smollm2_model_name,
     normalize_output as normalize_smollm2_output,
 )
 from ctxsift.models.text_model_profiles import FALLBACK_PROFILE, resolve_text_model_profile
-from ctxsift.models.text_profile_common import preserves_exact_anchors
+from ctxsift.models.text_profile_common import (
+    preserves_exact_anchors,
+    validate_instruction_aware_output,
+)
 from ctxsift.models.transformers_backend import (
     TransformersGemmaBackend,
     TransformersTextBackend,
@@ -103,6 +102,15 @@ class FakeTokenizer:
         return "Model answer"
 
 
+class FakeThoughtyTokenizer(FakeTokenizer):
+    """Tokenizer stub that leaks visible thought before the answer."""
+
+    def decode(self, tokens, skip_special_tokens: bool) -> str:
+        return (
+            "<thinking>I should reason about the user's request first.</thinking>\n" "Model answer"
+        )
+
+
 class FakeGraniteTokenizer:
     """Tokenizer stub with Granite-style thinking control."""
 
@@ -128,6 +136,16 @@ class FakeGraniteTokenizer:
 
     def decode(self, tokens, skip_special_tokens: bool) -> str:
         return "Model answer"
+
+
+def _summary_request(raw_input: str = "ValidationError") -> ModelCompressionInput:
+    return ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
+        instruction="Summarize failures",
+        raw_input=raw_input,
+        extracted_signal=ExtractedSignal(),
+        max_output_tokens=64,
+    )
 
 
 class FakeModel:
@@ -224,7 +242,9 @@ def test_qwen25_profile_builds_standard_messages() -> None:
 
 
 def test_qwen25_profile_normalizes_headings_and_bullets() -> None:
-    assert normalize_qwen25_output("Summary:\n- first\n\n\n- second") == "first\nsecond"
+    request = _summary_request()
+
+    assert normalize_qwen25_output(request, "Summary:\n- first\n\n\n- second") == "first\nsecond"
 
 
 def test_qwen25_profile_rejects_schema_like_output() -> None:
@@ -236,7 +256,13 @@ def test_qwen25_profile_rejects_schema_like_output() -> None:
         max_output_tokens=64,
     )
 
-    assert is_valid_qwen25_output(request, "Files:\nsrc/config.py") is False
+    assert (
+        validate_instruction_aware_output(
+            request,
+            normalize_qwen25_output(request, "Files:\nsrc/config.py"),
+        ).status
+        == "rejected"
+    )
 
 
 def test_qwen3_profile_matches_qwen3_model_names() -> None:
@@ -264,8 +290,10 @@ def test_qwen3_profile_builds_standard_messages() -> None:
 
 
 def test_qwen3_profile_strips_reasoning_blocks() -> None:
+    request = _summary_request()
+
     assert (
-        normalize_qwen3_output("<think>hidden chain</think>\nSummary:\n- final answer")
+        normalize_qwen3_output(request, "<think>hidden chain</think>\nSummary:\n- final answer")
         == "final answer"
     )
 
@@ -279,7 +307,13 @@ def test_qwen3_profile_rejects_schema_like_output() -> None:
         max_output_tokens=64,
     )
 
-    assert is_valid_qwen3_output(request, "Commands:\npytest") is False
+    assert (
+        validate_instruction_aware_output(
+            request,
+            normalize_qwen3_output(request, "Commands:\npytest"),
+        ).status
+        == "rejected"
+    )
 
 
 def test_qwen35_profile_matches_qwen35_model_names() -> None:
@@ -308,7 +342,9 @@ def test_qwen35_profile_builds_text_only_messages() -> None:
 
 
 def test_qwen35_profile_uses_generic_cleanup() -> None:
-    assert normalize_qwen35_output("Summary:\n- first\n\n\n- second") == "first\nsecond"
+    request = _summary_request()
+
+    assert normalize_qwen35_output(request, "Summary:\n- first\n\n\n- second") == "first\nsecond"
 
 
 def test_smollm2_profile_matches_smollm2_model_names() -> None:
@@ -337,7 +373,9 @@ def test_smollm2_profile_builds_standard_messages() -> None:
 
 
 def test_smollm2_profile_uses_generic_cleanup() -> None:
-    assert normalize_smollm2_output("Summary:\n- first\n\n\n- second") == "first\nsecond"
+    request = _summary_request()
+
+    assert normalize_smollm2_output(request, "Summary:\n- first\n\n\n- second") == "first\nsecond"
 
 
 def test_smollm2_profile_rejects_schema_like_output() -> None:
@@ -349,7 +387,13 @@ def test_smollm2_profile_rejects_schema_like_output() -> None:
         max_output_tokens=64,
     )
 
-    assert is_valid_smollm2_output(request, "Commands:\npnpm lint") is False
+    assert (
+        validate_instruction_aware_output(
+            request,
+            normalize_smollm2_output(request, "Commands:\npnpm lint"),
+        ).status
+        == "rejected"
+    )
 
 
 def test_granite_profile_matches_granite_model_names() -> None:
@@ -378,8 +422,10 @@ def test_granite_profile_builds_standard_messages() -> None:
 
 
 def test_granite_profile_strips_reasoning_blocks() -> None:
+    request = _summary_request()
+
     assert (
-        normalize_granite_output("<think>chain</think><response>final answer</response>")
+        normalize_granite_output(request, "<think>chain</think><response>final answer</response>")
         == "final answer"
     )
 
@@ -393,7 +439,13 @@ def test_granite_profile_rejects_schema_like_output() -> None:
         max_output_tokens=64,
     )
 
-    assert is_valid_granite_output(request, "Files:\ninfra/main.tf") is False
+    assert (
+        validate_instruction_aware_output(
+            request,
+            normalize_granite_output(request, "Files:\ninfra/main.tf"),
+        ).status
+        == "rejected"
+    )
 
 
 def test_phi_profile_matches_phi_model_names() -> None:
@@ -422,7 +474,9 @@ def test_phi_profile_builds_strict_chat_messages() -> None:
 
 
 def test_phi_profile_uses_generic_cleanup() -> None:
-    assert normalize_phi_output("Summary:\n- first\n\n\n- second") == "first\nsecond"
+    request = _summary_request()
+
+    assert normalize_phi_output(request, "Summary:\n- first\n\n\n- second") == "first\nsecond"
 
 
 def test_phi_profile_rejects_role_token_leakage() -> None:
@@ -434,7 +488,13 @@ def test_phi_profile_rejects_role_token_leakage() -> None:
         max_output_tokens=64,
     )
 
-    assert is_valid_phi_output(request, "<|assistant|> final answer") is False
+    assert (
+        validate_instruction_aware_output(
+            request,
+            normalize_phi_output(request, "<|assistant|> final answer"),
+        ).status
+        == "rejected"
+    )
 
 
 def test_profile_registry_resolves_known_families_and_fallback() -> None:
@@ -466,13 +526,36 @@ def test_fallback_profile_requires_exact_anchor_preservation() -> None:
 
     assert preserves_exact_anchors(request, "src/cli.py ValidationError") is True
     assert preserves_exact_anchors(request, "cli.py validation failed") is False
-    assert FALLBACK_PROFILE.is_valid_output(request, "src/cli.py ValidationError") is True
-    assert FALLBACK_PROFILE.is_valid_output(request, "cli.py validation failed") is True
+    assert (
+        validate_instruction_aware_output(
+            request,
+            FALLBACK_PROFILE.normalize_output(request, "src/cli.py ValidationError"),
+        ).status
+        != "rejected"
+    )
+    assert (
+        validate_instruction_aware_output(
+            request,
+            FALLBACK_PROFILE.normalize_output(request, "cli.py validation failed"),
+        ).status
+        != "rejected"
+    )
 
 
 def test_gemma_profile_normalizes_headings_and_bullets() -> None:
-    assert normalize_output("Summary: \n- first line\n- second line") == "first line\nsecond line"
-    assert normalize_output("<turn|> concise summary <turn|>") == "concise summary"
+    request = _summary_request()
+
+    assert (
+        normalize_output(request, "Summary: \n- first line\n- second line")
+        == "first line\nsecond line"
+    )
+    assert normalize_output(request, "<turn|> concise summary <turn|>") == "concise summary"
+    assert (
+        normalize_output(
+            request, "<|im-end|> concise summary <im-end|> <|im-start> <turn> <|turn|>"
+        )
+        == "concise summary"
+    )
 
 
 def test_resolve_device_fails_when_explicit_cuda_is_unavailable() -> None:
@@ -715,6 +798,59 @@ def test_transformers_backend_supports_qwen35_profile(
     assert result == "Model answer"
     assert backend._profile.family_name == "qwen3.5"
     assert fake_tokenizer.last_messages is not None
+
+
+def test_transformers_backend_trace_keeps_raw_visible_thought_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model = FakeModel()
+    fake_tokenizer = FakeThoughtyTokenizer()
+
+    class FakeAutoModel:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return fake_model
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return fake_tokenizer
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: True),
+        float32="float32",
+        float16="float16",
+        bfloat16="bfloat16",
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_backend._load_transformers_components",
+        lambda: (FakeAutoModel, FakeAutoTokenizer),
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_backend._load_torch_module",
+        lambda: fake_torch,
+    )
+    trace = CompressionTrace()
+    backend = TransformersTextBackend(
+        LocalModelConfig(
+            model="google/gemma-4-E2B-it",
+            device="cpu",
+        )
+    )
+    request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
+        instruction="Summarize failures",
+        raw_input="AuthError: login failed",
+        extracted_signal=ExtractedSignal(symbols=["AuthError"]),
+        max_output_tokens=128,
+        trace=trace,
+    )
+
+    result = asyncio.run(backend.compress(request))
+
+    assert result == "Model answer"
+    assert trace.raw_selected_output.startswith("<thinking>")
+    assert trace.recovered_selected_output == "Model answer"
 
 
 def test_transformers_backend_supports_smollm2_profile(
@@ -1442,7 +1578,7 @@ def test_transformers_backend_rejects_invalid_gemma_output(
         asyncio.run(backend.compress(request))
 
 
-def test_transformers_backend_rejects_invalid_qwen25_output(
+def test_transformers_backend_recovers_scaffold_prefixed_qwen25_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class InvalidTokenizer(FakeTokenizer):
@@ -1484,11 +1620,12 @@ def test_transformers_backend_rejects_invalid_qwen25_output(
         max_output_tokens=64,
     )
 
-    with pytest.raises(ModelOutputRejectedError, match="qwen2.5 output validation failed"):
-        asyncio.run(backend.compress(request))
+    output = asyncio.run(backend.compress(request))
+
+    assert output == "src/config.py"
 
 
-def test_transformers_backend_rejects_invalid_qwen3_output(
+def test_transformers_backend_recovers_scaffold_prefixed_qwen3_output(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class InvalidTokenizer(FakeTokenizer):
@@ -1528,8 +1665,9 @@ def test_transformers_backend_rejects_invalid_qwen3_output(
         max_output_tokens=64,
     )
 
-    with pytest.raises(ModelOutputRejectedError, match="qwen3 output validation failed"):
-        asyncio.run(backend.compress(request))
+    output = asyncio.run(backend.compress(request))
+
+    assert output == "pytest"
 
 
 def test_transformers_backend_rejects_invalid_qwen35_output(

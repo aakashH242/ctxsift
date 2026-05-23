@@ -35,7 +35,7 @@ When running on the CPU, CtxSift uses an embedded `llama.cpp` runner. This engin
 ### Recommended GGUF settings
 To change the CPU model to the highly performant `Qwen3.5-0.8B-GGUF`:
 
-```bash
+```bash frame="none"
 # Set the Hugging Face GGUF repository id
 ctxsift config set local.model Qwen/Qwen3.5-0.8B-GGUF
 
@@ -61,12 +61,12 @@ For local GPU compression, we strongly recommend and bias setup towards **`Liqui
 
 ### Configuring GPU mode
 Ensure you have the GPU dependencies installed:
-```bash
+```bash frame="none"
 uv tool install "ctxsift[gpu]"
 ```
 
 Configure CtxSift to run LFM on CUDA:
-```bash
+```bash frame="none"
 # Select GPU execution
 ctxsift config set local.device cuda
 
@@ -82,11 +82,11 @@ If your GPU has limited VRAM, you can load larger models by enabling in-memory q
 
 To use GPU quantization:
 1. Install the quantization extras:
-   ```bash
+   ```bash frame="none"
    uv tool install "ctxsift[gpu,quant]"
    ```
 2. Set your desired quantization level:
-   ```bash
+   ```bash frame="none"
    # Use 8-bit precision (trades slight speed for lower VRAM)
    ctxsift config set local.quantization bnb-8bit
 
@@ -106,6 +106,6 @@ CtxSift caches models to avoid downloading them multiple times:
   - Windows: `%LOCALAPPDATA%\ctxsift\ctxsift\Cache\models\`
 
 To redirect the cache directory to a custom path (e.g. an external drive):
-```bash
+```bash frame="none"
 ctxsift config set local.model_cache_path "D:/model-cache"
 ```

@@ -91,7 +91,16 @@ Each case gets four weighted component scores:
 | **Format** | How well the output matched the declared output contract |
 | **Brevity** | Whether the output stayed close to the per-case token budget |
 
-Additionally, an `instruction_following_score` is computed and stored per case. It combines format adherence with a brevity check and is surfaced in the result files and the viewer, but does not have its own weight slot in the case score formula.
+Additionally, an `instruction_following_score` is computed and stored per case. It combines format adherence with a brevity check, is surfaced in the result files and the viewer, and now also acts as a multiplier in the case score formula.
+
+Every benchmark result now stores **two views** of the same run:
+
+- **Recovered** â€” the main score. This is after CtxSift's deterministic cleanup and scaffold-echo recovery.
+- **Raw** â€” the side score. This is the model answer before that recovery step.
+
+The gap between them is the **recovery lift**. A big lift means the model was salvageable, but messy. A small or zero lift means the model was already clean on its own.
+
+Recovered includes safe cleanup for visible "thinking out loud" when that can be removed without breaking the requested contract. Raw keeps the model answer before that recovery step, so it will still reflect things like `Okay, the user wants...`, `I should...`, or leaked wrappers such as `<think>...</think>`.
 
 Validation is also part of the benchmark. Outputs are classified as:
 
@@ -100,6 +109,8 @@ Validation is also part of the benchmark. Outputs are classified as:
 - `rejected` — output fails a hard validation check and scores zero
 
 **What causes a rejection:** the validator inspects the normalized output and rejects it if it detects any of the following:
+
+Visible thought leakage is now part of that contract too. In plain-text rows it can be a soft penalty when sparse, but in strict rows such as exact-format, exact-lines, JSON, YAML, tables, or bullet lists it is treated as a hard failure if the payload is not cleanly recoverable.
 
 - `empty_output` — the model returned nothing after cleanup
 - `control_token_leakage` — model-internal tokens like `<|im_end|>` or `<|im_start|>` leaked into the output
@@ -116,7 +127,10 @@ The current scenario score follows this formula:
 
 ```text
 case_score =
-  validation_factor * (
+  validation_factor *
+  thought_penalty *
+  instruction_penalty *
+  (
     w_anchor   * anchor_score   +
     w_semantic * semantic_score +
     w_format   * format_score   +
@@ -128,6 +142,13 @@ validation_factor =
   0.85  if soft_accepted
   0.00  if rejected
 
+instruction_penalty =
+  0.75 + 0.25 * instruction_following_score   for plain-text intents
+  1.00 - ((1.00 - strict_base_penalty) * (1.00 - format_score))   for strict intents
+
+strict_base_penalty =
+  0.40 + 0.60 * instruction_following_score
+
 quality_core =
   0.80 * mean(case_scores) + 0.20 * p10(case_scores)
 
@@ -138,23 +159,31 @@ final_score =
   100 * quality_core * latency_factor
 ```
 
+There are two more per-case modifiers now:
+
+- visible-thought density: if the answer still contains model reasoning text, the case score is multiplied by a small penalty based on how much of the output is thought leakage. Clean answers stay at `1.0`. Messier answers drop toward `0.65`.
+- instruction-following penalty: outputs that disobey the requested form now lose additional score even when they still preserve anchors or overlap semantically with the target. Strict intents get hit harder than plain-text ones.
+
+That leakage is not limited to `<think>...</think>` style wrappers. The detector also looks for common visible meta-reasoning lines such as `Okay, the user wants...`, `I should return...`, or `However, the instruction says...`. Recovery only strips the **leading** preamble when that is safe. Stray reasoning left in the body still lowers the score.
+
 The latency target is **2000 ms**. Finishing faster than 2000 ms is fully neutral — the factor is 1.0, no bonus and no penalty. Only being *slower* than 2000 ms incurs a penalty, and that penalty is capped at 0.85, so latency can reduce the score by at most 15%.
 
-The headline score is mainly a quality score, with a small penalty for being slow and an explicit penalty for weak tail behavior (the p10 term in `quality_core`).
+The headline **recovered** score is mainly a quality score, with a small penalty for being slow and an explicit penalty for weak tail behavior (the p10 term in `quality_core`). The raw score uses the same formula, just on the pre-recovery output.
 
-### Family-aware weighting
+### Intent-aware weighting
 
-Not every benchmark family cares about the same thing. `exact_format` rows care much more about output
-shape than a `summary` row does. So the benchmark uses family-aware weights internally instead of one flat global mix.
+Not every benchmark intent cares about the same thing. A `summary` row mainly cares about whether the answer is useful and concise. An `exact-format` row cares much more about matching the requested shape exactly. So the benchmark now weights each case by its explicit `intent`, not by its broader dashboard family.
 
-| Family | Anchor | Semantic | Format | Brevity |
+Dataset rows carry an explicit `intent` field, and the runner uses that as the scoring source of truth.
+`family` now stays as a reporting and bucketing label only.
+
+| Intent | Anchor | Semantic | Format | Brevity |
 |---|:-:|:-:|:-:|:-:|
 | `recall` | 0.45 | 0.25 | 0.20 | 0.10 |
 | `summary` | 0.25 | 0.40 | 0.20 | 0.15 |
-| `explanation` | 0.20 | 0.50 | 0.20 | 0.10 |
-| `structured` | 0.20 | 0.30 | 0.40 | 0.10 |
-| `instruction_following` | 0.20 | 0.30 | 0.40 | 0.10 |
-| `exact_format` | 0.15 | 0.10 | 0.70 | 0.05 |
+| `exact-lines` | 0.45 | 0.10 | 0.40 | 0.05 |
+| `exact-format` | 0.15 | 0.10 | 0.70 | 0.05 |
+| `json` / `yaml` / `table` / `bullet-list` | 0.20 | 0.30 | 0.40 | 0.10 |
 
 ### Format checks
 
@@ -178,10 +207,9 @@ recall, and compares model output against the scoring target semantically.
 That especially helps:
 
 - `summary`
-- `explanation`
-- part of `instruction_following`
+- `recall`
 
-For `structured` and `exact_format`, embeddings are only part of the story. Shape still matters more there.
+`exact-lines` stays mostly lexical and verbatim-focused. For `exact-format` and the structured intents (`json`, `yaml`, `table`, `bullet-list`), embeddings are only part of the story. Shape still matters more there.
 
 ---
 
@@ -230,43 +258,43 @@ This lets you run a wide screening pass first, then a narrower second pass where
 
 ### List scenarios
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --list-scenarios
 ```
 
 ### Run one local scenario
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario cpu-smollm2-360m-no-quant
 ```
 
 ### Run one phase
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --phase cpu-screen
 ```
 
 ### Run a subset of cases
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario gpu-qwen2.5-1.5b-no-quant --max-cases 50
 ```
 
 ### Run one or more specific case ids
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario cpu-granite-4.0-350m-no-quant --case-id pytest-01 --case-id kubectl-09
 ```
 
 ### Print model output while it runs
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario gpu-qwen3.5-0.8b-no-quant --show-output
 ```
 
 ### Give the run a custom name
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario gpu-qwen2.5-1.5b-no-quant --name smoke
 ```
 
@@ -286,7 +314,7 @@ When `--name` is provided, all scenarios in that run share one folder:
 
 Remote benchmark mode uses the same dataset and the same matrix, but executes scenarios against the configured LiteLLM backend instead of local inference. Remote cases run concurrently (up to 16 at a time) to keep wall-clock time reasonable.
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --remote --env-file .env --scenario remote-gpt-4o-mini
 ```
 
@@ -307,7 +335,7 @@ The viewer reads one result file, one run directory, or the whole `benchmark/res
 
 ### Render and open the whole results tree
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.viewer --open ./benchmark/results/
 ```
 
@@ -315,13 +343,13 @@ If you already generated results in this checkout, the latest snapshot also live
 
 ### Render a specific run folder
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.viewer --open ./benchmark/results/remote-gpt-5.4-mini-20260518T065257Z
 ```
 
 ### Render multiple roots together
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.viewer --open ./benchmark/results/run-a ./benchmark/results/run-b
 ```
 
@@ -332,12 +360,27 @@ The viewer currently shows:
 - per-case metrics
 - failed-case hover detail
 - a head-to-head compare panel
+- recovered score as the main score
+- raw score and recovery lift beside it
+- visible-thought density so you can quickly see whether a model is answering cleanly or thinking out loud in user-visible text, whether that leaked out as think-tags or as prose like `I should...`
+
+In the detail view, the case table now shows **recovered thought** and **raw thought** separately, so it is obvious whether cleanup removed visible reasoning or the model stayed clean on its own.
+
+The viewer now expects the current benchmark result schema. If you point it at older result files from before the raw/recovered split and per-case score storage, rerun those scenarios first instead of expecting the viewer to rebuild missing scores.
 
 ---
 
 ## Reading The Score Correctly
 
 The final score is not a "general model intelligence" score. It is a **CtxSift suitability score**.
+
+Start with the **recovered** score, because that reflects what the product can actually use after deterministic cleanup.
+Then check the **raw** score:
+
+- if recovered and raw are close, the model is naturally clean
+- if recovered is much higher, recovery is doing real work
+- if both are low, the model is just a poor fit for this task
+- if raw thought density is high, the model is leaking reasoning into the answer even when the core facts are partly right
 
 That means:
 
@@ -356,7 +399,7 @@ A model can be good in a general sense and still score lower here if it keeps ad
 - CPU runs use GGUF models and embedded `llama.cpp`
 - GPU runs use Transformers on CUDA
 - Remote runs use LiteLLM-compatible providers
-- Small models are more likely to echo scaffold text or leak control tokens — this causes hard rejections
+- Small models are more likely to echo scaffold text, leak control tokens, or spill visible reasoning into the answer - this now lowers raw scores and can hard-fail strict output rows
 - Quantization can help larger GPU models fit in VRAM, but often hurts smaller models on this benchmark
 - Attention backend choice (`sdpa` vs `flash_attention_2`) can change both speed and behavior on GPU
 - If you want to change or regenerate the dataset, start with `normalize_dataset.py` in this folder

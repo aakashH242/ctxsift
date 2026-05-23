@@ -80,7 +80,7 @@ uv tool install "ctxsift[all]"
 
 If `ctxsift` is not found after installation, run:
 
-```bash
+```bash frame="none"
 uv tool update-shell
 ```
 
@@ -90,18 +90,18 @@ Then restart your shell and try `ctxsift` again.
 
 Run a guided setup to configure your model provider, workspace settings and **install the skill** for your favorite agent harness.
 
-```bash
+```bash frame="none"
 ctxsift configure
 ```
 
 ### Verify and test your setup
 
-```bash
+```bash frame="none"
 # Verify
 ctxsift doctor
 
 # Test compression
-echo "alpha\nbeta\ngamma" | ctxsift compress "Return only the first line, no explanations."
+echo "alpha\nbeta\ngamma" | ctxsift compress --intent exact-lines "Return only the first line, no explanations."
 ```
 
 ---
@@ -127,7 +127,7 @@ For GPU-based environments, any text-generation models from HuggingFace can be u
 
 We have [benchmarked](benchmark) a few models to help you get started.
 You can also run the benchmark to see how a model not listed here will perform. Learn more about it [here](benchmark/README.md).
-To view the latest benchmark, open `benchmark/results/viewer.html` to inspect the latest static dashboard snapshot.
+To view the latest benchmark, open `benchmark/results/viewer.html` to inspect the latest static dashboard snapshot. The viewer now shows two score views: **recovered** as the main score, and **raw** beside it so you can see how much deterministic recovery helped. It also shows visible-thought density, so you can tell when a model is "thinking out loud" in the final answer instead of returning only the requested output. That includes both leaked think-tags and common meta lines like `Okay, the user wants...` or `I should return...`. Benchmark scoring now follows the explicit compression intent for each case, so strict outputs are judged by the contract the caller actually asked for, not by an older family label.
 
 **CPU models** — GGUF quantized models running on CPU via built-in llama.cpp engine. Sorted by score, highest first.
 
@@ -188,17 +188,24 @@ CtxSift has two core operations that the skill injects into an agent's workflow.
     
     The agent specifies its needs via an instruction in either of the ways belows.
     **Pipe mode** — pipe any command output with a natural language instruction:
-    ```bash
+    ```bash frame="none"
     pytest -q | ctxsift compress --intent summary "show only failing tests, useful traceback lines, and files involved"
     ```
     **Command capture mode** — let CtxSift execute the command directly for richer metadata (exit code, duration, stderr, git state):
-    ```bash
+    ```bash frame="none"
     ctxsift compress --intent summary "summarize build errors and point out specific misbehaving files" -- pnpm build
     ```
+    Pick the intent based on the shape you need back:
+    - `summary`: readable plain-text explanation for the current step.
+    - `recall`: plain-text evidence optimized for finding the record later with `ctxsift recall`.
+    - `exact-lines`: verbatim lines only, such as failing test ids, error lines, or package names.
+    - `exact-format`: a strict textual shape you define in the instruction, such as `SAFE|REVIEW|UNSAFE` or a single remediation command.
+    - `json`, `yaml`, `table`, `bullet-list`: structured outputs when another tool or the next reasoning step needs a predictable machine- or scan-friendly layout.
+    CtxSift now also strips safe visible reasoning in recovered output for plain-text intents, while the benchmark still tracks that leakage on the raw side so messy models do not get a free pass.
 2. **Recall**: Mostly after a context compaction event, agents rediscover the current state by inspecting large files which can negate tokens saved by compression. Recall lets agents search previously compressed outputs using natural language, returning relevant summaries, execution metadata, and file paths to rebuild their context efficiently.
 
     The agent recalls using the below commands.
-    ```bash
+    ```bash frame="none"
     # Base call    
     ctxsift recall "auth test failure"
    
@@ -244,7 +251,7 @@ Workspace settings are separate from the global file and live alongside the work
 
 The config CLI shows workspace-native settings by default. Use the `--global` flag to reference the global settings.
 
-```bash
+```bash frame="none"
 # Show current resolved config (secrets are redacted)
 ctxsift config show
 
@@ -262,7 +269,7 @@ ctxsift config set local.device auto --global
 
 These knobs control how the compress command behaves. These always apply no matter which compression model you use.
 
-```bash
+```bash frame="none"
 # Limit compressed output size (env var: CTXSIFT_MAX_OUTPUT_TOKENS)
 ctxsift config set max_output_tokens 768
 
@@ -284,7 +291,7 @@ API version and reasoning mode are only needed for providers that care about the
 does not control reasoning effort - it indicates if a model supports reasoning or not.
 
 
-```bash
+```bash frame="none"
 # Point ctxsift at a LiteLLM-compatible endpoint (env var: CTXSIFT_LLM_BASE_URL)
 ctxsift config set remote.base_url https://api.openai.com/v1
 
@@ -322,7 +329,7 @@ on the llama.cpp path. If you do not set it, CtxSift uses its built-in default o
 You do not have to set any of these manually because CtxSift already has defaults. Change them only when you want a 
 different model, need to force CPU or CUDA behavior, or want to tune compatibility and performance. 
 
-```bash
+```bash frame="none"
 # Pick a different local compression model (env var: CTXSIFT_LOCAL_MODEL)
 ctxsift config set local.model Qwen/Qwen3.5-0.8B
 
@@ -355,7 +362,7 @@ Everything in this section is conditional. You only need quantization settings w
 and the chosen model is too heavy to run comfortably without them. `local.model_cache_path` is useful when you 
 want explicit control over where quantized checkpoints are stored.
 
-```bash
+```bash frame="none"
 # No quantization (env var: CTXSIFT_LOCAL_QUANTIZATION)
 ctxsift config set local.quantization none
 
@@ -381,7 +388,7 @@ change how aggressively the daemons stay warm, or shorten and extend history ret
 These are almost entirely optional tuning knobs. The embedding model and daemon settings already have defaults, 
 and recall works without manual changes. Retention is also optional unless you want records kept for a shorter or longer period than the default 30 days.
 
-```bash
+```bash frame="none"
 # Use a different embedding model (env var: CTXSIFT_EMBEDDING_MODEL)
 ctxsift config set embedding.model sentence-transformers/all-MiniLM-L6-v2
 
@@ -434,7 +441,7 @@ CtxSift currently supports these quantization modes for local GPU compression:
 
 Quantized GPU loads require the optional quantization dependencies:
 
-```bash
+```bash frame="none"
 uv tool install "ctxsift[gpu,quant]"
 ```
 
@@ -465,7 +472,7 @@ These daemons auto-start on first use, stay warm across workspaces when the effe
 
 If you switch from local compression to remote compression, only the local compression daemon becomes unnecessary. The embedding daemon can still stay active and continue serving recall-related embedding work when daemon support is enabled. Existing daemons are not force-killed and stay alive until they age out, unless you stop them yourself with `ctxsift daemon stop` or `ctxsift daemon stop --all`.
 
-```bash
+```bash frame="none"
 ctxsift daemon start
 ctxsift daemon status
 ctxsift daemon stop

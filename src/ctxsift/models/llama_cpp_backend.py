@@ -29,6 +29,7 @@ from ctxsift.models.text_profile_common import (
     choose_preferred_candidate,
     normalize_cpu_protection_output,
     recover_scaffold_prefixed_output,
+    selected_candidate_index,
     should_attempt_repair,
     validate_instruction_aware_output,
 )
@@ -109,27 +110,48 @@ class LlamaCppBackend(ModelBackend):
         return LlamaRuntime(model=model, model_path=model_path)
 
     def _generate_text(self, runtime: LlamaRuntime, request: ModelCompressionInput) -> str:
-        first_pass = self._recover_candidate_before_validation(
+        first_raw_text, first_output = self._run_generation(
+            runtime,
             request,
-            self._run_generation(
-                runtime,
-                request,
-                self._build_messages(request),
-            ),
+            self._build_messages(request),
         )
+        first_pass = self._recover_candidate_before_validation(request, first_output)
+        if request.trace is not None:
+            request.trace.record_first_pass(
+                raw_output=first_raw_text,
+                recovered_output=first_pass,
+            )
         first_validation = validate_instruction_aware_output(request, first_pass)
         if not should_attempt_repair(first_validation):
+            if request.trace is not None:
+                request.trace.record_selected_outputs(
+                    raw_output=first_raw_text,
+                    recovered_output=first_pass,
+                )
             return first_pass
 
-        repaired_output = self._recover_candidate_before_validation(
+        repair_raw_text, repair_output = self._run_generation(
+            runtime,
             request,
-            self._run_generation(
-                runtime,
-                request,
-                self._build_repair_messages(request, first_pass),
-            ),
+            self._build_repair_messages(request, first_pass),
         )
+        repaired_output = self._recover_candidate_before_validation(request, repair_output)
+        if request.trace is not None:
+            request.trace.record_repair_pass(
+                raw_output=repair_raw_text,
+                recovered_output=repaired_output,
+            )
         preferred_candidate = choose_preferred_candidate(request, [first_pass, repaired_output])
+        if request.trace is not None:
+            selected_index = selected_candidate_index(request, [first_pass, repaired_output])
+            request.trace.record_selected_outputs(
+                raw_output=_selected_index_output(
+                    [first_raw_text, repair_raw_text], selected_index
+                ),
+                recovered_output=_selected_index_output(
+                    [first_pass, repaired_output], selected_index
+                ),
+            )
         if preferred_candidate is not None:
             return preferred_candidate.output
 
@@ -150,7 +172,7 @@ class LlamaCppBackend(ModelBackend):
         runtime: LlamaRuntime,
         request: ModelCompressionInput,
         messages: list[dict[str, str]],
-    ) -> str:
+    ) -> tuple[str, str]:
         chat_output = _try_chat_completion(
             runtime.model,
             messages=messages,
@@ -163,10 +185,11 @@ class LlamaCppBackend(ModelBackend):
                 prompt=prompt_text,
                 max_output_tokens=request.max_output_tokens,
             )
-        normalized = self._normalize_output(request, chat_output)
+        raw_text = chat_output.strip()
+        normalized = self._normalize_output(request, raw_text)
         if not normalized:
             raise BackendUnavailableError("llama.cpp backend returned empty output.")
-        return normalized
+        return raw_text, normalized
 
     def _recover_candidate_before_validation(
         self,
@@ -213,6 +236,14 @@ class LlamaCppBackend(ModelBackend):
         if not self._use_soft_length_hint:
             return messages
         return apply_soft_length_hint(messages, request)
+
+
+def _selected_index_output(candidates: list[str], selected_index: int | None) -> str:
+    if selected_index is None:
+        return ""
+    if not 0 <= selected_index < len(candidates):
+        return ""
+    return candidates[selected_index]
 
 
 def preload_gguf_artifact(config: LocalModelConfig) -> Path:

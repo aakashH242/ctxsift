@@ -13,7 +13,7 @@ This is the payoff for compressing in the first place. The bigger token win is n
 
 ## Basic usage
 
-```bash
+```bash frame="none"
 ctxsift recall "auth test failure"
 ```
 
@@ -56,7 +56,7 @@ FAILED tests/test_auth.py::test_refresh_token_expired - AssertionError
 
 ## Options
 
-```bash
+```bash frame="none"
 ctxsift recall [OPTIONS] QUERY
 ```
 
@@ -70,7 +70,7 @@ ctxsift recall [OPTIONS] QUERY
 
 ## File-boosted recall with `--files`
 
-```bash
+```bash frame="none"
 ctxsift recall "auth test failure" --files tests/test_auth.py src/auth/tokens.py
 ```
 
@@ -78,7 +78,7 @@ When you pass `--files`, recall prioritizes records that reference those files. 
 
 This is particularly useful when you want to recover state related to a specific file you are currently editing.
 
-```bash
+```bash frame="none"
 # Find anything related to the database layer in the auth module
 ctxsift recall "connection errors" --files src/db/connection.py
 
@@ -93,7 +93,7 @@ ctxsift recall "test failure" --files tests/api/test_users.py
 
 ## Limiting results
 
-```bash
+```bash frame="none"
 ctxsift recall "docker networking" --limit 5
 ```
 
@@ -201,7 +201,7 @@ Recall is most useful in these situations:
 
 **After context compaction** — the agent has lost its working memory and needs to recover what it was doing. Instead of re-running the last 10 commands:
 
-```bash
+```bash frame="none"
 ctxsift recall "what was I working on"
 ctxsift recall "last failing tests" --files tests/
 ctxsift recall "build errors"
@@ -209,19 +209,19 @@ ctxsift recall "build errors"
 
 **Before re-running an expensive command** — check if a fresh result already exists:
 
-```bash
+```bash frame="none"
 ctxsift recall "npm install output" --limit 1
 ```
 
 **When referencing a specific file** — recover all prior context related to that file:
 
-```bash
+```bash frame="none"
 ctxsift recall "errors" --files src/auth/tokens.py
 ```
 
 **Before reading a large log** — check if a compressed version already exists:
 
-```bash
+```bash frame="none"
 ctxsift recall "deployment log" --limit 3
 ```
 
@@ -234,4 +234,4 @@ ctxsift recall "deployment log" --limit 3
 - Recall does not modify records. Running recall never changes what is stored.
 - Recall does not return the original raw output — only the compressed version that was stored.
 
-If there are no matching records, recall prints `No recall results.` — the solution is to run `ctxsift compress` on the relevant command first.
+If there are no matching records, recall prints `No recall results.` — the solution is to run `ctxsift compress --intent recall` or another appropriate intent on the relevant command first.

@@ -54,7 +54,7 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
   <TabItem label="Local (CPU)">
     Use this if you do not have a dedicated GPU. CtxSift will run compression locally using GGUF-quantized models via an embedded `llama.cpp` runtime.
 
-    ```bash
+    ```bash frame="none"
     uv tool install ctxsift
     ```
   </TabItem>
@@ -62,7 +62,7 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
   <TabItem label="Local (GPU)">
     Use this if you have an NVIDIA GPU supporting CUDA. CtxSift will run local compression using PyTorch and Hugging Face `Transformers`.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[gpu]"
     ```
   </TabItem>
@@ -70,7 +70,7 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
   <TabItem label="GPU with Quantization">
     For machines with limited VRAM (e.g., under 8 GB) that still want to run local GPU compression. This includes `bitsandbytes` to load models in 8-bit or 4-bit NormalFloat modes.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[gpu,quant]"
     ```
   </TabItem>
@@ -78,7 +78,7 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
   <TabItem label="Remote Only">
     Select this to offload all compression tasks to hosted model providers (such as OpenAI, Anthropic, Gemini, or a local vLLM/Ollama network proxy) using LiteLLM. Recall embeddings will still run locally on CPU.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[remote]"
     ```
   </TabItem>
@@ -86,7 +86,7 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
   <TabItem label="All Extras">
     Installs every dependency, including GPU drivers, quantization libraries, and remote proxy integrations.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[all]"
     ```
   </TabItem>
@@ -98,7 +98,7 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
 
 After installing the CLI, the recommended way to install the CtxSift agent skill is through guided setup:
 
-```bash
+```bash frame="none"
 ctxsift configure
 ```
 
@@ -111,7 +111,7 @@ If you prefer manual installation, download the packaged skill file from [here](
 ---
 If `ctxsift` is not found after installation, update your shell integration and reopen the terminal:
 
-```bash
+```bash frame="none"
 uv tool update-shell
 ```
 
@@ -128,12 +128,12 @@ To force `uv` to compile or install CtxSift with a specific PyTorch index aligni
 ### Examples:
 
 **For CUDA 12.1 (Standard default):**
-```bash
+```bash frame="none"
 uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
 ```
 
 **For CUDA 11.8 (Older GPU rigs):**
-```bash
+```bash frame="none"
 uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu118
 ```
 
@@ -146,7 +146,7 @@ Once the installation is complete, verify that the `ctxsift` command is availabl
 ### 1. Run the system diagnostics probe
 Run `ctxsift doctor` to check the status of your drivers, databases, and dependencies.
 
-```bash
+```bash frame="none"
 ctxsift doctor
 ```
 
@@ -162,7 +162,7 @@ A healthy environment should output positive signals for SQLite, Git, and your s
 ### 2. Test a basic compression pipeline
 Confirm the CLI can execute compression pipelines by running a mock string through a dry-run compression call:
 
-```bash
+```bash frame="none"
 echo "Line 1: critical error occurred
 Line 2: debug trace details
 Line 3: closing process" | ctxsift compress --intent summary "extract error details"

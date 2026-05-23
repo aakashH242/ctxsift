@@ -21,9 +21,7 @@ def isolated_config_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
     return platform_path
 
 

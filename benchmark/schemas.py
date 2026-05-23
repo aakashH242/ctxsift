@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import Any
+
+from ctxsift.compression.intent import CompressionIntent
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,7 @@ class BenchmarkCase:
     ideal_summary: str
     tags: tuple[str, ...] = ()
     family: str = "summary"
+    intent: CompressionIntent = CompressionIntent.SUMMARY
     ecosystem: str = ""
     difficulty: str = "medium"
     output_mode: str = "plain_text"
@@ -88,7 +91,10 @@ class CaseMetrics:
     error: str | None = None
     brevity_ratio: float = 1.0
     family: str = "summary"
+    thought_leakage_density: float = 0.0
+    thought_marker_count: int = 0
     case_score: float = 0.0
+    raw_view: OutputViewMetrics = field(default_factory=lambda: OutputViewMetrics())
 
 
 @dataclass(frozen=True)
@@ -102,6 +108,47 @@ class WarmupMetrics:
     torch_num_interop_threads: int | None = None
     omp_num_threads: str | None = None
     mkl_num_threads: str | None = None
+
+
+@dataclass(frozen=True)
+class OutputViewMetrics:
+    """One scored view of one case output."""
+
+    output: str = ""
+    exact_preservation_ratio: float = 0.0
+    summary_quality_ratio: float = 0.0
+    format_adherence_score: float = 0.0
+    instruction_following_score: float = 0.0
+    validation_status: str = "rejected"
+    validation_flags: tuple[str, ...] = ()
+    missing_tokens: tuple[str, ...] = ()
+    brevity_ratio: float = 0.0
+    thought_leakage_density: float = 0.0
+    thought_marker_count: int = 0
+    case_score: float = 0.0
+
+
+@dataclass(frozen=True)
+class ScoreViewSummary:
+    """Scenario-level aggregate metrics for one output view."""
+
+    case_count: int = 0
+    success_count: int = 0
+    accepted_count: int = 0
+    soft_accepted_count: int = 0
+    rejected_count: int = 0
+    exact_pass_count: int = 0
+    avg_exact_preservation_ratio: float = 0.0
+    avg_summary_quality_ratio: float = 0.0
+    avg_format_adherence_score: float = 0.0
+    avg_instruction_following_score: float = 0.0
+    avg_brevity_ratio: float = 0.0
+    avg_thought_leakage_density: float = 0.0
+    avg_thought_marker_count: float = 0.0
+    avg_case_score: float = 0.0
+    p10_case_score: float = 0.0
+    quality_core: float = 0.0
+    final_score: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -121,6 +168,8 @@ class ScenarioSummary:
     avg_format_adherence_score: float = 0.0
     avg_instruction_following_score: float = 0.0
     avg_brevity_ratio: float = 1.0
+    avg_thought_leakage_density: float = 0.0
+    avg_thought_marker_count: float = 0.0
     avg_case_score: float = 0.0
     p10_case_score: float = 0.0
     quality_core: float = 0.0
@@ -128,6 +177,7 @@ class ScenarioSummary:
     final_score: float = 0.0
     peak_cpu_rss_bytes: int | None = None
     peak_gpu_bytes: int | None = None
+    raw_view: ScoreViewSummary = field(default_factory=ScoreViewSummary)
 
 
 @dataclass(frozen=True)
@@ -142,10 +192,10 @@ class ScenarioResult:
     def to_dict(self) -> dict[str, Any]:
         """Convert result into a JSON-serializable dictionary."""
         return {
-            "scenario": self.scenario.__dict__,
-            "warmup": self.warmup.__dict__,
-            "summary": self.summary.__dict__,
-            "cases": [case.__dict__ for case in self.cases],
+            "scenario": asdict(self.scenario),
+            "warmup": asdict(self.warmup),
+            "summary": asdict(self.summary),
+            "cases": [asdict(case) for case in self.cases],
         }
 
 

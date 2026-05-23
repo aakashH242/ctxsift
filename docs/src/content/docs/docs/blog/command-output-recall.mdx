@@ -19,7 +19,7 @@ This is what I mean by command-output recall. Not a full memory system, not chat
 
 A typical flow looks like this:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary \
   "Summarize the real pytest blocker. Preserve failing test ids, exception names, file paths, line numbers and exit code exactly." \
   -- pytest -q
@@ -27,13 +27,13 @@ ctxsift compress --intent summary \
 
 The important part here is not only that the output is compressed. The important part is that the compressed result becomes a reusable record. Later, after a compaction event or after switching back to the task, the agent can do something like:
 
-```bash
+```bash frame="none"
 ctxsift recall "latest pytest failure in auth tests"
 ```
 
 or:
 
-```bash
+```bash frame="none"
 ctxsift recall --files app/auth.py "previous failure touching login middleware"
 ```
 

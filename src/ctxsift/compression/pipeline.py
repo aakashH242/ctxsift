@@ -500,7 +500,14 @@ def _length_delimited_output_sections(raw_input: str) -> list[str] | None:
     stderr_content, _ = _parse_length_delimited_section(raw_input, position, "Stderr")
     if stderr_content is None:
         return None
-    return [stdout_content, stderr_content]
+    return [
+        _normalize_output_newlines(stdout_content),
+        _normalize_output_newlines(stderr_content),
+    ]
+
+
+def _normalize_output_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
 def _top_level_output_header_start(raw_input: str, label: str) -> int | None:
