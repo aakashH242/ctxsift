@@ -331,7 +331,10 @@ def test_run_payload_output_text_ignores_length_like_lines_inside_legacy_fenced_
         ]
     )
 
-    assert compression._run_payload_output_text(raw_input) == "real line\nStdout:\nLength: 4\nfake\nwarn"
+    assert (
+        compression._run_payload_output_text(raw_input)
+        == "real line\nStdout:\nLength: 4\nfake\nwarn"
+    )
 
 
 def test_compress_input_uses_remote_backend_when_base_url_is_configured(
