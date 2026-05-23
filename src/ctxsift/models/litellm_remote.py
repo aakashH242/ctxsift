@@ -188,9 +188,7 @@ def _is_openai_reasoning_alias(alias: str) -> bool:
     if not alias.startswith("gpt-5"):
         return False
     return not (
-        alias.startswith("gpt-5-chat")
-        or alias.startswith("gpt-5-instant")
-        or "chatgpt" in alias
+        alias.startswith("gpt-5-chat") or alias.startswith("gpt-5-instant") or "chatgpt" in alias
     )
 
 

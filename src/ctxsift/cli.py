@@ -197,8 +197,7 @@ def compress(
     """Compress stdin or command output using an instruction."""
     if intent is None:
         typer.echo(
-            "Missing option '--intent'. Choose from: "
-            f"{_render_compress_intent_choices()}",
+            "Missing option '--intent'. Choose from: " f"{_render_compress_intent_choices()}",
             err=True,
         )
         raise typer.Exit(code=2)

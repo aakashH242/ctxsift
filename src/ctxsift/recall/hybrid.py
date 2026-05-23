@@ -85,7 +85,9 @@ def _candidate_ids(
     vector_ranks: dict[int, int],
     record_map: dict[int, RecallStorageRecord],
 ) -> list[int]:
-    return [record_id for record_id in {*(lexical_ranks), *(vector_ranks)} if record_id in record_map]
+    return [
+        record_id for record_id in {*(lexical_ranks), *(vector_ranks)} if record_id in record_map
+    ]
 
 
 def _vector_hit_allowed(
