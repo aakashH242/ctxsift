@@ -1,0 +1,111 @@
+---
+title: Local Models Guide
+description: Run compression and embedding models locally on CPU or GPU.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+CtxSift is built to run fully locally, ensuring your command line history, code snippets, and traces never leave your machine. It utilizes two distinct local model paths:
+1. **Local Compression Model** (LLM): Extracts signals and summarizes output.
+2. **Local Embedding Model**: Converts text to vectors for semantic recall.
+
+---
+
+## Model default recommendations
+
+Depending on your hardware capability, CtxSift recommends specific models optimized for accuracy, latency, and resource constraints:
+
+| Component | Hardware | Recommended Model | Engine / Backend |
+|---|---|---|---|
+| **Compression** | **CPU Only** | `ibm-granite/granite-4.0-350m-GGUF` | `llama.cpp` |
+| **Compression** | **GPU (CUDA)** | `LiquidAI/LFM2.5-1.2B-Instruct` | `Transformers` |
+| **Embeddings** | **Any** | `microsoft/harrier-oss-v1-0.6b` | `Sentence Transformers` |
+
+---
+
+## CPU compression with `llama.cpp`
+
+When running on the CPU, CtxSift uses an embedded `llama.cpp` runner. This engine requires models in the **GGUF** format. 
+
+### Why GGUF on CPU?
+- Optimized for CPU instruction sets (AVX2, AVX-512).
+- Highly memory-efficient.
+- Loads specific pre-quantized files directly (e.g. `Q8_0` or `Q4_K_M`).
+
+### Recommended GGUF settings
+To change the CPU model to the highly performant `Qwen3.5-0.8B-GGUF`:
+
+```bash
+# Set the Hugging Face GGUF repository id
+ctxsift config set local.model Qwen/Qwen3.5-0.8B-GGUF
+
+# Set the target GGUF file within the repo's files tab
+ctxsift config set local.gguf_filename Qwen3.5-0.8B-Q8_0.gguf
+```
+
+<Aside type="tip">
+On CPU, we recommend sticking to **Q8_0** (8-bit quantization) or **Q4_K_M** (4-bit quantization). Quantizations lower than 4 bits significantly degrade instruction following.
+</Aside>
+
+---
+
+## GPU compression with `Transformers`
+
+If you have a CUDA-compatible GPU, CtxSift uses the PyTorch/Hugging Face `Transformers` backend. This supports any standard autoregressive text-generation model.
+
+### Recommended: LiquidAI LFM2.5-1.2B-Instruct
+For local GPU compression, we strongly recommend and bias setup towards **`LiquidAI/LFM2.5-1.2B-Instruct`**.
+- **Superb latency:** Outperforms typical Transformer architectures on execution time.
+- **State-of-the-art accuracy:** Achieves near-GPT-3.5 quality at 1.2 billion parameters.
+- **Context-retention:** Safely handles large traces without losing key error strings.
+
+### Configuring GPU mode
+Ensure you have the GPU dependencies installed:
+```bash
+uv tool install "ctxsift[gpu]"
+```
+
+Configure CtxSift to run LFM on CUDA:
+```bash
+# Select GPU execution
+ctxsift config set local.device cuda
+
+# Configure the model repository (GGUF filename is ignored on GPU)
+ctxsift config set local.model LiquidAI/LFM2.5-1.2B-Instruct
+```
+
+---
+
+## In-memory GPU quantization
+
+If your GPU has limited VRAM, you can load larger models by enabling in-memory quantization using `bitsandbytes`.
+
+To use GPU quantization:
+1. Install the quantization extras:
+   ```bash
+   uv tool install "ctxsift[gpu,quant]"
+   ```
+2. Set your desired quantization level:
+   ```bash
+   # Use 8-bit precision (trades slight speed for lower VRAM)
+   ctxsift config set local.quantization bnb-8bit
+
+   # Use 4-bit NormalFloat precision (aggressive memory savings)
+   ctxsift config set local.quantization bnb-4bit-nf4
+   ```
+
+---
+
+## Local model cache locations
+
+CtxSift caches models to avoid downloading them multiple times:
+
+* **Transformers (GPU & Embeddings):** Cached in the standard Hugging Face hub cache directory (typically `~/.cache/huggingface/hub`).
+* **GGUF Models (CPU):** Cached under the CtxSift local data folder:
+  - Linux/macOS: `~/.local/share/ctxsift/models/`
+  - Windows: `%LOCALAPPDATA%\ctxsift\ctxsift\Cache\models\`
+
+To redirect the cache directory to a custom path (e.g. an external drive):
+```bash
+ctxsift config set local.model_cache_path "D:/model-cache"
+```

@@ -1,0 +1,595 @@
+---
+import '../styles/global.css';
+import '../styles/landing.css';
+import CompressionShowcaseSection from '../components/CompressionShowcaseSection.astro';
+import InstallerDownloads from '../components/InstallerDownloads.astro';
+import { compressionShowcases } from '../data/compression-showcases';
+---
+
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script is:inline>
+      (() => {
+        const preferredTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        const storedTheme = typeof localStorage !== 'undefined' ? localStorage.getItem('starlight-theme') : null;
+        const configuredTheme = !storedTheme || storedTheme === 'auto' ? preferredTheme : storedTheme;
+        const resolvedTheme = configuredTheme === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = resolvedTheme;
+        document.documentElement.style.colorScheme = resolvedTheme;
+      })();
+    </script>
+    <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
+    <link rel="icon" href="/favicon.png?v=2" type="image/png" sizes="512x512" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
+    <title>Save tokens and extend your coding sessions | CtxSift</title>
+    <meta
+      name="description"
+      content="CtxSift compresses raw command outputs into recallable working memory for coding agents."
+    />
+  </head>
+  <body class="landing-body">
+    <div class="page-wrap">
+
+      <!-- ============ NAV ============ -->
+      <header class="landing-header sticky top-0 z-20 mt-4 rounded-2xl px-5 py-3">
+        <div class="flex items-center justify-between gap-6">
+          <a href="/" class="nav-wordmark">
+            <!-- Inline SVG logo mark: three filter-sieve lines, decreasing width -->
+            <svg class="nav-icon-svg" width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <rect width="28" height="28" rx="7" fill="url(#logo-bg)"/>
+              <defs>
+                <linearGradient id="logo-bg" x1="0" y1="0" x2="28" y2="28" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#0a1628"/>
+                  <stop offset="100%" stop-color="#040c1e"/>
+                </linearGradient>
+                <linearGradient id="logo-line" x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stop-color="#2563eb"/>
+                  <stop offset="100%" stop-color="#06b6d4"/>
+                </linearGradient>
+              </defs>
+              <rect x="6" y="8"    width="16" height="2.4" rx="1.2" fill="url(#logo-line)"/>
+              <rect x="8" y="12.8" width="12" height="2.4" rx="1.2" fill="url(#logo-line)" opacity="0.8"/>
+              <rect x="11" y="17.6" width="6" height="2.4" rx="1.2" fill="url(#logo-line)" opacity="0.55"/>
+            </svg>
+            CtxSift
+          </a>
+          <div class="landing-header-actions">
+            <nav class="landing-nav">
+              <a class="nav-link" href="https://github.com/aakashh242/ctxsift">Source</a>
+              <a class="nav-link" href="/docs/">Docs</a>
+              <a class="nav-link" href="/docs/guides/benchmark/">Benchmark</a>
+              <a class="nav-link" href="/docs/reference/cli/">CLI</a>
+            </nav>
+            <label class="landing-theme-control" for="landing-theme-select">
+              <span class="landing-theme-label">Theme</span>
+              <select id="landing-theme-select" class="landing-theme-select" aria-label="Theme">
+                <option value="auto">Auto</option>
+                <option value="light">Light</option>
+                <option value="dark">Dark</option>
+              </select>
+            </label>
+          </div>
+        </div>
+      </header>
+
+      <!-- ============ MAIN ============ -->
+      <main class="main-content">
+
+        <!-- HERO -->
+        <section class="landing-panel hero-section" id="hero">
+          <div class="hero-orb" aria-hidden="true"></div>
+
+          <div class="hero-grid">
+            <!-- left: copy -->
+            <div class="hero-copy">
+              <div class="landing-kicker">Local | Free | Opensource</div>
+              <h1 class="hero-headline landing-heading-primary">
+                Save tokens and extend your coding sessions.
+
+              </h1>
+              <p class="landing-copy mt-5">
+              Command outputs and state recollection are the biggest sources of token overuse and context clutter.
+                CtxSift is a skill to save tokens by keeping sessions clutter-free and helping agents recover state faster.<br>
+                With CtxSift, your agents use two steps to keep minimal token footprint: <br>
+                1. Extract and cache only what they need from raw outputs<br>
+                2. Look up context later instead of repeatedly re-running commands or dragging raw terminal output back into the session.
+              </p>
+
+              <div class="landing-actions">
+
+                <a href="/docs/getting-started/installation/" class="landing-action landing-action-primary" id="cta-docs">
+                  Get Started
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+                    <path d="M2.5 7h9M8 3.5 11.5 7 8 10.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                  </svg>
+                </a>
+                <a href="https://github.com/aakashh242/ctxsift" class="landing-action landing-action-secondary" id="cta-github" target="_blank" rel="noopener">
+                  <svg width="15" height="15" viewBox="0 0 98 96" fill="currentColor" aria-hidden="true">
+                    <path fill-rule="evenodd" clip-rule="evenodd" d="M48.854 0C21.839 0 0 22 0 49.217c0 21.756 13.993 40.172 33.405 46.69 2.427.49 3.316-1.059 3.316-2.362 0-1.141-.08-5.052-.08-9.127-13.59 2.934-16.42-5.867-16.42-5.867-2.184-5.704-5.42-7.17-5.42-7.17-4.448-3.015.324-3.015.324-3.015 4.934.326 7.523 5.052 7.523 5.052 4.367 7.496 11.404 5.378 14.235 4.074.404-3.178 1.699-5.378 3.074-6.6-10.839-1.141-22.243-5.378-22.243-24.283 0-5.378 1.94-9.778 5.014-13.2-.485-1.222-2.184-6.275.486-13.038 0 0 4.125-1.304 13.426 5.052a46.97 46.97 0 0 1 12.214-1.63c4.125 0 8.33.571 12.213 1.63 9.302-6.356 13.427-5.052 13.427-5.052 2.67 6.763.97 11.816.485 13.038 3.155 3.422 5.015 7.822 5.015 13.2 0 18.905-11.404 23.06-22.324 24.283 1.78 1.548 3.316 4.481 3.316 9.126 0 6.6-.08 11.897-.08 13.526 0 1.304.89 2.853 3.316 2.364 19.412-6.52 33.405-24.935 33.405-46.691C97.707 22 75.788 0 48.854 0z"/>
+                  </svg>
+                  View on GitHub
+                </a>
+                <!-- Live GitHub stars badge -->
+                <a href="https://github.com/aakashh242/ctxsift/stargazers" class="stars-badge" id="cta-stars" target="_blank" rel="noopener" aria-label="GitHub Stars">
+                  <img
+                    src="https://img.shields.io/github/stars/aakashh242/ctxsift?style=flat&labelColor=0d1117&color=2563eb&label=%E2%98%85"
+                    alt="GitHub Stars"
+                    height="22"
+                    loading="lazy"
+                  />
+                </a>
+              </div>
+
+              <!-- stat strip -->
+              <div class="stat-strip" aria-label="Quick stats">
+                <div class="stat-item">
+                  <span class="stat-value">Pipe mode</span>
+                  <span class="stat-label">Drop into existing command pipelines</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-value">Command capture</span>
+                  <span class="stat-label">Run commands with retained metadata</span>
+                </div>
+                <div class="stat-item">
+                  <span class="stat-value">Recall search</span>
+                  <span class="stat-label">Query stored findings instead of reruns</span>
+                </div>
+              </div>
+            </div>
+
+            <!-- right: animated terminal -->
+            <div class="hero-terminal">
+              <div class="terminal-shell" id="hero-terminal" aria-label="CtxSift quick-start demo">
+                <div class="terminal-bar">
+                  <span class="terminal-dot bg-rose-400"></span>
+                  <span class="terminal-dot bg-amber-300"></span>
+                  <span class="terminal-dot bg-emerald-400"></span>
+                  <span class="ml-3 font-mono text-xs uppercase tracking-[0.18em] text-slate-500">Getting Started</span>
+                </div>
+                <pre class="terminal-pre" id="terminal-output" aria-live="polite"></pre>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- WHY IT EXISTS -->
+        <section class="section-stack mt-14" id="why-ctxsift-exists">
+          <div class="landing-panel">
+            <div class="landing-kicker">The motivation behind CtxSift</div>
+            <div class="why-grid">
+              <div>
+                <h2 class="landing-section-heading text-2xl font-semibold tracking-tight leading-snug">
+                Show only high-signal tokens to the agent after command runs and context compactions.
+                </h2>
+                <div class="why-copy mt-4">
+                  <p>
+                    In agentic workflows, raw command outputs and state recollection after compaction contribute to major token waste. 
+                    Agents often pull
+                    raw terminal output into context even when they only need a few anchors, then pay the same cost
+                    again later when compaction forces them to reread files or rerun commands.
+                  </p>
+                  <p class="mt-3">
+                    CtxSift was built to cut that loop down to two operations: keep only the signal that matters now,
+                    then recover it later without rebuilding the whole state trail.
+                  </p>
+                  <p class="mt-3">
+                    It was inspired by the original <a href="https://github.com/samuelfaj/distill">Distill</a> project and extends that direction toward local execution,
+                    file rereads, and read-after-compression state recovery for coding agents.
+                  </p>
+                </div>
+              </div>
+
+              <div class="proof-card-grid why-card-grid">
+                <div class="proof-card">
+                  <div class="proof-card-label">Problem</div>
+                  <div class="proof-card-value">Raw output sprawls</div>
+                  <div class="proof-card-copy">Most command output is noise relative to the next step the agent actually needs to take.</div>
+                </div>
+                <div class="proof-card">
+                  <div class="proof-card-label">Failure mode</div>
+                  <div class="proof-card-value">Compaction forgets</div>
+                  <div class="proof-card-copy">After long sessions, the agent often has to reconstruct state by expensive rereads and reruns.</div>
+                </div>
+                <div class="proof-card">
+                  <div class="proof-card-label">Design goal</div>
+                  <div class="proof-card-value">Recover state faster</div>
+                  <div class="proof-card-copy">Compression is only useful if the agent can later look up the same finding with trust signals attached.</div>
+                </div>
+                <div class="proof-card">
+                  <div class="proof-card-label">Approach</div>
+                  <div class="proof-card-value">Local-first workflow</div>
+                  <div class="proof-card-copy">Run locally when possible, support remote providers when needed, and keep the workflow grounded in real command use.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- HOW IT WORKS -->
+        <section class="section-stack mt-14" id="how-it-works">
+          <div class="landing-panel">
+            <div class="landing-kicker">How it works</div>
+            <p class="ops-intro">
+              CtxSift gives your agent two core operations - compress raw output, then recall it later when it needs to reconstruct state. Recall results carry
+              freshness status so stale context gets down-ranked automatically.
+            </p>
+            <div class="ops-timeline">
+              <div class="ops-step">
+                <div class="ops-step-badge" aria-hidden="true">&#9889;</div>
+                <div class="ops-step-label">Compress</div>
+                <div class="ops-step-copy">Agent uses pipe or command-capture mode with a natural-language instruction to extract exactly what it needs.</div>
+              </div>
+              <div class="ops-step">
+                <div class="ops-step-badge" aria-hidden="true">&#128204;</div>
+                <div class="ops-step-label">Cache</div>
+                <div class="ops-step-copy">The compressed output is stored automatically with command metadata so it can be searched later instead of recreated.</div>
+              </div>
+              <div class="ops-step">
+                <div class="ops-step-badge" aria-hidden="true">&#128269;</div>
+                <div class="ops-step-label">Recall</div>
+                <div class="ops-step-copy">Agent queries the stored record set, optionally boosted by files, and gets back exactly what it stored earlier.</div>
+              </div>
+              <div class="ops-step">
+                <div class="ops-step-badge" aria-hidden="true">&#127807;</div>
+                <div class="ops-step-label">Freshness</div>
+                <div class="ops-step-copy">When source files change, results get marked stale so older context gets down-ranked and eventually cleaned up.</div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- COMPRESSION EXAMPLES -->
+                <CompressionShowcaseSection showcases={compressionShowcases} />
+
+        <!-- SUPPORTED MODELS -->
+        <section class="section-stack mt-6" id="supported-models">
+          <div class="landing-panel">
+            <div class="landing-kicker">Supported Models</div>
+            <div class="proof-grid">
+              <div>
+                <h2 class="landing-section-heading text-2xl font-semibold tracking-tight leading-snug">
+                  Use local models on CPU/GPU or remotely hosted LLMs for compression.
+                                  </h2>
+                <div class="setup-copy mt-4 text-sm leading-7">
+                  <p>
+                    By default, CtxSift starts with a small GGUF model on local CPU. If you have CUDA available,
+                    local compression can use normal Hugging Face text-generation models instead. If you prefer hosted
+                    inference, remote compression works through LiteLLM-compatible endpoints.
+                  </p>
+                  <p class="mt-2">
+                    Recall embeddings stay local and separate from compression, so the retrieval path remains the same
+                    whether compression is local or remote.
+                  </p>
+                  <p class="mt-4">
+                    <a class="setup-inline-link" href="/docs/guides/local-models/">Local model guide &rarr;</a>
+                  </p>
+                  <p class="mt-2">
+                    <a class="setup-inline-link" href="/docs/guides/remote-models/">Remote model guide &rarr;</a>
+                  </p>
+                                    <p class="mt-2">
+                    <a class="setup-inline-link" href="/benchmark-viewer.html">Latest benchmark scores &rarr;</a>
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <table class="proof-table">
+                  <caption>Support at a glance</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Component</th>
+                      <th scope="col">Default / support</th>
+                      <th scope="col">How it works</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <td>Local compression</td>
+                      <td>Granite 4.0 350M GGUF by default</td>
+                      <td>CPU uses GGUF through built-in llama.cpp. CUDA local mode supports normal Hugging Face text-generation models.</td>
+                    </tr>
+                    <tr>
+                      <td>Remote compression</td>
+                      <td>Any LiteLLM-compatible provider</td>
+                      <td>Enabled when remote base URL and model name are configured. Replaces local compression, not local embeddings.</td>
+                    </tr>
+                    <tr>
+                      <td>Recall embeddings</td>
+                      <td>Harrier OSS v1 0.6B</td>
+                      <td>Used for storing and recalling records regardless of whether compression is local or remote.</td>
+                    </tr>
+                  </tbody>
+                </table>
+                <p class="proof-note">
+                  Supported local model families are broader than the defaults shown here. The benchmarked picks below are the fastest way to start from known-good options.
+                </p>
+              </div>
+            </div>
+
+            <div class="proof-card-grid mt-6">
+              <div class="proof-card">
+              <a href="https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF">
+                <div class="proof-card-label">Built-in default</div>
+                <div class="proof-card-value">Granite 4.0 350M GGUF</div>
+                <div class="proof-card-copy">The default local CPU model. Quickest path to a working install and solid enough for everyday compression tasks.</div>
+              </a>
+              </div>
+              <div class="proof-card">
+                            <a href="https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF">
+                <div class="proof-card-label">Recommended CPU</div>
+                <div class="proof-card-value">Qwen3.5 0.8B GGUF</div>
+                <div class="proof-card-copy">Best overall CPU model in the current benchmark runs. Highest CPU score with zero rejected outputs.</div>
+                            </a>
+              </div>
+              <div class="proof-card">
+                            <a href="https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct">
+                <div class="proof-card-label">Recommended GPU</div>
+                <div class="proof-card-value">LFM 2.5 1.2B</div>
+                <div class="proof-card-copy">Fastest strong GPU option in the current runs. Best first pick when you want a practical local CUDA setup.</div>
+                            </a>
+              </div>
+              <div class="proof-card">
+                            <a href="https://huggingface.co/Qwen/Qwen3.5-2B">
+                <div class="proof-card-label">Higher-quality GPU</div>
+                <div class="proof-card-value">Qwen3.5 2B</div>
+                <div class="proof-card-copy">Strongest practical GPU model in the benchmarked set. Good upgrade when you want more quality without extreme latency.</div>
+                            </a>
+              </div>
+            </div>
+
+            <p class="proof-note mt-5">
+              Full CPU, GPU, and remote benchmark comparisons live in the benchmark guide.
+              <a class="setup-inline-link" href="/docs/guides/benchmark/">Open benchmark guide &rarr;</a>
+          
+                             
+                    <a class="setup-inline-link" href="/benchmark-viewer.html">Latest benchmark scores &rarr;</a>
+                  
+            </p>
+          </div>
+        </section>
+      </main>
+
+<!-- SETUP PATHS -->
+        <section class="section-stack mt-6" id="setup-paths">
+          <div class="landing-panel">
+            <div class="landing-kicker">Choose Your Setup Path</div>
+            <div class="setup-grid">
+              <div>
+                <h2 class="landing-section-heading text-2xl font-semibold tracking-tight leading-snug">
+                  Start with the runtime path that matches your machine and workflow.
+                </h2>
+                <div class="setup-copy mt-4 text-sm leading-7">
+                  <p>
+                    Use local CPU for the simplest default path, local GPU when you want faster local inference,
+                    and remote provider mode when you want hosted models through a LiteLLM-compatible endpoint.
+                  </p>
+                  <p class="mt-2">
+                    Benchmarked model comparisons live on their own page. Use the benchmark guide when you want tested
+                    CPU and GPU recommendations rather than setup instructions.
+                  </p>
+
+                  <p class="mt-4">
+                    <a class="setup-inline-link" href="/docs/guides/benchmark/">Open benchmark guide &rarr;</a>
+                  </p>
+                </div>
+
+              </div>
+
+              <div class="route-grid route-grid-setup">
+                <a class="route-link" href="/docs/getting-started/installation/" id="route-local-cpu">
+                  <span class="route-link-icon">&#128421;</span>
+                  <div class="route-link-label">Local CPU</div>
+                  <div class="route-link-copy">Start with the built-in local path and get the lowest-friction setup for everyday use.</div>
+                  <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
+                </a>
+                <a class="route-link" href="/docs/guides/local-models/" id="route-local-gpu">
+                  <span class="route-link-icon">&#9889;</span>
+                  <div class="route-link-label">Local GPU</div>
+                  <div class="route-link-copy">Use CUDA-backed local models when you want faster inference and stronger on-device options.</div>
+                  <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
+                </a>
+                <a class="route-link" href="/docs/guides/remote-models/" id="route-remote-provider">
+                  <span class="route-link-icon">&#9729;</span>
+                  <div class="route-link-label">Remote Provider</div>
+                  <div class="route-link-copy">Connect OpenAI-compatible or LiteLLM-compatible hosted models when local inference is not the right fit.</div>
+                  <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
+                </a>
+
+              </div>
+
+            </div>
+        <section class="section-stack mt-6" id="installer">
+          <div class="landing-panel">
+                  <p class="mt-2">                <InstallerDownloads
+                  variant="landing"
+                  title="Download install script"
+                  description=""
+                /></p>
+        </div>
+        </section>
+          </div>
+
+        </section>
+
+
+      <!-- ============ FOOTER ============ -->
+      <footer class="landing-footer">
+
+        <span>&copy; {new Date().getFullYear()} CtxSift &middot; MIT License</span>
+        <nav class="landing-footer-links" aria-label="Footer links">
+          <a href="https://github.com/aakashh242/ctxsift" target="_blank" rel="noopener">Source</a>
+          <a href="/docs/">Docs</a>
+          <a href="https://pypi.org/project/ctxsift/" target="_blank" rel="noopener">PyPI</a>
+          <a href="https://github.com/aakashh242/ctxsift/blob/main/LICENSE.md" target="_blank" rel="noopener">License</a>
+        </nav>
+      </footer>
+    </div>
+
+    <!-- ============ TYPEWRITER SCRIPT ============ -->
+    <script>
+      const landingThemeSelect = document.getElementById('landing-theme-select');
+
+      function applyLandingTheme(mode) {
+        const preferredTheme = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        const resolvedTheme = !mode || mode === 'auto' ? preferredTheme : mode;
+        document.documentElement.dataset.theme = resolvedTheme === 'light' ? 'light' : 'dark';
+        document.documentElement.style.colorScheme = resolvedTheme === 'light' ? 'light' : 'dark';
+      }
+
+      if (landingThemeSelect) {
+        const storedLandingTheme = localStorage.getItem('starlight-theme') || 'auto';
+        landingThemeSelect.value = storedLandingTheme;
+
+        landingThemeSelect.addEventListener('change', (event) => {
+          const nextTheme = event.target.value;
+          localStorage.setItem('starlight-theme', nextTheme);
+          applyLandingTheme(nextTheme);
+        });
+
+        const mediaQuery = window.matchMedia('(prefers-color-scheme: light)');
+        mediaQuery.addEventListener?.('change', () => {
+          if ((localStorage.getItem('starlight-theme') || 'auto') === 'auto') {
+            applyLandingTheme('auto');
+          }
+        });
+      }
+
+      const lines = [
+        { kind: 'typed', text: '$ uv tool install ctxsift', type: 'cmd' },
+        { kind: 'instant', text: 'Installed ctxsift 0.1.0', type: 'result' },
+        { kind: 'blank' },
+        { kind: 'typed', text: '$ ctxsift configure', type: 'cmd' },
+        { kind: 'prompted', prompt: 'Compression mode: ', answer: 'local' },
+        { kind: 'prompted', prompt: 'Local device: ', answer: 'cpu' },
+        {
+          kind: 'prompted',
+          prompt: 'Local model repo: ',
+          answer: 'ibm-granite/granite-4.0-350m-GGUF',
+        },
+        { kind: 'prompted', prompt: 'Save target: ', answer: 'global' },
+        { kind: 'prompted', prompt: 'Install skill for: ', answer: 'codex' },
+        { kind: 'instant', text: 'Updated global config at ~/.config/ctxsift/config.toml', type: 'result' },
+        { kind: 'blank' },
+        {
+          kind: 'typed',
+          text: '$ ctxsift compress --intent exact-lines "Return only failing test ids." -- pytest -q',
+          type: 'cmd',
+        },
+        { kind: 'instant', text: 'tests/api/test_users.py::test_create_user_requires_email', type: 'result' },
+        { kind: 'instant', text: 'tests/jobs/test_reconcile.py::TestReconcile::test_retries_deadlock', type: 'result' },
+        { kind: 'blank' },
+        { kind: 'typed', text: '$ ctxsift recall "latest failing pytest node ids"', type: 'cmd' },
+        { kind: 'instant', text: 'tests/api/test_users.py::test_create_user_requires_email', type: 'result' },
+        { kind: 'instant', text: 'tests/jobs/test_reconcile.py::TestReconcile::test_retries_deadlock', type: 'result' },
+      ];
+
+      const COLOR = {
+        cmd:    '#7dd3fc',
+        out:    '#94a3b8',
+        result: '#86efac',
+        blank:  '',
+        user:   '#e2e8f0',
+      };
+
+      function escHtml(s) {
+        return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      }
+
+      function renderLine(line) {
+        if (line.kind === 'blank') {
+          return '\n';
+        }
+        if (line.kind === 'prompted') {
+          return (
+            `<span style="color:${COLOR.out}">${escHtml(line.prompt)}</span>` +
+            `<span style="color:${COLOR.user}">${escHtml(line.answer)}</span>\n`
+          );
+        }
+        const color = COLOR[line.type] || '#e2e8f0';
+        return `<span style="color:${color}">${escHtml(line.text)}</span>\n`;
+      }
+
+      const pre = document.getElementById('terminal-output');
+      if (!pre) throw new Error('terminal-output not found');
+
+      const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+      if (noMotion) {
+        pre.innerHTML = lines.map(renderLine).join('');
+      } else {
+        let lineIdx = 0;
+        let charIdx = 0;
+        let content = '';
+        const CHAR_DELAY = 28;
+        const LINE_PAUSE = 130;
+        const INSTANT_PAUSE = 55;
+
+        function renderCompletedThrough(indexExclusive) {
+          return lines.slice(0, indexExclusive).map(renderLine).join('');
+        }
+
+        function typeNextStep() {
+          if (lineIdx >= lines.length) {
+            pre.innerHTML = content + '<span class="terminal-cursor">|</span>';
+            return;
+          }
+
+          const line = lines[lineIdx];
+          if (line.kind === 'blank') {
+            content += '\n';
+            lineIdx++;
+            charIdx = 0;
+            setTimeout(typeNextStep, LINE_PAUSE);
+            return;
+          }
+
+          if (line.kind === 'instant') {
+            content += renderLine(line);
+            pre.innerHTML = content + '<span class="terminal-cursor">|</span>';
+            lineIdx++;
+            charIdx = 0;
+            setTimeout(typeNextStep, INSTANT_PAUSE);
+            return;
+          }
+
+          if (line.kind === 'typed') {
+            const color = COLOR[line.type] || '#e2e8f0';
+            if (charIdx < line.text.length) {
+              const partial =
+                `<span style="color:${color}">${escHtml(line.text.slice(0, charIdx + 1))}</span>`;
+              pre.innerHTML = renderCompletedThrough(lineIdx) + partial + '<span class="terminal-cursor">|</span>';
+              charIdx++;
+              setTimeout(typeNextStep, CHAR_DELAY);
+              return;
+            }
+            content += renderLine(line);
+            lineIdx++;
+            charIdx = 0;
+            setTimeout(typeNextStep, LINE_PAUSE);
+            return;
+          }
+
+          if (line.kind === 'prompted') {
+            const promptHtml = `<span style="color:${COLOR.out}">${escHtml(line.prompt)}</span>`;
+            if (charIdx < line.answer.length) {
+              const answerHtml =
+                `<span style="color:${COLOR.user}">${escHtml(line.answer.slice(0, charIdx + 1))}</span>`;
+              pre.innerHTML = renderCompletedThrough(lineIdx) + promptHtml + answerHtml + '<span class="terminal-cursor">|</span>';
+              charIdx++;
+              setTimeout(typeNextStep, CHAR_DELAY);
+              return;
+            }
+            content += renderLine(line);
+            lineIdx++;
+            charIdx = 0;
+            setTimeout(typeNextStep, LINE_PAUSE);
+          }
+        }
+
+        setTimeout(typeNextStep, 600);
+      }
+    </script>
+  </body>
+</html>

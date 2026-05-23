@@ -1,0 +1,76 @@
+---
+import type { CompressionShowcase } from '../data/compression-showcases';
+
+type Props = {
+  showcases: CompressionShowcase[];
+};
+
+const { showcases } = Astro.props;
+---
+
+<section class="section-stack mt-14" id="compression-showcases">
+  <div class="landing-panel">
+    <div class="landing-kicker">Real compression examples</div>
+    <div class="compression-showcase-header">
+      <div class="compression-showcase-copy-block">
+        <h2 class="compression-showcase-title">
+          Real command output, compressed into smaller recall-ready state.
+        </h2>
+        <p class="compression-showcase-intro">
+          These examples come from our benchmark fixtures and stored CtxSift outputs. The ratios below are based on
+          raw input tokens versus compressed output tokens for each command.
+        </p>
+      </div>
+    </div>
+
+    <div class="compression-showcase-list">
+      {
+        showcases.map((showcase) => (
+          <article class="compression-showcase-card">
+            <div class="compression-showcase-meta">
+              <div class="compression-showcase-meta-left">
+                <div class="compression-showcase-title-row">
+                  <h3 class="compression-showcase-card-title">{showcase.title}</h3>
+                  <span class="compression-showcase-domain">{showcase.domain}</span>
+                  <span class="compression-showcase-intent">{showcase.intent}</span>
+                </div>
+                <div class="compression-showcase-command">
+                  <span class="compression-showcase-command-label">Command</span>
+                  <code>{showcase.command}</code>
+                </div>
+              </div>
+
+              <div class="compression-showcase-stats" aria-label={`${showcase.title} compression stats`}>
+                <div class="compression-showcase-stat">
+                  <span class="compression-showcase-stat-value">{showcase.rawTokens}</span>
+                  <span class="compression-showcase-stat-label">Raw tokens</span>
+                </div>
+                <div class="compression-showcase-stat">
+                  <span class="compression-showcase-stat-value">{showcase.outputTokens}</span>
+                  <span class="compression-showcase-stat-label">Output tokens</span>
+                </div>
+                <div class="compression-showcase-stat compression-showcase-stat-accent">
+                  <span class="compression-showcase-stat-value">{showcase.compressionRatio}%</span>
+                  <span class="compression-showcase-stat-label">Smaller</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="compression-showcase-panels">
+              <div class="compression-showcase-panel">
+                <div class="compression-showcase-panel-label">Before</div>
+                <pre class="compression-showcase-pre">{showcase.rawPreview}</pre>
+              </div>
+              <div class="compression-showcase-panel">
+                <div class="compression-showcase-panel-label">After</div>
+                <pre class="compression-showcase-pre compression-showcase-pre-after">{showcase.compressedOutput}</pre>
+              </div>
+            </div>
+
+            <div class="compression-showcase-source">{showcase.sourceLabel}</div>
+          </article>
+        ))
+      }
+    </div>
+  </div>
+</section>

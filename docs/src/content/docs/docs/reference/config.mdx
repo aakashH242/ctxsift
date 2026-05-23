@@ -1,0 +1,144 @@
+---
+title: Config Reference
+description: Comprehensive reference for all configuration settings in config.toml.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+CtxSift is built to run with minimal configuration, resolving configuration hierarchy across multiple scopes.
+
+## Configuration hierarchy
+
+Settings are resolved in the following priority order:
+
+```text
+Environment variable > Workspace config > Global config > Default
+```
+
+* **Global config** applies to all workspaces on the machine. Stored at:
+  - Linux/macOS: `~/.config/ctxsift/config.toml`
+  - Windows: `%LOCALAPPDATA%\ctxsift\ctxsift\config.toml`
+* **Workspace config** overrides global for one repo. Stored at:
+  - `.git/ctxsift/config.toml` inside Git repos
+  - `.ctxsift/config.toml` for non-Git workspaces
+
+---
+
+## Configuration schema
+
+Below is the complete reference of all configuration options organized by group.
+
+### General settings
+
+* **`max_output_tokens`** (Integer, Default: `512`)
+  The maximum token limit budget for the compressed summary output.
+* **`timeout_ms`** (Integer, Default: `90000`)
+  Inference request timeout duration in milliseconds.
+* **`retries`** (Integer, Default: `1`)
+  The number of times CtxSift will attempt to retry an inference request if it fails.
+
+---
+
+### Local compression (`local.*`)
+
+Settings for executing local inference via Hugging Face/Transformers (GPU) or llama.cpp (CPU).
+
+* **`local.model`** (String, Default: `ibm-granite/granite-4.0-350m-GGUF`)
+  The Hugging Face repository ID or path containing the local model.
+* **`local.gguf_filename`** (String, Default: `granite-4.0-350m-Q8_0.gguf`)
+  The specific GGUF filename inside the model repository. **Required** when CPU device is selected.
+* **`local.llama_context_window`** (Integer, Default: `8192`)
+  Context window size for `llama.cpp` CPU inference.
+* **`local.device`** (String, Default: `auto`)
+  Execution device. Options: `auto`, `cpu`, `cuda`, `mps`.
+* **`local.dtype`** (String, Default: `auto`)
+  Data type for GPU inference. Options: `auto`, `float32`, `float16`, `bfloat16`.
+* **`local.attn_implementation`** (String, Default: `auto`)
+  Attention mechanism backend. Options: `auto`, `sdpa`, `flash_attention_2`.
+* **`local.quantization`** (String, Default: `none`)
+  In-memory quantization level for CUDA GPU. Options: `none`, `bnb-8bit`, `bnb-4bit-fp4`, `bnb-4bit-nf4`.
+* **`local.model_cache_path`** (String, Default: `""`)
+  Custom path to save pre-quantized/cached model files. If empty, the default Hugging Face cache folder is used.
+
+---
+
+### Remote compression (`remote.*`)
+
+Settings for routing LLM inference to external APIs using LiteLLM.
+
+* **`remote.base_url`** (String, Default: `""`)
+  LiteLLM-compatible API base endpoint (e.g., `https://api.openai.com/v1`). If empty, local mode is used.
+* **`remote.model_name`** (String, Default: `""`)
+  The model identifier passed to the remote provider (e.g., `gpt-4o-mini`).
+* **`remote.api_key`** (String, Default: `""`)
+  Authentication API Key for the remote model provider.
+* **`remote.api_version`** (String, Default: `""`)
+  Optional API version identifier required by some enterprise model providers.
+* **`remote.reasoning_mode`** (String, Default: `auto`)
+  Indicates whether the remote model requires reasoning configuration blocks. Options: `auto`, `true`, `false`.
+
+---
+
+### Embedding models (`embedding.*`)
+
+Settings for the Sentence Transformers model used to compute vector embeddings for recall.
+
+* **`embedding.model`** (String, Default: `microsoft/harrier-oss-v1-0.6b`)
+  Hugging Face model ID for computing workspace embeddings.
+* **`embedding.backend`** (String, Default: `auto`)
+  Underlying runner execution engine. Options: `auto`, `onnx`, `torch`.
+* **`embedding.device`** (String, Default: `auto`)
+  Device to run embedding models. Options: `auto`, `cpu`, `cuda`.
+* **`embedding.dtype`** (String, Default: `auto`)
+  Tensor data type. Options: `auto`, `float32`, `float16`, `bfloat16`.
+* **`embedding.attn_implementation`** (String, Default: `auto`)
+  Attention implementation. Options: `auto`, `sdpa`, `flash_attention_2`.
+* **`embedding.max_length`** (Integer, Default: `32768`)
+  Maximum token length threshold for embedding operations.
+* **`embedding.query_prompt_name`** (String, Default: `""`)
+  Named prompt configuration template for embedding queries.
+* **`embedding.query_prompt`** (String, Default: `""`)
+  Explicit prompt prefix string prepended to embedding search queries.
+* **`embedding.document_prompt_name`** (String, Default: `""`)
+  Named prompt configuration template for embedding documents.
+
+---
+
+### Recall search (`recall.*`)
+
+Fine-tuning knobs for hybrid lexical and semantic search.
+
+* **`recall.default_limit`** (Integer, Default: `10`)
+  Number of matches to return if no limit option is specified on the command-line.
+* **`recall.lexical_candidate_limit`** (Integer, Default: `50`)
+  Max candidates polled from FTS5 lexical index before fusion.
+* **`recall.vector_candidate_limit`** (Integer, Default: `50`)
+  Max candidates polled from the vector store before fusion.
+* **`recall.max_vector_distance`** (Float, Default: `0.75`)
+  Cosine distance filter threshold. Matches with a distance higher than this are dropped.
+
+---
+
+### Background Daemons (`daemon.*`)
+
+Knobs to control background model-serving daemons.
+
+* **`daemon.enabled`** (Boolean, Default: `true`)
+  If `true`, starts and communicates with background services for low-latency batch processing. If `false`, executes in-process.
+* **`daemon.idle_timeout_seconds`** (Integer, Default: `600`)
+  Time of inactivity (in seconds) before a daemon automatically exits.
+* **`daemon.startup_timeout_ms`** (Integer, Default: `15000`)
+  Time limit (in milliseconds) to wait for a background daemon process to boot.
+* **`daemon.embedding_batch_window_ms`** (Integer, Default: `20`)
+  Wait window in milliseconds to batch multiple concurrent embedding requests.
+* **`daemon.embedding_max_batch_size`** (Integer, Default: `16`)
+  Maximum batch size processed together in a single embedding run.
+
+---
+
+### Retention (`retention.*`)
+
+Controls file clean-up policies inside the database.
+
+* **`retention.max_age_days`** (Integer, Default: `30`)
+  Determines how many days a compressed record is preserved before being cleaned up by automatic retention routines.

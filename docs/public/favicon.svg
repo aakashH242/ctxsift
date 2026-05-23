@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+	<rect width="128" height="128" rx="32" fill="url(#ctxsift-bg)"/>
+	<rect x="29" y="37" width="70" height="13" rx="6.5" fill="url(#ctxsift-line)"/>
+	<rect x="39" y="58" width="50" height="13" rx="6.5" fill="url(#ctxsift-line)" opacity="0.88"/>
+	<rect x="53" y="79" width="22" height="13" rx="6.5" fill="url(#ctxsift-line)" opacity="0.72"/>
+	<defs>
+		<linearGradient id="ctxsift-bg" x1="10" y1="8" x2="118" y2="122" gradientUnits="userSpaceOnUse">
+			<stop offset="0%" stop-color="#0a1628"/>
+			<stop offset="100%" stop-color="#040c1e"/>
+		</linearGradient>
+		<linearGradient id="ctxsift-line" x1="29" y1="37" x2="99" y2="50" gradientUnits="userSpaceOnUse">
+			<stop offset="0%" stop-color="#2563eb"/>
+			<stop offset="100%" stop-color="#22d3ee"/>
+		</linearGradient>
+	</defs>
+</svg>

@@ -1,0 +1,154 @@
+---
+title: Installation Guide
+description: Step-by-step installation instructions for CtxSift, including GPU acceleration, remote provider support, and system requirements.
+---
+
+import { Aside, Tabs, TabItem } from '@astrojs/starlight/components';
+import InstallerDownloads from '../../../../components/InstallerDownloads.astro';
+
+CtxSift is written in Python and is designed to run locally or integrate with remote model providers. Depending on your model targets (local CPU, local GPU, or remote APIs), CtxSift separates its dependencies into target packaging extras to keep your environment footprint lightweight.
+
+---
+
+## Hardware requirements matrix
+
+Review the table below to choose the right installation path based on your machine's hardware capabilities:
+
+| Mode | Target Hardware | Min. RAM | Min. VRAM | Active Components | Packages to Install |
+|---|---|---|---|---|---|
+| **Local CPU** | Standard Laptop/PC | 8 GB | N/A | Local `llama.cpp` + local Embeddings | `ctxsift` (Base package) |
+| **Local GPU** | CUDA-supported GPU | 2 GB | 8 GB | `Transformers` (PyTorch) + local Embeddings | `ctxsift[gpu]` |
+| **Local GPU (Quant)** | VRAM-constrained GPU | 2 GB | 4-6 GB | `Transformers` + `bitsandbytes` + local Embeddings | `ctxsift[gpu,quant]` |
+| **Remote (CPU)** | Cloud/API-focused | 4 GB | N/A | Remote API + local CPU Embeddings | `ctxsift[remote]` |
+| **Remote (GPU)** | Hybrid Cloud + GPU | 2 GB | 4 GB | Remote API + local GPU Embeddings | `ctxsift[remote,gpu]` |
+
+---
+
+## Prerequisites
+
+Before running the install commands, ensure your environment meets these system requirements:
+
+1. **Python >= 3.12**: CtxSift uses Python 3.12 features (advanced typing, modern async APIs) and relies on packages built for Python 3.12+.
+2. **`uv` Package Manager**: We strongly recommend installing CtxSift via `uv`. It is a blazingly fast alternative to `pip` and handles isolated binary tool environments automatically.
+   - *Install `uv`:* Follow the [Astral `uv` Installation Guide](https://docs.astral.sh/uv/getting-started/installation/).
+3. **C Compiler Toolchain**: Local CPU compression relies on `llama-cpp-python`, which may compile bindings during installation if pre-built wheels are not available for your platform.
+   - **Linux**: Install GCC or Clang (`sudo apt install build-essential`).
+   - **macOS**: Install Xcode Command Line Tools (`xcode-select --install`).
+   - **Windows**: Install the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (ensure **Desktop development with C++** is checked).
+
+---
+
+## Choose your installation command
+
+Use `uv tool install` to install CtxSift in an isolated environment that is globally accessible on your terminal path.
+
+<InstallerDownloads />
+
+<Tabs>
+  <TabItem label="Local (CPU)">
+    Use this if you do not have a dedicated GPU. CtxSift will run compression locally using GGUF-quantized models via an embedded `llama.cpp` runtime.
+
+    ```bash
+    uv tool install ctxsift
+    ```
+  </TabItem>
+
+  <TabItem label="Local (GPU)">
+    Use this if you have an NVIDIA GPU supporting CUDA. CtxSift will run local compression using PyTorch and Hugging Face `Transformers`.
+
+    ```bash
+    uv tool install "ctxsift[gpu]"
+    ```
+  </TabItem>
+
+  <TabItem label="GPU with Quantization">
+    For machines with limited VRAM (e.g., under 8 GB) that still want to run local GPU compression. This includes `bitsandbytes` to load models in 8-bit or 4-bit NormalFloat modes.
+
+    ```bash
+    uv tool install "ctxsift[gpu,quant]"
+    ```
+  </TabItem>
+
+  <TabItem label="Remote Only">
+    Select this to offload all compression tasks to hosted model providers (such as OpenAI, Anthropic, Gemini, or a local vLLM/Ollama network proxy) using LiteLLM. Recall embeddings will still run locally on CPU.
+
+    ```bash
+    uv tool install "ctxsift[remote]"
+    ```
+  </TabItem>
+
+  <TabItem label="All Extras">
+    Installs every dependency, including GPU drivers, quantization libraries, and remote proxy integrations.
+
+    ```bash
+    uv tool install "ctxsift[all]"
+    ```
+  </TabItem>
+</Tabs>
+
+If `ctxsift` is not found after installation, update your shell integration and reopen the terminal:
+
+```bash
+uv tool update-shell
+```
+
+---
+
+## Advanced: PyTorch & CUDA version alignment
+
+<Aside type="caution">
+`uv tool install` installs CtxSift inside a standalone virtual environment. By default, it retrieves the standard PyTorch wheel index. If your local system requires a specific CUDA version (e.g., CUDA 11.8 or CUDA 12.4), PyTorch may fall back to CPU mode or crash if the wheel and host drivers mismatch.
+</Aside>
+
+To force `uv` to compile or install CtxSift with a specific PyTorch index aligning with your CUDA toolkit version, pass the `--index` or `--with` overrides during installation.
+
+### Examples:
+
+**For CUDA 12.1 (Standard default):**
+```bash
+uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
+```
+
+**For CUDA 11.8 (Older GPU rigs):**
+```bash
+uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu118
+```
+
+---
+
+## Post-installation verification
+
+Once the installation is complete, verify that the `ctxsift` command is available in your PATH and configured correctly.
+
+### 1. Run the system diagnostics probe
+Run `ctxsift doctor` to check the status of your drivers, databases, and dependencies.
+
+```bash
+ctxsift doctor
+```
+
+A healthy environment should output positive signals for SQLite, Git, and your selected execution engine:
+```text
+[PASS] Python version: 3.12.3
+[PASS] SQLite version: 3.45.0
+[PASS] sqlite-vec extension: Loaded successfully
+[PASS] Git executable: Found
+[PASS] Local inference device: CUDA detected (RTX 3060 Ti)
+```
+
+### 2. Test a basic compression pipeline
+Confirm the CLI can execute compression pipelines by running a mock string through a dry-run compression call:
+
+```bash
+echo "Line 1: critical error occurred
+Line 2: debug trace details
+Line 3: closing process" | ctxsift compress --intent summary "extract error details"
+```
+
+The model should spin up, compress the input, and return the summary.
+
+---
+
+## Next steps
+
+Now that CtxSift is installed, proceed to **[Configuration & Guided Setup](/docs/getting-started/configure/)** to define model backends and initialize your first workspace.

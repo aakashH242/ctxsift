@@ -1,0 +1,188 @@
+---
+title: CLI Reference
+description: Command-line reference for CtxSift's executable commands, options, and parameters.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+This document provides a comprehensive reference for all commands available in the `ctxsift` CLI.
+
+---
+
+## `ctxsift configure`
+
+Run the guided setup to configure CtxSift's behavior globally or for the current workspace.
+
+```bash
+ctxsift configure [OPTIONS]
+```
+
+This command runs interactively, guiding you through:
+- Selecting model execution paths (CPU, GPU, or Remote).
+- Selecting specific models (e.g., GGUF files for CPU or HF repos for GPU).
+- Configuring local daemon behavior.
+- Resolving where to write the config file.
+- Creating workspace database files and configuring gitignore settings.
+- Registering default Agent skills in the workspace.
+
+### Options
+
+* **`--write-ignore` / `--no-write-ignore`**
+  Override whether configure automatically appends the `.ctxsift/` database directory to the workspace's `.gitignore`. If not specified, CtxSift will prompt you interactively.
+
+---
+
+## `ctxsift compress`
+
+Compress incoming stdin or command outputs under a natural language instruction.
+
+```bash
+# Pipe mode
+<command> | ctxsift compress [OPTIONS] INSTRUCTION
+
+# Command capture mode
+ctxsift compress [OPTIONS] INSTRUCTION -- COMMAND [ARGS]...
+```
+
+### Arguments
+
+* **`INSTRUCTION`** (Required string)
+  The natural language instruction specifying what patterns, errors, or structures the model should extract and keep in the summary.
+
+### Options
+
+* **`--intent`** (Required `CompressionIntent` enum value)
+  Specifies the target output contract for the model. Options:
+  - `summary`: High-level plain text description.
+  - `recall`: Summary optimized for downstream keyword/semantic matching.
+  - `exact-lines`: Pulls lines verbatim from the input.
+  - `exact-format`: Follows the instruction's formatting structure exactly.
+  - `json`: Returns valid parsed JSON.
+  - `yaml`: Returns valid parsed YAML.
+  - `table`: Formats output as a markdown table.
+  - `bullet-list`: Formats output as a markdown bullet list.
+* **`--shell`**
+  Executes the command sequence after `--` in shell mode (e.g., handles wildcards, shell pipelines, and environment variables). Only applicable in command capture mode.
+* **`--max-output-tokens`** (Integer)
+  Overrides the default model output limit (e.g., sets output limit to `1024` tokens for this run).
+
+### Usage Examples
+
+```bash
+# Retrieve only failing test lines and format as bullet points
+pytest | ctxsift compress --intent bullet-list "list failing test names and errors"
+
+# Capturing exit codes and Git telemetry directly
+ctxsift compress --intent json "extract errors as JSON" -- pnpm build
+```
+
+---
+
+## `ctxsift recall`
+
+Search the workspace's database for previously compressed records matching a search query.
+
+```bash
+ctxsift recall [OPTIONS] QUERY
+```
+
+### Arguments
+
+* **`QUERY`** (Required string)
+  The search term, error code, command name, or natural language query to recall.
+
+### Options
+
+* **`--files`** (List of strings)
+  Provide file paths to filter search results. Recall prioritizes records containing matches inside these specific files.
+* **`--limit`** (Integer)
+  Set the maximum number of results to display. Defaults to the configured `recall.default_limit`.
+
+### Usage Examples
+
+```bash
+# Recall build logs matching docker network settings
+ctxsift recall "docker connection timeout"
+
+# Focus on auth failures in a specific file
+ctxsift recall "expired token" --files tests/test_auth.py
+```
+
+---
+
+## `ctxsift doctor`
+
+Inspect the local environment's health, dependencies, and configuration setup.
+
+```bash
+ctxsift doctor
+```
+
+Runs diagnostic probes on core components (SQLite, Git, CUDA, PyTorch, LiteLLM, llama-cpp-python, bitsandbytes) to check if your current configuration is runnable.
+
+---
+
+## `ctxsift config`
+
+Directly inspect or edit configuration settings.
+
+### `ctxsift config show`
+
+Display the resolved configuration settings that CtxSift is currently using.
+
+```bash
+ctxsift config show [OPTIONS]
+```
+
+* **Options:**
+  - `--global`: Reads only the global configuration file (`config.toml`), ignoring any workspace-specific configurations.
+
+### `ctxsift config set`
+
+Write a configuration value for a key.
+
+```bash
+ctxsift config set [OPTIONS] KEY VALUE
+```
+
+* **Arguments:**
+  - `KEY`: The dot-separated configuration path (e.g., `local.device` or `remote.base_url`).
+  - `VALUE`: The value to assign.
+* **Options:**
+  - `--global`: Writes the key-value pair to the global `config.toml` file rather than the workspace config.
+
+---
+
+## `ctxsift daemon`
+
+Start, stop, and inspect background model serving daemons.
+
+### `ctxsift daemon start`
+
+Manually boot the daemons specified by the current active configuration.
+
+```bash
+ctxsift daemon start
+```
+
+### `ctxsift daemon status`
+
+View the health, ports, and process IDs of running daemons.
+
+```bash
+ctxsift daemon status [OPTIONS]
+```
+
+* **Options:**
+  - `--all`: Lists statuses for all registered daemons on the machine, including those from other workspaces.
+
+### `ctxsift daemon stop`
+
+Shut down running model daemons.
+
+```bash
+ctxsift daemon stop [OPTIONS]
+```
+
+* **Options:**
+  - `--all`: Shuts down all running daemons across the entire machine.

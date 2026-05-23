@@ -1,0 +1,100 @@
+---
+interface Props {
+  variant?: 'docs' | 'landing';
+  title?: string;
+  description?: string;
+}
+
+const {
+  variant = 'docs',
+  title = 'Download installer script',
+  description = 'The installer asks for a version and package extras, then runs uv tool install for that choice.',
+} = Astro.props;
+
+const wrapperClass = `installer-downloads installer-downloads--${variant}`;
+const primaryClass = variant === 'landing'
+  ? 'landing-action landing-action-primary installer-primary-link'
+  : 'installer-primary-link';
+const secondaryClass = variant === 'landing'
+  ? 'landing-action landing-action-secondary installer-secondary-link'
+  : 'installer-secondary-link';
+---
+
+<div class={wrapperClass} data-installer-downloads>
+  <div class="installer-copy">
+    <div class="installer-title">{title}</div>
+    <p class="installer-description">{description}</p>
+  </div>
+  <div class="installer-actions-row">
+    <a
+      class={primaryClass}
+      href="/installers/ctxsift-linux.sh"
+      download="ctxsift-install-linux.sh"
+      data-installer-primary
+    >
+      Download for Linux
+    </a>
+    <div class="installer-platform-links">
+      <a class={secondaryClass} href="/installers/ctxsift-linux.sh" download="ctxsift-install-linux.sh" data-installer-link="linux">Linux</a>
+      <a class={secondaryClass} href="/installers/ctxsift-macos.sh" download="ctxsift-install-macos.sh" data-installer-link="macos">macOS</a>
+      <a class={secondaryClass} href="/installers/ctxsift-windows.ps1" download="ctxsift-install.ps1" data-installer-link="windows">Windows</a>
+    </div>
+  </div>
+</div>
+
+<script is:inline>
+  (() => {
+    const blocks = document.querySelectorAll('[data-installer-downloads]');
+    if (!blocks.length) {
+      return;
+    }
+
+    const detectPlatform = () => {
+      const source = [
+        navigator.userAgentData?.platform,
+        navigator.platform,
+        navigator.userAgent,
+      ].filter(Boolean).join(' ').toLowerCase();
+
+      if (source.includes('win')) {
+        return 'windows';
+      }
+      if (source.includes('mac') || source.includes('darwin')) {
+        return 'macos';
+      }
+      return 'linux';
+    };
+
+    const detected = detectPlatform();
+    const labels = {
+      linux: 'Linux',
+      macos: 'macOS',
+      windows: 'Windows',
+    };
+    const downloads = {
+      linux: { href: '/installers/ctxsift-linux.sh', download: 'ctxsift-install-linux.sh' },
+      macos: { href: '/installers/ctxsift-macos.sh', download: 'ctxsift-install-macos.sh' },
+      windows: { href: '/installers/ctxsift-windows.ps1', download: 'ctxsift-install.ps1' },
+    };
+
+    blocks.forEach((block) => {
+      const primary = block.querySelector('[data-installer-primary]');
+      const detectedLine = block.querySelector('[data-installer-detected]');
+      const links = block.querySelectorAll('[data-installer-link]');
+
+      if (primary) {
+        primary.setAttribute('href', downloads[detected].href);
+        primary.setAttribute('download', downloads[detected].download);
+        primary.textContent = `Download for ${labels[detected]}`;
+      }
+
+      links.forEach((link) => {
+        if (link.getAttribute('data-installer-link') === detected) {
+          link.setAttribute('data-active-platform', 'true');
+        } else {
+          link.removeAttribute('data-active-platform');
+        }
+      });
+    });
+  })();
+</script>
