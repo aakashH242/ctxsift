@@ -268,7 +268,7 @@ def _windows_shell_executable() -> str:
 def _windows_creationflags() -> int:
     if not _is_windows():
         return 0
-    return subprocess.CREATE_NEW_PROCESS_GROUP
+    return int(getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0))
 
 
 def _contains_env_reference(token: str) -> bool:
