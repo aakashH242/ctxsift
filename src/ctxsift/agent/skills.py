@@ -313,7 +313,9 @@ def _normalize_custom_target_path(raw_value: str, workspace_root: Path) -> Path:
 
 
 def _looks_like_directory_input(raw_value: str, candidate: Path) -> bool:
-    return raw_value.endswith(("/", "\\")) or candidate.is_dir()
+    if raw_value.endswith(("/", "\\")) or candidate.is_dir():
+        return True
+    return candidate.name.casefold() != "skill.md" and candidate.suffix == ""
 
 
 def _scope_target_note(host: AgentSkillHost, workspace_root: Path) -> str:

@@ -713,6 +713,49 @@
 	transform: translateX(3px);
 }
 
+.common-setup-questions {
+	margin-top: 1.25rem;
+	border: 1px solid rgba(148, 163, 184, 0.12);
+	border-radius: 0.9rem;
+	padding: 0.85rem 0.95rem;
+	background: rgba(8, 12, 22, 0.55);
+}
+
+.common-setup-heading {
+	color: hsl(196, 90%, 72%);
+	font-family: var(--sl-font-mono);
+	font-size: 0.68rem;
+	letter-spacing: 0.12em;
+	text-transform: uppercase;
+}
+
+.common-setup-links {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.6rem;
+}
+
+.common-setup-link {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.34rem 0.62rem;
+	border-radius: 999px;
+	border: 1px solid rgba(148, 163, 184, 0.16);
+	background: rgba(15, 23, 42, 0.58);
+	color: hsl(210, 20%, 76%);
+	font-size: 0.79rem;
+	line-height: 1.2;
+	text-decoration: none;
+	transition: color 180ms ease-out, border-color 180ms ease-out, background 180ms ease-out;
+}
+
+.common-setup-link:hover {
+	color: hsl(196, 90%, 82%);
+	border-color: rgba(125, 211, 252, 0.35);
+	background: rgba(30, 64, 175, 0.14);
+}
+
 /* =========================================================
    Proof / benchmark section
    ========================================================= */
@@ -1041,6 +1084,7 @@ html[data-theme='light'] .ops-intro,
 html[data-theme='light'] .ops-step-copy,
 html[data-theme='light'] .proof-card-copy,
 html[data-theme='light'] .route-link-copy,
+html[data-theme='light'] .common-setup-link,
 html[data-theme='light'] .proof-note,
 html[data-theme='light'] .compression-showcase-intro,
 html[data-theme='light'] .compression-showcase-source,
@@ -1065,6 +1109,26 @@ html[data-theme='light'] .compression-showcase-stat-value,
 html[data-theme='light'] .proof-card-value,
 html[data-theme='light'] .route-link-label {
 	color: var(--sl-color-white);
+}
+
+html[data-theme='light'] .common-setup-questions {
+	border-color: rgba(148, 163, 184, 0.2);
+	background: rgba(255, 255, 255, 0.72);
+}
+
+html[data-theme='light'] .common-setup-heading {
+	color: hsl(212, 82%, 42%);
+}
+
+html[data-theme='light'] .common-setup-link {
+	border-color: rgba(148, 163, 184, 0.24);
+	background: rgba(241, 245, 249, 0.96);
+}
+
+html[data-theme='light'] .common-setup-link:hover {
+	color: hsl(212, 86%, 38%);
+	border-color: rgba(37, 99, 235, 0.32);
+	background: rgba(219, 234, 254, 0.9);
 }
 
 html[data-theme='light'] .support-pill {

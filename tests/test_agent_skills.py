@@ -41,6 +41,14 @@ def test_normalize_custom_target_path_appends_skill_filename_for_directories(
     assert target == tmp_path / ".agents" / "custom" / "SKILL.md"
 
 
+def test_normalize_custom_target_path_treats_nonexistent_default_dir_as_directory(
+    tmp_path: Path,
+) -> None:
+    target = _normalize_custom_target_path(".agents/skills/ctxsift", tmp_path)
+
+    assert target == tmp_path / ".agents" / "skills" / "ctxsift" / "SKILL.md"
+
+
 def test_install_agent_skills_writes_custom_target(
     tmp_path: Path,
 ) -> None:

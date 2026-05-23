@@ -38,13 +38,17 @@ Before running the install commands, ensure your environment meets these system 
 
 ---
 
-## Choose your installation command
+## Choose your installation path
 
-Use `uv tool install` to install CtxSift in an isolated environment that is globally accessible on your terminal path.
+You can use standalone installer scripts given below or let your agent install **CtxSift** for you by using the installation skill.
+When installing manually, use `uv tool install` to install CtxSift in an your environment that is globally accessible on your terminal path.
 
 <InstallerDownloads title="Automated Installation" description="Install with standalone scripts or let your agent install it with the install skill."/>
 
 ---
+
+<details>
+<summary>Manual installation</summary>
 
 <Tabs>
   <TabItem label="Local (CPU)">
@@ -88,6 +92,23 @@ Use `uv tool install` to install CtxSift in an isolated environment that is glob
   </TabItem>
 </Tabs>
 
+</details>
+
+## Install the agent skill
+
+After installing the CLI, the recommended way to install the CtxSift agent skill is through guided setup:
+
+```bash
+ctxsift configure
+```
+
+The `configure` command can install the skill for supported agents (`copilot`, `antigravity`, `claude-code`, `codex`, `other`) and handles host-specific scope/path prompts for you.
+
+For the full prompt flow, supported targets, and scope details, see [Configure](/docs/getting-started/configure/#agent-skill-installation).
+
+If you prefer manual installation, download the packaged skill file from [here](https://raw.githubusercontent.com/aakashH242/ctxsift/refs/heads/main/src/ctxsift/agent_skill_template.md)
+
+---
 If `ctxsift` is not found after installation, update your shell integration and reopen the terminal:
 
 ```bash

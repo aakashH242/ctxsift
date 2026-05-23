@@ -1,7 +1,7 @@
 ---
 name: ctxsift
-description: This skill helps you focus and keep the session context clutter-free to save the user tokens. \
-  When you need only some info from a command output but not the whole raw output, use the `compress` action this skill teaches you. \
+description: This skill helps you focus and keep the session context clutter-free to save the user tokens.
+  When you need only some info from a command output but not the whole raw output, use the `compress` action this skill teaches you.
   When you need to recollect latest state, previous work, prior findings etc, use the `recall` action this skill teaches you before you re-read files or re-run commands.
 license: MIT
 ---

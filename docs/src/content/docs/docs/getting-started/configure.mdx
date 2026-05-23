@@ -21,6 +21,55 @@ ctxsift doctor
 
 ---
 
+## Agent skill installation during configure
+
+`ctxsift configure` can install the CtxSift `SKILL.md` for supported agent hosts as part of the same guided flow.
+
+During configure, you will be asked:
+
+1. `Install the CtxSift agent skill for supported coding agents?` (default: `no`)
+2. `Install for (comma-separated)` (default: `copilot, antigravity, claude-code, codex`)
+3. Scope/path prompts per selected host
+
+Supported host names:
+
+- `copilot`
+- `antigravity`
+- `claude-code`
+- `codex`
+- `other` (custom target)
+
+Install targets:
+
+| Host | Global target | Workspace target |
+|---|---|---|
+| Copilot | `~/.copilot/skills/ctxsift/SKILL.md` | `.github/skills/ctxsift/SKILL.md` |
+| Antigravity | `~/.gemini/config/plugins/ctxsift/skills/ctxsift/SKILL.md` | `.agents/plugins/ctxsift/skills/ctxsift/SKILL.md` |
+| Claude Code | `~/.claude/skills/ctxsift/SKILL.md` | `.claude/skills/ctxsift/SKILL.md` |
+| Codex | `~/.codex/skills/ctxsift/SKILL.md` (or `$CODEX_HOME/skills/ctxsift/SKILL.md`) | Not supported (global only) |
+
+For `other`, configure asks for a custom target path. You can provide:
+
+- a full file path ending in `SKILL.md`, or
+- a directory path (for example `.agents/skills/ctxsift`) and CtxSift writes `SKILL.md` inside it.
+
+<Aside type="note">
+If configure is run in a non-interactive context (for example closed stdin), the skill-install prompts are skipped and config setup continues normally.
+</Aside>
+
+Configure prints one line per install result, such as:
+
+```text
+Installed CtxSift skill for Copilot (workspace) at /path/to/repo/.github/skills/ctxsift/SKILL.md
+Already current CtxSift skill for Codex (global) at /home/user/.codex/skills/ctxsift/SKILL.md
+```
+
+If you prefer downloading the skill package manually, use:
+
+- `/installers/ctxsift-install-skill.zip`
+
+---
+
 ## How config works
 
 CtxSift resolves settings from four layers, in order:

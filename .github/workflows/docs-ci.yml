@@ -49,3 +49,10 @@ jobs:
 
       - name: Build docs
         run: pnpm build
+
+      - name: Verify sitemap and robots output
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f dist/robots.txt
+          test -f dist/sitemap-index.xml

@@ -304,6 +304,36 @@ def test_compress_input_run_mode_preserves_literal_fence_lines_in_command_output
     assert seen["raw_input"] == "before\n```\nafter\n\nwarn"
 
 
+def test_run_payload_output_text_ignores_length_like_lines_inside_legacy_fenced_output() -> None:
+    raw_input = "\n".join(
+        [
+            "Workspace root: /repo",
+            "Git repo: True",
+            "",
+            "Command: demo",
+            "Shell mode: False",
+            "Cwd: /repo",
+            "Exit code: 1",
+            "Duration ms: 3",
+            "",
+            "Stdout:",
+            "```text",
+            "real line",
+            "Stdout:",
+            "Length: 4",
+            "fake",
+            "```",
+            "",
+            "Stderr:",
+            "```text",
+            "warn",
+            "```",
+        ]
+    )
+
+    assert compression._run_payload_output_text(raw_input) == "real line\nStdout:\nLength: 4\nfake\nwarn"
+
+
 def test_compress_input_uses_remote_backend_when_base_url_is_configured(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
