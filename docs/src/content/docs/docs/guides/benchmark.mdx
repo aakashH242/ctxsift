@@ -75,8 +75,6 @@ final_score = 100 * quality_core * latency_factor
 - plain-text intents: `0.75 + 0.25 * instruction_following_score`
 - strict intents: start from `0.40 + 0.60 * instruction_following_score`, then only apply that penalty when `format_score` is weak. If a strict answer already matches the requested format perfectly, there is no extra instruction penalty on top.
 
-Strict format scoring is graded too. For `exact_match`, `regex`, and structured shape checks, CtxSift gives partial credit to close near-miss outputs instead of treating them the same as totally wrong outputs. A command that misses a prefix or punctuation can still score partway. A raw log dump, wrong command type, or incomplete structured payload still scores very poorly.
-
 Cases can also take a visible-thought penalty before the scenario rollup. If the answer still contains model reasoning text, the case score is reduced based on how much of the output is thought leakage. Clean answers stay at full weight.
 
 This is not limited to `<think>...</think>` wrappers. CtxSift also looks for common visible meta-reasoning lines such as `Okay, the user wants...`, `I should return...`, or `However, the instruction says...`. Recovery only trims the leading preamble when that is safe. If stray reasoning is still left in the answer body, the score still drops.
@@ -122,10 +120,6 @@ If recovered and raw are close, the model is naturally clean. If recovered is mu
 
 In the detail view, case rows now show recovered thought density and raw thought density separately. That makes it easy to tell whether cleanup removed visible reasoning, or whether the model stayed clean by itself.
 
-The viewer also includes a recovery-lift scatter: `raw score` on the x-axis, `recovery lift` on the y-axis, and color by CPU / GPU / remote track. Points above zero are runs where recovery helped overall. Points below zero are runs where recovery hurt a little.
-
-That same deterministic recovery path is enabled in normal product output by default. If you want to compare behavior with and without that recovery step, turn it off with `recovery_enabled = false` or `CTXSIFT_RECOVERY_ENABLED=false`.
-
 The scenario matrix lives in `benchmark/matrix.json` and defines the three main tracks used in the repo:
 
 | Track | Backend |
@@ -141,88 +135,6 @@ The scenario matrix lives in `benchmark/matrix.json` and defines the three main 
 <Aside type="tip">
 Use score as the main signal. Use latency as a secondary signal unless you are comparing runs from the same machine and setup.
 </Aside>
-
-### Write your own `matrix.json`
-
-The runner does not guess which models you want to compare. It reads them from `benchmark/matrix.json` by default, or from a custom file passed with `--matrix`.
-
-The file format is:
-
-```json
-{
-  "scenarios": [
-    {
-      "name": "cpu-my-model",
-      "track": "cpu",
-      "phase": "cpu-screen",
-      "model": "unsloth/Qwen3.5-0.8B-GGUF",
-      "gguf_filename": "Qwen3.5-0.8B-Q8_0.gguf",
-      "quantization": "none",
-      "device": "cpu"
-    },
-    {
-      "name": "gpu-my-model",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "Qwen/Qwen3.5-0.8B",
-      "quantization": "none",
-      "device": "cuda"
-    },
-    {
-      "name": "remote-my-model",
-      "track": "remote",
-      "phase": "remote-screen",
-      "model": "gpt-4.1-mini",
-      "quantization": "none",
-      "device": "remote",
-      "concurrency": 8
-    }
-  ]
-}
-```
-
-Each scenario row becomes one benchmark run target.
-
-#### Scenario fields
-
-| Field | Required | Meaning |
-|---|---|---|
-| `name` | Yes | Unique scenario name. This is what you pass to `--scenario`. Keep it short and stable. |
-| `track` | Yes | High-level bucket for the viewer: `cpu`, `gpu`, or `remote`. |
-| `phase` | Yes | Group name for bulk runs with `--phase`, such as `cpu-screen` or `remote-screen`. |
-| `model` | Yes | Model identifier. For CPU/GPU this is the Hugging Face repo or model id. For remote this is the provider model name passed through LiteLLM. |
-| `quantization` | Yes | Quantization label stored with the scenario. Use `none` unless you are intentionally benchmarking another quantized GPU setup. |
-| `device` | Yes | Runtime path: `cpu`, `cuda`, or `remote`. |
-| `gguf_filename` | CPU only | Required for CPU GGUF runs. Omit it for GPU and remote runs. |
-| `dtype` | No | GPU precision override. Default: `auto`. |
-| `attn_implementation` | No | GPU attention backend override. Default: `auto`. |
-| `max_output_tokens` | No | Per-scenario compression budget. Default when omitted: `768`. |
-| `concurrency` | No | Number of in-flight cases for that scenario. Default: `1`. Most useful for remote runs. |
-| `enabled` | No | Whether this scenario should be considered by the runner. Default: `true`. |
-
-#### What to change for each track
-
-- **CPU**: set `track` to `cpu`, `device` to `cpu`, and provide both `model` and `gguf_filename`.
-- **GPU**: set `track` to `gpu`, `device` to `cuda`, and use a normal Transformers model id. Do not set `gguf_filename`.
-- **Remote**: set `track` to `remote`, `device` to `remote`, and use the provider model name in `model`. The actual base URL and API key still come from your CtxSift config or env file, not from `matrix.json`.
-
-#### Practical rules
-
-- `name` should be unique. If two rows share the same name, your CLI filtering becomes ambiguous.
-- `track` and `device` should agree. Do not create rows like `track=cpu` with `device=cuda`.
-- `phase` is just a label, but it should match the track you plan to run together. For example, keep CPU rows under `cpu-screen`.
-- `quantization` is not used for CPU GGUF runtime behavior. It is mainly a scenario label there, and should normally stay `none`.
-- `concurrency` higher than `1` is most useful for remote runs. For local CPU and many small local GPU models, higher concurrency can distort latency or exhaust memory.
-
-#### Use a custom matrix file
-
-If you do not want to edit the repo's default matrix, write your own file and pass it explicitly:
-
-```bash frame="none"
-uv run python -m benchmark.runner --matrix my-matrix.json --scenario remote-my-model --remote --env-file .env
-```
-
-That is the easiest way to keep one small matrix per machine, provider, or experiment.
 
 ### List all scenarios
 
