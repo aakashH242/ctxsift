@@ -88,49 +88,11 @@ Then restart your shell and try `ctxsift` again.
 
 ### First-time setup
 
-Run a guided setup to configure your model provider, workspace settings and **install the skill** for your favorite agent harness. Configure now supports a broader host catalog and uses a numbered multi-select flow instead of making you type host names by hand.
+Run a guided setup to configure your model provider, workspace settings and **install the skill** for your favorite agent harness.
 
 ```bash frame="none"
 ctxsift configure
 ```
-
-### Supported agents
-
-CtxSift can install its skill directly for a broad set of coding-agent hosts. Some hosts support both global and workspace installs, some are workspace-only, and `other` lets you write the skill to any custom target path when your harness is not on the built-in list or you want a different layout.
-
-Supported hosts currently include:
-
-- `copilot`
-- `antigravity`
-- `claude-code`
-- `codex`
-- `cursor`
-- `windsurf-cascade`
-- `cline`
-- `roo-code`
-- `kilo-code`
-- `continue`
-- `aider`
-- `opencode`
-- `gemini-cli`
-- `qwen-code`
-- `kiro`
-- `jetbrains-junie`
-- `openhands`
-- `zed-agent`
-- `sourcegraph-amp`
-- `augment-auggie`
-- `factory-droid`
-- `amazon-q-developer`
-- `replit-agent`
-- `devin`
-- `codegen`
-- `google-jules`
-- `other`
-
-Some hosts use a dedicated `SKILL.md` path, while others rely on shared instruction files such as `AGENTS.md`, `GEMINI.md`, or workflow/rules folders. When a host uses a shared file, CtxSift updates only its managed block instead of replacing the rest of the file.
-
-For the full support table and install-scope details, see the docs sections on [installation](docs/src/content/docs/docs/getting-started/installation.mdx) and [configure](docs/src/content/docs/docs/getting-started/configure.mdx).
 
 ### Verify and test your setup
 
@@ -166,8 +128,6 @@ For GPU-based environments, any text-generation models from HuggingFace can be u
 We have [benchmarked](benchmark) a few models to help you get started.
 You can also run the benchmark to see how a model not listed here will perform. Learn more about it [here](benchmark/README.md).
 To view the latest benchmark, open `benchmark/results/viewer.html` to inspect the latest static dashboard snapshot. The viewer now shows two score views: **recovered** as the main score, and **raw** beside it so you can see how much deterministic recovery helped. It also shows visible-thought density, so you can tell when a model is "thinking out loud" in the final answer instead of returning only the requested output. That includes both leaked think-tags and common meta lines like `Okay, the user wants...` or `I should return...`. Benchmark scoring now follows the explicit compression intent for each case, so strict outputs are judged by the contract the caller actually asked for, not by an older family label.
-Strict benchmark rows are also more case-intelligent now: a close exact-format or structured near-miss can earn partial credit, while a truly wrong strict output still scores near zero.
-The same deterministic recovery path is on by default in normal product use too, and you can turn it off with `recovery_enabled` or `CTXSIFT_RECOVERY_ENABLED` if you want to compare behavior with and without that recovery step.
 
 **CPU models** - GGUF quantized models running on CPU via the built-in `llama.cpp` engine. Sorted by average latency, fastest first.
 
@@ -216,7 +176,6 @@ The same deterministic recovery path is on by default in normal product use too,
 | [gpt-4.1-mini](https://platform.openai.com/docs/models) | 1.59 | 86.99 | Close to `gpt-4.1` quality while staying quick. A strong hosted pick if you want most of the quality without using the flagship model. |
 | [gpt-5.4-nano](https://platform.openai.com/docs/models) | 1.83 | 85.73 | Fast and solid in the current run. Good value candidate if you specifically want this family. |
 | [gpt-5.4-mini](https://platform.openai.com/docs/models) | 2.11 | 86.68 | Highest accepted-case count in the remote set, but slightly slower than the 4.1 and 4o family models above it. Strong choice. |
-| [gpt-5-nano](https://platform.openai.com/docs/models) | 4.46 | 5.59 | Catastrophic benchmark result for CtxSift right now. Not suitable for compression. |
 | [gpt-5-mini](https://platform.openai.com/docs/models) | 7.40 | 32.13 | Also performed poorly in the current run, with many empty or invalid outputs. Not recommended. |
 
 To learn more about the benchmark based on which, we recommend alternate models, please [see here](benchmark/README.md).
@@ -321,12 +280,7 @@ ctxsift config set timeout_ms 120000
 
 # Retry remote or bounded operations twice (env var: CTXSIFT_RETRIES)
 ctxsift config set retries 2
-
-# Disable deterministic recovery (env var: CTXSIFT_RECOVERY_ENABLED)
-ctxsift config set recovery_enabled false
 ```
-
-Unsure? Keep recovery enabled and run a benchmark with your desired model to find whether it helps or not.
 
 </details>
 
