@@ -619,6 +619,42 @@ def test_json_shape_scoring_gives_partial_credit_to_single_matching_object() -> 
     assert invalid_score == 0.0
 
 
+def test_regex_shape_scoring_gives_partial_credit_to_close_single_line_output() -> None:
+    request = ModelCompressionInput(
+        intent=CompressionIntent.EXACT_FORMAT,
+        instruction="Return exactly one rerun command. No prose.",
+        raw_input="demo raw input",
+        extracted_signal=ExtractedSignal(),
+        max_output_tokens=64,
+    )
+    expected_output = "kubectl delete pod migrator-v2-9xk -n prod"
+    near_miss = "delete pod migrator-v2-9xk -n prod"
+    wrong_output = "migrator-v2-9xk\nprod"
+
+    near_score = format_adherence_score(
+        request,
+        near_miss,
+        intent=CompressionIntent.EXACT_FORMAT,
+        output_mode="single_line",
+        expected_output=expected_output,
+        format_check="regex",
+        pass_rule=r"must match ^kubectl delete pod [A-Za-z0-9-]+ -n [A-Za-z0-9-]+$ exactly.",
+    )
+    wrong_score = format_adherence_score(
+        request,
+        wrong_output,
+        intent=CompressionIntent.EXACT_FORMAT,
+        output_mode="single_line",
+        expected_output=expected_output,
+        format_check="regex",
+        pass_rule=r"must match ^kubectl delete pod [A-Za-z0-9-]+ -n [A-Za-z0-9-]+$ exactly.",
+    )
+
+    assert 0.0 < wrong_score < near_score < 1.0
+    assert near_score >= 0.55
+    assert wrong_score <= 0.40
+
+
 def test_final_benchmark_score_prioritizes_preservation_and_instruction() -> None:
     robust_score = final_benchmark_score(
         case_scores=[0.93, 0.91, 0.96, 0.88, 0.92, 0.94, 0.90, 0.95, 0.89, 0.87],

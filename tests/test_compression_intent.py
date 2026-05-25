@@ -12,6 +12,7 @@ from ctxsift.models.text_profile_common import (
     build_repair_messages,
     build_standard_text_messages,
     normalize_instruction_aware_output,
+    recover_scaffold_prefixed_output,
     validate_instruction_aware_output,
 )
 from ctxsift.types import ExtractedSignal
@@ -370,6 +371,43 @@ def test_plain_text_visible_thought_preamble_is_trimmed_and_soft_penalized_raw()
     assert raw_validation.status == "soft_accepted"
     assert "thought_leakage_sparse" in raw_validation.quality_flags
     assert normalized_validation.status == "accepted"
+
+
+def test_recovery_can_be_disabled_per_request() -> None:
+    request = _request(
+        CompressionIntent.SUMMARY,
+        instruction="Summarize the failure.",
+        raw_input="ImportError: cannot import name settings from app.config",
+    )
+    disabled_request = ModelCompressionInput(
+        intent=request.intent,
+        instruction=request.instruction,
+        raw_input=request.raw_input,
+        extracted_signal=request.extracted_signal,
+        max_output_tokens=request.max_output_tokens,
+        required_anchors=request.required_anchors,
+        recovery_enabled=False,
+    )
+    scaffolded = (
+        "Instruction:\n"
+        "Summarize the failure.\n"
+        "Raw output:\n"
+        "ImportError: cannot import name settings from app.config"
+    )
+
+    enabled = recover_scaffold_prefixed_output(
+        request,
+        normalize_instruction_aware_output(request, scaffolded),
+        normalize_output=normalize_instruction_aware_output,
+    )
+    disabled = recover_scaffold_prefixed_output(
+        disabled_request,
+        normalize_instruction_aware_output(disabled_request, scaffolded),
+        normalize_output=normalize_instruction_aware_output,
+    )
+
+    assert enabled == "ImportError: cannot import name settings from app.config"
+    assert disabled.startswith("Instruction:\nSummarize the failure.")
 
 
 def test_plain_text_dense_visible_thought_leakage_is_rejected() -> None:
