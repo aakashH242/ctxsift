@@ -1356,12 +1356,71 @@ def render_html_report(
       gap: 6px;
     }
 
-    .score-formula {
-      max-width: 280px;
+    .formula-shell {
+      display: grid;
+      gap: 10px;
+      padding: 0;
+      overflow: hidden;
+    }
+
+    .formula-details {
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      background: rgba(5, 8, 10, 0.98);
+    }
+
+    .formula-details summary {
+      list-style: none;
+      cursor: pointer;
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      font-weight: 600;
+    }
+
+    .formula-details summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .formula-details summary::after {
+      content: "Expand";
       color: var(--muted);
-      font-size: 0.68rem;
-      line-height: 1.35;
-      text-align: right;
+      font-family: var(--mono);
+      font-size: 0.74rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .formula-details[open] summary::after {
+      content: "Collapse";
+    }
+
+    .formula-body {
+      border-top: 1px solid var(--border);
+      padding: 14px 16px 16px;
+      display: grid;
+      gap: 12px;
+    }
+
+    .formula-copy {
+      color: var(--muted);
+      line-height: 1.6;
+      max-width: 90ch;
+    }
+
+    .formula-code {
+      margin: 0;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(2, 5, 7, 0.98);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 0.82rem;
+      line-height: 1.55;
+      white-space: pre-wrap;
     }
 
     .winner-scenario,
@@ -1851,6 +1910,28 @@ def render_html_report(
           <div><strong>Generated</strong><span class="mono">__GENERATED__</span></div>
         </div>
       </div>
+    </section>
+
+    <section class="panel formula-shell">
+      <details class="formula-details" id="score-formula-details">
+        <summary>How scoring works</summary>
+        <div class="formula-body">
+          <div class="formula-copy">
+            The headline score is the recovered score. Each case first gets a case score, then the scenario rolls those case scores into a quality core and applies a mild latency factor. Validation, visible-thought leakage, and instruction-following penalties are already baked into each case score.
+          </div>
+          <pre class="formula-code">case_score =
+  validation_factor *
+  thought_penalty *
+  instruction_penalty *
+  blended_quality
+
+quality_core = 0.80 * mean(case_scores) + 0.20 * p10(case_scores)
+
+latency_factor = clamp(0.85, 1.00, (2000ms / observed_ms)^0.15)
+
+final_score = 100 * quality_core * latency_factor</pre>
+        </div>
+      </details>
     </section>
 
     <section class="grid track-cards mode-collective" id="collective-overview">
@@ -3493,22 +3574,18 @@ def render_html_report(
       const score = document.createElement("div");
       score.className = "score-chip warn";
       score.textContent = `Score ${fmtScore(best.finalScore)}`;
-      const scoreFormula = document.createElement("div");
-      scoreFormula.className = "score-formula";
-      scoreFormula.textContent = "100 x quality_core x latency, where case_score already includes validation, thought, and instruction penalties, and quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)";
-      scoreStack.append(score, scoreFormula);
+      scoreStack.append(score);
       top.append(copy, scoreStack);
 
       const stats = document.createElement("div");
       stats.className = "winner-stats";
       [
-        ["Success / exact", `${fmtPct(best.successRate)} / ${fmtPct(best.exactPassRate)}`],
+        ["Accepted / soft / rejected", `${best.acceptedCount} / ${best.softAcceptedCount} / ${best.rejectedCount}`],
         ["Avg / p95 latency", `${fmtLatency(best.avgInferenceMs)} / ${fmtLatency(best.p95InferenceMs)}`],
-        ["Preserve", `${fmtPct(best.avgPreservationRatio)} avg • ${fmtPct(best.maxPreservationRatio)} max`],
-        ["Quality core / latency", `${fmtPct(best.qualityCore)} / ${best.latencyFactor.toFixed(3)}`],
+        ["Recovered / raw score", `${fmtScore(best.finalScore)} / ${fmtScore(best.rawFinalScore)}`],
+        ["Recovery lift", `${best.recoveryLift >= 0 ? "+" : ""}${fmtScore(best.recoveryLift)}`],
+        ["Success / exact", `${fmtPct(best.successRate)} / ${fmtPct(best.exactPassRate)}`],
         ["Quality / format", `${fmtPct(best.avgQualityRatio)} / ${fmtPct(best.avgFormatRatio)}`],
-        ["Instruction / brevity", `${fmtPct(best.avgInstructionRatio)} / ${fmtPct(best.avgBrevityRatio)}`],
-        ["Recovered thought", `${fmtPct(best.avgThoughtLeakageDensity)} avg • ${best.avgThoughtMarkerCount.toFixed(2)} markers`],
       ].forEach(([label, value]) => {
         const item = document.createElement("div");
         item.className = "detail-item";
