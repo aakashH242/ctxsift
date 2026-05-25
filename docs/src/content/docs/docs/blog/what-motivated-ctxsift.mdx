@@ -32,7 +32,7 @@ what was asked for and returns it to the agent.
 
 Distill example:
 
-```bash
+```bash frame="none"
 $ pytest -q | distill "Return only the failing tests. No explanations."
 tests/api/test_users.py::test_create_user_requires_email
 tests/jobs/test_reconcile.py::TestReconcile::test_retries_deadlock

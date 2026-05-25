@@ -19,15 +19,15 @@ It does three things in one command:
 
 Pipe any command's output directly into `ctxsift compress`:
 
-```bash
-pytest -q | ctxsift compress "show only failing tests and the files involved"
+```bash frame="none"
+pytest -q | ctxsift compress --intent summary "show only failing tests and the files involved"
 ```
 
-```bash
+```bash frame="none"
 pnpm build 2>&1 | ctxsift compress --intent summary "summarize build errors and point out misbehaving files"
 ```
 
-```bash
+```bash frame="none"
 cat large-log-file.txt | ctxsift compress --intent recall "extract error lines and affected service names"
 ```
 
@@ -37,11 +37,11 @@ Pipe mode reads stdin as the raw input. CtxSift does not know the exit code, dur
 
 Let CtxSift run the command itself using `--` as a separator:
 
-```bash
+```bash frame="none"
 ctxsift compress --intent summary "summarize build errors" -- pnpm build
 ```
 
-```bash
+```bash frame="none"
 ctxsift compress --intent exact-lines "return only the failing test ids" -- pytest -q
 ```
 
@@ -55,20 +55,28 @@ Prefer command capture mode when the exit code or stderr matter to the agent, or
 
 ## The `--intent` flag
 
-The `--intent` flag tells CtxSift what output contract the model should follow. It changes the prompt, the validation rules applied to the output, and how the benchmark scores the result.
+`--intent` is required. It tells CtxSift what output contract the model should follow, changes the prompt and validation rules, and determines what kinds of outputs are considered acceptable for caching and benchmarking.
 
 | Intent | What it produces | Use when |
 |---|---|---|
-| `summary` | Plain-text prose summary | You want a readable narrative of what happened |
-| `recall` | Plain-text summary optimized for later retrieval | You want to store a record and find it again later |
-| `exact-lines` | Exact lines quoted from the raw input | You need specific lines pulled verbatim (e.g. test ids, error lines) |
-| `exact-format` | Output in the exact format the instruction specifies | You need a specific structural shape (e.g. one key per line, numbered list) |
-| `json` | Valid JSON | You need machine-readable output |
-| `yaml` | Valid YAML | You need structured configuration or key-value output |
-| `table` | Markdown table | You need comparison or tabular data |
-| `bullet-list` | Markdown bullet list | You need a scannable list of items |
+| `summary` | Plain-text prose summary | You want a readable current-step explanation and the exact final text shape is not critical |
+| `recall` | Plain-text summary optimized for later retrieval | You are compressing evidence mainly so it can be found and trusted again after context compaction or task switching |
+| `exact-lines` | Exact lines quoted from the raw input | You need verbatim anchors only, such as failing test ids, package names, first real error lines, or stack frames |
+| `exact-format` | Output in the exact format the instruction specifies | You need one strict textual shape, such as `SAFE|REVIEW|UNSAFE`, one command, one path, or one key per line |
+| `json` | Valid JSON | Another tool, parser, or downstream step will consume machine-readable objects or arrays |
+| `yaml` | Valid YAML | You need structured config-like output or human-editable key-value structure |
+| `table` | Markdown table | You need side-by-side comparison across rows and columns |
+| `bullet-list` | Markdown bullet list | You need a short scannable checklist or grouped findings list |
 
-```bash
+The practical rule is:
+
+- Use `summary` for "tell me what matters right now."
+- Use `recall` for "store durable evidence I will want to search later."
+- Use `exact-lines` when every returned line must already exist in the input.
+- Use `exact-format` when the model must emit one strict text shape but not necessarily verbatim lines.
+- Use the structured intents when the next step benefits from a parser-friendly or scan-friendly schema.
+
+```bash frame="none"
 # Return exact lines from the output — great for test ids, file paths
 ctxsift compress --intent exact-lines "return only the failing pytest test ids" -- pytest -q
 
@@ -79,7 +87,7 @@ ctxsift compress --intent json "extract each error as {file, line, message}" -- 
 ctxsift compress --intent bullet-list "list all packages that failed to install" -- pnpm install
 ```
 
-If `--intent` is not passed, CtxSift defaults to `summary`.
+Structured intents (`json`, `yaml`, `table`, `bullet-list`) all share the same "structured" validation family internally, but each one asks the model for a different concrete surface format.
 
 ---
 
@@ -156,13 +164,13 @@ This means the agent still gets output it can work with, and the failure is visi
 
 ## Options
 
-```bash
-ctxsift compress [OPTIONS] INSTRUCTION [-- COMMAND [ARGS]...]
+```bash frame="none"
+ctxsift compress --intent INTENT [OPTIONS] INSTRUCTION [-- COMMAND [ARGS]...]
 ```
 
 | Option | Description |
 |---|---|
-| `--intent` | Output contract: `summary`, `recall`, `exact-lines`, `exact-format`, `json`, `yaml`, `table`, `bullet-list`. Default: `summary` |
+| `--intent` | Required output contract: `summary`, `recall`, `exact-lines`, `exact-format`, `json`, `yaml`, `table`, `bullet-list` |
 | `--max-output-tokens` | Override the max compressed output size for this run |
 | `INSTRUCTION` | Natural-language instruction for the model |
 | `-- COMMAND` | Optional: run this command and capture its output instead of reading stdin |

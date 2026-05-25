@@ -18,6 +18,30 @@ class ModelOutputRejectedError(BackendUnavailableError):
     """Raised when a backend runs but its output fails the compression contract."""
 
 
+@dataclass(slots=True)
+class CompressionTrace:
+    """Optional benchmark trace for raw and recovered candidate outputs."""
+
+    first_pass_raw_output: str = ""
+    first_pass_recovered_output: str = ""
+    repair_pass_raw_output: str = ""
+    repair_pass_recovered_output: str = ""
+    raw_selected_output: str = ""
+    recovered_selected_output: str = ""
+
+    def record_first_pass(self, *, raw_output: str, recovered_output: str) -> None:
+        self.first_pass_raw_output = raw_output
+        self.first_pass_recovered_output = recovered_output
+
+    def record_repair_pass(self, *, raw_output: str, recovered_output: str) -> None:
+        self.repair_pass_raw_output = raw_output
+        self.repair_pass_recovered_output = recovered_output
+
+    def record_selected_outputs(self, *, raw_output: str, recovered_output: str) -> None:
+        self.raw_selected_output = raw_output
+        self.recovered_selected_output = recovered_output
+
+
 @dataclass(frozen=True)
 class ModelCompressionInput:
     """Structured input passed to one model backend."""
@@ -28,7 +52,9 @@ class ModelCompressionInput:
     extracted_signal: ExtractedSignal
     max_output_tokens: int
     required_anchors: tuple[str, ...] = ()
+    recovery_enabled: bool = True
     evaluation_context: Literal["prod", "benchmark"] = "prod"
+    trace: CompressionTrace | None = None
 
 
 @dataclass(frozen=True)

@@ -35,64 +35,68 @@ function createCompressionShowcase(
 
 export const compressionShowcases: CompressionShowcase[] = [
   createCompressionShowcase({
-    id: 'git-push-rejected',
-    title: 'Push rejection recall',
+    id: 'systemd-config-restart-loop',
+    title: 'Service restart-loop summary',
+    domain: 'systemd',
+    intent: 'summary',
+    command: 'systemctl restart api.service',
+    rawTokens: 430,
+    outputTokens: 25,
+    rawPreview: `$ systemctl restart api.service
+Job for api.service failed because the control process exited with error code.
+See "systemctl status api.service" and "journalctl -u api.service -n 50" for details.
+$ systemctl status api.service --no-pager
+* api.service - HTTP API
+May 16 11:27:40 buildbox api-server[21871]: {"level":"error","msg":"parse config","file":"/etc/api/config.yaml","line":17,"error":"yaml: unmarshal errors: line 17: field timeuot not found in type config.Server"}
+May 16 11:27:41 buildbox systemd[1]: api.service: Start request repeated too quickly.`,
+    compressedOutput:
+      'api.service fails due to a config error at /etc/api/config.yaml line 17: unexpected field "timeuot".',
+    sourceLabel:
+      'Source: benchmark fixture systemd-02 and latest remote gpt-4.1 benchmark output',
+  }),
+  createCompressionShowcase({
+    id: 'git-clone-connection-reset',
+    title: 'Clone failure recall',
     domain: 'git',
     intent: 'recall',
-    command: 'git push origin main',
-    rawTokens: 175,
-    outputTokens: 35,
-    rawPreview: `$ git push origin main
-...
-To https://github.com/example/mono-app.git
- ! [rejected]        main -> main (non-fast-forward)
-error: failed to push some refs to 'https://github.com/example/mono-app.git'
-hint: Updates were rejected because the tip of your current branch is behind
-hint: its remote counterpart. Integrate the remote changes before pushing again.`,
+    command: 'git clone --progress https://github.com/example/very-large-repo.git',
+    rawTokens: 461,
+    outputTokens: 32,
+    rawPreview: `$ git clone --progress https://github.com/example/very-large-repo.git
+Cloning into 'very-large-repo'...
+remote: Enumerating objects: 248731, done.
+remote: Compressing objects: 100% (84791/84791), done.
+Receiving objects:  64% (159188/248731), 125.01 MiB | 210.00 KiB/s
+error: RPC failed; curl 56 Recv failure: Connection reset by peer
+fetch-pack: unexpected disconnect while reading sideband packet
+fatal: early EOF
+fatal: fetch-pack: invalid index-pack output`,
     compressedOutput:
-      "git push origin main was rejected with main -> main (non-fast-forward) and error: failed to push some refs to 'https://github.com/example/mono-app.git'",
+      'git clone --progress https://github.com/example/very-large-repo.git failed with curl 56 Connection reset by peer and fetch-pack: invalid index-pack output',
     sourceLabel:
-      'Source: benchmark fixture git-02 and stored CtxSift output',
+      'Source: benchmark fixture git-03 and latest remote gpt-4.1 benchmark output',
   }),
   createCompressionShowcase({
-    id: 'docker-build-missing-entrypoint',
-    title: 'Docker build failure recall',
-    domain: 'docker',
+    id: 'compose-app-exit-after-migrations',
+    title: 'Compose startup recall',
+    domain: 'docker-compose',
     intent: 'recall',
-    command: 'docker build -t api:dev .',
-    rawTokens: 425,
-    outputTokens: 79,
-    rawPreview: `$ docker build -t api:dev .
-...
-#9 [5/6] COPY docker/entrypoint.sh /entrypoint.sh
-#9 ERROR: failed to calculate checksum of ref 1f3d3b8a9e2e::9ng9it1k3b: "/docker/entrypoint.sh": not found
-------
- > [5/6] COPY docker/entrypoint.sh /entrypoint.sh:
-------
-Dockerfile:14`,
+    command: 'docker compose up --build',
+    rawTokens: 364,
+    outputTokens: 28,
+    rawPreview: `$ docker compose up --build
+[+] Running 3/3
+[ok] Network demo_default     Created
+[ok] Container demo-db-1      Created
+[ok] Container demo-app-1     Created
+db-1   | database system is ready to accept connections
+app-1  | applying migrations
+app-1  | ERROR sqlalchemy.exc.ProgrammingError: relation "tenant_settings" does not exist
+app-1 exited with code 1
+Aborting on container exit...`,
     compressedOutput:
-      'docker build -t api:dev . failed at Dockerfile:14 on COPY docker/entrypoint.sh /entrypoint.sh because /docker/entrypoint.sh not found; error: failed to solve: failed to calculate checksum of ref 1f3d3b8a9e2e::9ng9it1k3b: "/docker/entrypoint.sh": not found',
+      'docker compose up --build, demo-app-1, tenant_settings, sqlalchemy.exc.ProgrammingError, app-1 exited with code 1',
     sourceLabel:
-      'Source: benchmark fixture docker-01 and stored CtxSift output',
-  }),
-  createCompressionShowcase({
-    id: 'make-integration-migration-miss',
-    title: 'Integration failure summary',
-    domain: 'mixed',
-    intent: 'summary',
-    command: 'make integration',
-    rawTokens: 137,
-    outputTokens: 27,
-    rawPreview: `$ make integration
-[stdout] running migrations
-[stdout] applying 202605010915_add_accounts_table.sql
-[stdout] applying 202605071130_add_tokens_table.sql
-[stderr] warning: locale not set, falling back to C.UTF-8
-[stderr] psql:migrations/202605121045_add_login_audit.sql: No such file or directory
-make: *** [integration] Error 2`,
-    compressedOutput:
-      'make integration failed with Error 2 because psql could not find the file migrations/202605121045_add_login_audit.sql.',
-    sourceLabel:
-      'Source: benchmark fixture mixed-02 and stored CtxSift output',
+      'Source: benchmark fixture docker-compose-02 and latest remote gpt-4.1 benchmark output',
   }),
 ];

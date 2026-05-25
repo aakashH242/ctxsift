@@ -13,7 +13,6 @@ from typing import Any, Iterable, Sequence
 import webbrowser
 
 from benchmark.loader import load_cases
-from benchmark.scoring import final_benchmark_score, latency_factor_score, quality_core_score
 from benchmark.stats import percentile
 
 
@@ -63,7 +62,10 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     input_paths = _normalize_input_paths(args.paths)
-    results = load_results(input_paths)
+    try:
+        results = load_results(input_paths)
+    except ValueError as error:
+        parser.error(str(error))
     if not results:
         parser.error("no benchmark result JSON files were found")
 
@@ -114,6 +116,123 @@ def _try_load_result_payload(path: Path) -> dict[str, Any] | None:
     return payload
 
 
+def _require_mapping(container: dict[str, Any], key: str, *, context: str) -> dict[str, Any]:
+    value = container.get(key)
+    if not isinstance(value, dict):
+        raise ValueError(f"{context} is missing required object field {key!r}")
+    return value
+
+
+def _require_case_rows(payload: dict[str, Any], *, path: Path) -> list[dict[str, Any]]:
+    cases = payload.get("cases")
+    context = str(path)
+    if not isinstance(cases, list):
+        raise ValueError(f"{context} is missing required list field 'cases'")
+    case_rows = [item for item in cases if isinstance(item, dict)]
+    if len(case_rows) != len(cases):
+        raise ValueError(f"{context} contains non-object case rows")
+    return case_rows
+
+
+def _require_numeric_fields(container: dict[str, Any], fields: Sequence[str], *, context: str) -> None:
+    missing = [field for field in fields if not isinstance(container.get(field), (int, float))]
+    if missing:
+        joined = ", ".join(repr(field) for field in missing)
+        raise ValueError(f"{context} is missing required numeric fields: {joined}")
+
+
+def _validate_current_result_schema(path: Path, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    context = str(path)
+    summary = _require_mapping(payload, "summary", context=context)
+    raw_summary = _require_mapping(summary, "raw_view", context=f"{context} summary")
+    _require_numeric_fields(
+        summary,
+        (
+            "case_count",
+            "success_count",
+            "accepted_count",
+            "soft_accepted_count",
+            "rejected_count",
+            "exact_pass_count",
+            "avg_inference_ms",
+            "p95_inference_ms",
+            "avg_exact_preservation_ratio",
+            "avg_summary_quality_ratio",
+            "avg_format_adherence_score",
+            "avg_instruction_following_score",
+            "avg_brevity_ratio",
+            "avg_thought_leakage_density",
+            "avg_thought_marker_count",
+            "avg_case_score",
+            "p10_case_score",
+            "quality_core",
+            "latency_factor",
+            "final_score",
+        ),
+        context=f"{context} summary",
+    )
+    _require_numeric_fields(
+        raw_summary,
+        (
+            "accepted_count",
+            "soft_accepted_count",
+            "rejected_count",
+            "exact_pass_count",
+            "avg_exact_preservation_ratio",
+            "avg_summary_quality_ratio",
+            "avg_format_adherence_score",
+            "avg_instruction_following_score",
+            "avg_brevity_ratio",
+            "avg_thought_leakage_density",
+            "avg_thought_marker_count",
+            "avg_case_score",
+            "p10_case_score",
+            "quality_core",
+            "final_score",
+        ),
+        context=f"{context} summary.raw_view",
+    )
+    case_rows = _require_case_rows(payload, path=path)
+    for index, case in enumerate(case_rows, start=1):
+        raw_view = _require_mapping(case, "raw_view", context=f"{context} case[{index}]")
+        _require_numeric_fields(
+            case,
+            (
+                "inference_ms",
+                "exact_preservation_ratio",
+                "summary_quality_ratio",
+                "format_adherence_score",
+                "instruction_following_score",
+                "brevity_ratio",
+                "thought_leakage_density",
+                "thought_marker_count",
+                "case_score",
+            ),
+            context=f"{context} case[{index}]",
+        )
+        _require_numeric_fields(
+            raw_view,
+            (
+                "exact_preservation_ratio",
+                "summary_quality_ratio",
+                "format_adherence_score",
+                "instruction_following_score",
+                "brevity_ratio",
+                "thought_leakage_density",
+                "thought_marker_count",
+                "case_score",
+            ),
+            context=f"{context} case[{index}].raw_view",
+        )
+        if "case_id" not in case:
+            raise ValueError(f"{context} case[{index}] is missing required field 'case_id'")
+        if "validation_status" not in case or "validation_status" not in raw_view:
+            raise ValueError(
+                f"{context} case[{index}] is missing required validation_status on recovered or raw view"
+            )
+    return case_rows
+
+
 def load_results(input_path: Path | Sequence[Path]) -> list[LoadedResult]:
     results: list[LoadedResult] = []
     for root in _normalize_input_paths(input_path):
@@ -121,16 +240,14 @@ def load_results(input_path: Path | Sequence[Path]) -> list[LoadedResult]:
             payload = _try_load_result_payload(candidate)
             if not payload:
                 continue
-            cases = payload.get("cases")
-            if not isinstance(cases, list):
-                continue
+            case_rows = _validate_current_result_schema(candidate, payload)
             results.append(
                 LoadedResult(
                     source_path=candidate,
                     scenario=dict(payload.get("scenario") or {}),
                     warmup=dict(payload.get("warmup") or {}),
                     summary=dict(payload.get("summary") or {}),
-                    cases=[item for item in cases if isinstance(item, dict)],
+                    cases=case_rows,
                 )
             )
     return results
@@ -262,31 +379,28 @@ def _scenario_family(scenario: dict[str, Any]) -> str:
 
 def build_case_row(case: dict[str, Any]) -> dict[str, Any]:
     error = _safe_str(case.get("error") or "", default="")
-    case_id = _safe_str(case.get("case_id") or case.get("id"))
+    case_id = _safe_str(case.get("case_id"))
+    raw_view = dict(case["raw_view"])
     return {
         "caseId": case_id,
-        "title": _safe_str(case.get("title") or case.get("prompt") or case.get("query")),
+        "title": _safe_str(case.get("title")),
         "domain": _safe_str(case.get("domain"), default="general"),
-        "inferenceMs": _as_float(case.get("inference_ms") or case.get("latency_ms")),
-        "exactPreservationRatio": _as_float(
-            case.get("exact_preservation_ratio")
-            or case.get("preservation_ratio")
-            or case.get("exact_ratio")
-        ),
-        "summaryQualityRatio": _as_float(
-            case.get("summary_quality_ratio")
-            or case.get("quality_ratio")
-        ),
+        "inferenceMs": _as_float(case["inference_ms"]),
+        "exactPreservationRatio": _as_float(case["exact_preservation_ratio"]),
+        "summaryQualityRatio": _as_float(case["summary_quality_ratio"]),
         "formatAdherenceScore": _as_float(case.get("format_adherence_score")),
-        "instructionFollowingScore": _as_float(
-            case.get("instruction_following_score")
-            or case.get("instructionFollowingScore")
-        ),
-        "brevityRatio": _as_float(case.get("brevity_ratio"), 1.0),
+        "instructionFollowingScore": _as_float(case["instruction_following_score"]),
+        "brevityRatio": _as_float(case["brevity_ratio"], 1.0),
+        "thoughtLeakageDensity": _as_float(case["thought_leakage_density"]),
+        "thoughtMarkerCount": _as_int(case["thought_marker_count"]),
         "validationStatus": _safe_str(case.get("validation_status"), default="accepted"),
         "family": _safe_str(case.get("family"), default="summary"),
-        "caseScore": _as_float(case.get("case_score")),
-        "hasCaseScore": "case_score" in case,
+        "caseScore": _as_float(case["case_score"]),
+        "rawCaseScore": _as_float(raw_view["case_score"]),
+        "rawThoughtLeakageDensity": _as_float(raw_view["thought_leakage_density"]),
+        "rawThoughtMarkerCount": _as_int(raw_view["thought_marker_count"]),
+        "rawValidationStatus": _safe_str(raw_view.get("validation_status"), default="n/a"),
+        "recoveryLift": _as_float(case["case_score"]) - _as_float(raw_view["case_score"]),
         "error": error,
         "status": "error" if error else "ok",
     }
@@ -306,6 +420,7 @@ def build_scenario_row(
 ) -> dict[str, Any]:
     scenario = result.scenario
     summary = result.summary
+    raw_summary = dict(summary["raw_view"])
     warmup = result.warmup
     run_label = _source_run_label(result.source_path)
     name = _safe_str(scenario.get("name") or scenario.get("id") or result.source_path.stem)
@@ -329,64 +444,30 @@ def build_scenario_row(
             }
             row["detailKey"] = detail_key
         cases.append(row)
-    inference_values = [row["inferenceMs"] for row in cases if row["inferenceMs"] > 0]
-    preservation_values = [row["exactPreservationRatio"] for row in cases]
-    quality_values = [row["summaryQualityRatio"] for row in cases]
-    format_values = [row["formatAdherenceScore"] for row in cases]
-    instruction_values = [row["instructionFollowingScore"] for row in cases]
-    brevity_values = [row["brevityRatio"] for row in cases]
-    case_scores = [row["caseScore"] for row in cases if row["hasCaseScore"]]
-    exact_hits = sum(1 for row in cases if row["exactPreservationRatio"] >= 0.999)
-    error_count = sum(1 for row in cases if row["error"])
-    case_count = len(cases)
-    success_count = case_count - error_count
-    avg_inference_ms = _as_float(summary.get("avg_inference_ms"), _mean(inference_values))
-    p95_inference_ms = _as_float(summary.get("p95_inference_ms"), percentile(inference_values, 0.95))
-    avg_preservation_ratio = _as_float(summary.get("avg_exact_preservation_ratio"), _mean(preservation_values))
-    avg_quality_ratio = _as_float(summary.get("avg_summary_quality_ratio"), _mean(quality_values))
-    avg_format_ratio = _as_float(summary.get("avg_format_adherence_score"), _mean(format_values))
-    avg_instruction_ratio = _as_float(
-      summary.get("avg_instruction_following_score"),
-      _mean(instruction_values),
-    )
-    avg_brevity_ratio = _as_float(summary.get("avg_brevity_ratio"), _mean(brevity_values))
-    avg_case_score = _as_float(summary.get("avg_case_score"), _mean(case_scores))
-    p10_case_score = _as_float(summary.get("p10_case_score"), percentile(case_scores, 0.10))
-    latency_factor = _as_float(
-        summary.get("latency_factor"),
-        latency_factor_score(avg_inference_ms) if inference_values else 0.85,
-    )
-    max_preservation_ratio = _as_float(summary.get("max_exact_preservation_ratio"), max(preservation_values, default=0.0))
+    avg_inference_ms = _as_float(summary["avg_inference_ms"])
+    p95_inference_ms = _as_float(summary["p95_inference_ms"])
+    avg_preservation_ratio = _as_float(summary["avg_exact_preservation_ratio"])
+    avg_quality_ratio = _as_float(summary["avg_summary_quality_ratio"])
+    avg_format_ratio = _as_float(summary["avg_format_adherence_score"])
+    avg_instruction_ratio = _as_float(summary["avg_instruction_following_score"])
+    avg_brevity_ratio = _as_float(summary["avg_brevity_ratio"])
+    avg_case_score = _as_float(summary["avg_case_score"])
+    p10_case_score = _as_float(summary["p10_case_score"])
+    latency_factor = _as_float(summary["latency_factor"])
+    max_preservation_ratio = max((row["exactPreservationRatio"] for row in cases), default=0.0)
     warmup_ms = _as_float(warmup.get("duration_ms") or warmup.get("warmup_ms"))
-    success_rate = _as_float(summary.get("success_rate"), success_count / case_count if case_count else 0.0)
-    exact_pass_rate = _as_float(summary.get("exact_pass_rate"), exact_hits / case_count if case_count else 0.0)
-    accepted_count = _as_int(summary.get("accepted_count"), success_count)
-    soft_accepted_count = _as_int(summary.get("soft_accepted_count"), 0)
-    rejected_count = _as_int(summary.get("rejected_count"), error_count)
-    exact_pass_count = _as_int(summary.get("exact_pass_count"), exact_hits)
+    case_count = _as_int(summary["case_count"])
+    success_count = _as_int(summary["success_count"])
+    accepted_count = _as_int(summary["accepted_count"])
+    soft_accepted_count = _as_int(summary["soft_accepted_count"])
+    rejected_count = _as_int(summary["rejected_count"])
+    exact_pass_count = _as_int(summary["exact_pass_count"])
+    error_count = sum(1 for row in cases if row["error"])
+    success_rate = success_count / case_count if case_count else 0.0
+    exact_pass_rate = exact_pass_count / case_count if case_count else 0.0
     family = _scenario_family(scenario)
-    case_scores_for_formula = case_scores if case_scores else None
-    final_score = _as_float(
-      summary.get("final_score"),
-      final_benchmark_score(
-        case_count=case_count,
-        success_count=success_count,
-        avg_exact_preservation_ratio=avg_preservation_ratio,
-        avg_summary_quality_ratio=avg_quality_ratio,
-        avg_instruction_following_score=avg_instruction_ratio,
-        avg_brevity_ratio=avg_brevity_ratio,
-      accepted_count=accepted_count,
-      soft_accepted_count=soft_accepted_count,
-        avg_inference_ms=avg_inference_ms,
-        p95_inference_ms=p95_inference_ms,
-        case_scores=case_scores_for_formula,
-        observed_latency_ms=avg_inference_ms,
-      ),
-    )
-    quality_core = _as_float(
-        summary.get("quality_core"),
-        (final_score / (100.0 * max(latency_factor, 1e-12))) if final_score > 0.0 else quality_core_score(case_scores),
-    )
+    final_score = _as_float(summary["final_score"])
+    quality_core = _as_float(summary["quality_core"])
     return {
         "key": key,
         "name": name,
@@ -407,11 +488,23 @@ def build_scenario_row(
         "avgFormatRatio": avg_format_ratio,
         "avgInstructionRatio": avg_instruction_ratio,
         "avgBrevityRatio": avg_brevity_ratio,
+        "avgThoughtLeakageDensity": _as_float(summary["avg_thought_leakage_density"]),
+        "avgThoughtMarkerCount": _as_float(summary["avg_thought_marker_count"]),
         "avgCaseScore": avg_case_score,
         "p10CaseScore": p10_case_score,
         "qualityCore": quality_core,
         "latencyFactor": latency_factor,
         "finalScore": final_score,
+        "rawFinalScore": _as_float(raw_summary["final_score"]),
+        "rawQualityCore": _as_float(raw_summary["quality_core"]),
+        "rawAvgCaseScore": _as_float(raw_summary["avg_case_score"]),
+        "rawP10CaseScore": _as_float(raw_summary["p10_case_score"]),
+        "rawAcceptedCount": _as_int(raw_summary["accepted_count"]),
+        "rawSoftAcceptedCount": _as_int(raw_summary["soft_accepted_count"]),
+        "rawRejectedCount": _as_int(raw_summary["rejected_count"]),
+        "rawAvgThoughtLeakageDensity": _as_float(raw_summary["avg_thought_leakage_density"]),
+        "rawAvgThoughtMarkerCount": _as_float(raw_summary["avg_thought_marker_count"]),
+        "recoveryLift": final_score - _as_float(raw_summary["final_score"]),
         "maxPreservationRatio": max_preservation_ratio,
         "successRate": success_rate,
         "exactPassRate": exact_pass_rate,
@@ -1854,6 +1947,11 @@ def render_html_report(
           </div>
         </div>
         <div class="visual-card">
+          <h3>Recovery Lift</h3>
+          <div class="visual-note">Each dot is one model. Farther right means a higher raw score. Above zero means deterministic recovery helped overall. Below zero means recovery hurt a little.</div>
+          <div class="visual-stage" id="recovery-lift-scatter"></div>
+        </div>
+        <div class="visual-card">
           <h3>Average vs P95 Latency</h3>
           <div class="visual-note">Yellow point = average run time. Cyan point = slowest 5% cutoff. Longer gap means less stable latency.</div>
           <div class="visual-stage visual-scroll" id="latency-dumbbell"></div>
@@ -1912,6 +2010,7 @@ def render_html_report(
       </div>
       <div class="panel">
         <h2>Scenario Summary</h2>
+        <div class="panel-note">Recovered score is the main score after deterministic cleanup, including safe visible-thought cleanup when possible. Raw score is the same run before that recovery step. Lift shows how much recovery helped.</div>
         <div class="table-wrap">
           <table>
             <thead>
@@ -1921,10 +2020,13 @@ def render_html_report(
                 <th data-sort-table="scenario" data-sort-key="warmupMs">Warmup</th>
                 <th data-sort-table="scenario" data-sort-key="avgInferenceMs">Avg s</th>
                 <th data-sort-table="scenario" data-sort-key="p95InferenceMs">P95 s</th>
-                <th data-sort-table="scenario" data-sort-key="finalScore">Final score</th>
+                <th data-sort-table="scenario" data-sort-key="finalScore">Recovered</th>
+                <th data-sort-table="scenario" data-sort-key="rawFinalScore">Raw</th>
+                <th data-sort-table="scenario" data-sort-key="recoveryLift">Lift</th>
                 <th data-sort-table="scenario" data-sort-key="avgPreservationRatio">Avg preserve</th>
                 <th data-sort-table="scenario" data-sort-key="avgQualityRatio">Avg quality</th>
                 <th data-sort-table="scenario" data-sort-key="avgInstructionRatio">Avg instruction</th>
+                <th data-sort-table="scenario" data-sort-key="avgThoughtLeakageDensity">Recovered thought</th>
                 <th data-sort-table="scenario" data-sort-key="maxPreservationRatio">Max preserve</th>
                 <th data-sort-table="scenario" data-sort-key="successRate">Success</th>
                 <th data-sort-table="scenario" data-sort-key="exactPassRate">Exact</th>
@@ -1972,6 +2074,7 @@ def render_html_report(
                 <th data-sort-table="slowest" data-sort-key="exactPreservationRatio">Preserve</th>
                 <th data-sort-table="slowest" data-sort-key="summaryQualityRatio">Quality</th>
                 <th data-sort-table="slowest" data-sort-key="instructionFollowingScore">Instruction</th>
+                <th data-sort-table="slowest" data-sort-key="thoughtLeakageDensity">Recovered thought</th>
                 <th data-sort-table="slowest" data-sort-key="status">Status</th>
               </tr>
             </thead>
@@ -2006,9 +2109,14 @@ def render_html_report(
               <th data-sort-table="cases" data-sort-key="caseLabel">Ask</th>
               <th data-sort-table="cases" data-sort-key="domain">Domain</th>
               <th data-sort-table="cases" data-sort-key="inferenceMs">Latency (s)</th>
+              <th data-sort-table="cases" data-sort-key="caseScore">Recovered</th>
+              <th data-sort-table="cases" data-sort-key="rawCaseScore">Raw</th>
+              <th data-sort-table="cases" data-sort-key="recoveryLift">Lift (pp)</th>
               <th data-sort-table="cases" data-sort-key="exactPreservationRatio">Preserve</th>
               <th data-sort-table="cases" data-sort-key="summaryQualityRatio">Quality</th>
               <th data-sort-table="cases" data-sort-key="instructionFollowingScore">Instruction</th>
+              <th data-sort-table="cases" data-sort-key="thoughtLeakageDensity">Recovered thought</th>
+              <th data-sort-table="cases" data-sort-key="rawThoughtLeakageDensity">Raw thought</th>
               <th data-sort-table="cases" data-sort-key="status">Status</th>
             </tr>
           </thead>
@@ -2057,6 +2165,22 @@ def render_html_report(
 
     function fmtLatency(ms) {
       return `${(Number(ms || 0) / 1000).toFixed(2)}s`;
+    }
+
+    function fmtMaybeScore(value) {
+      return value == null ? "n/a" : fmtScore(value);
+    }
+
+    function fmtMaybePct(value) {
+      return value == null ? "n/a" : fmtPct(value);
+    }
+
+    function fmtMaybeLift(value) {
+      return value == null ? "n/a" : `${value >= 0 ? "+" : ""}${Number(value).toFixed(2)}`;
+    }
+
+    function fmtCaseLift(value) {
+      return value == null ? "n/a" : `${value >= 0 ? "+" : ""}${(Number(value) * 100).toFixed(1)}pp`;
     }
 
     function fmtSeconds(ms) {
@@ -2258,7 +2382,7 @@ def render_html_report(
         if (!bucket) {
           return;
         }
-        const baseScore = item.hasCaseScore ? item.caseScore : (item.error ? 0 : Math.max(item.summaryQualityRatio, item.exactPreservationRatio));
+        const baseScore = item.caseScore;
         bucket.sum += Number(baseScore || 0);
         bucket.count += 1;
         if (!item.error && item.validationStatus !== "rejected") {
@@ -2375,6 +2499,100 @@ def render_html_report(
         });
         const title = svgNode("title");
         title.textContent = `${displayModelName(scenario.model)} (${familyLabel(scenario.family)})\nScore ${fmtScore(scenario.finalScore)}\nAverage latency ${fmtLatency(scenario.avgInferenceMs)}`;
+        circle.append(title);
+        svg.append(circle);
+      });
+      root.replaceChildren(
+        buildLegendRow([
+          { label: "CPU", color: trackColor("cpu") },
+          { label: "GPU", color: trackColor("gpu") },
+          { label: "REMOTE", color: trackColor("remote") },
+        ]),
+        svg,
+      );
+    }
+
+    function buildLinearTicks(minValue, maxValue, steps) {
+      if (!(Number.isFinite(minValue) && Number.isFinite(maxValue))) {
+        return [0];
+      }
+      if (Math.abs(maxValue - minValue) < 1e-9) {
+        return [minValue];
+      }
+      const ticks = [];
+      for (let index = 0; index <= steps; index += 1) {
+        ticks.push(minValue + ((maxValue - minValue) * index) / steps);
+      }
+      return ticks;
+    }
+
+    function renderRecoveryLiftScatter(scenarios) {
+      const root = document.getElementById("recovery-lift-scatter");
+      if (!scenarios.length) {
+        root.replaceChildren(emptyState("No scenarios selected."));
+        return;
+      }
+      const width = 760;
+      const height = 360;
+      const margin = { top: 16, right: 18, bottom: 42, left: 64 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const rawScores = scenarios.map((scenario) => Number(scenario.rawFinalScore || 0));
+      const lifts = scenarios.map((scenario) => Number(scenario.recoveryLift || 0));
+      const xMin = 0;
+      const xMax = Math.max(100, ...rawScores, 1);
+      const liftMin = Math.min(0, ...lifts);
+      const liftMax = Math.max(0, ...lifts);
+      const liftSpan = Math.max(1, liftMax - liftMin);
+      const yMin = liftMin - Math.max(0.25, liftSpan * 0.08);
+      const yMax = liftMax + Math.max(0.25, liftSpan * 0.08);
+      const xFor = (score) => margin.left + ((Number(score || 0) - xMin) / Math.max(1, xMax - xMin)) * innerWidth;
+      const yFor = (lift) => margin.top + innerHeight - ((Number(lift || 0) - yMin) / Math.max(1e-6, yMax - yMin)) * innerHeight;
+      const svg = svgNode("svg", { class: "chart-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Raw score versus recovery lift scatter plot" });
+      const grid = svgNode("g");
+      [0, 25, 50, 75, 100].filter((tick) => tick <= xMax).forEach((tick) => {
+        const x = xFor(tick);
+        grid.append(svgNode("line", { class: "chart-grid", x1: x, y1: margin.top, x2: x, y2: height - margin.bottom }));
+        const label = svgNode("text", { class: "chart-axis", x, y: height - margin.bottom + 18, "text-anchor": "middle" });
+        label.textContent = `${tick}`;
+        grid.append(label);
+      });
+      buildLinearTicks(yMin, yMax, 4).forEach((tick) => {
+        const y = yFor(tick);
+        const isZero = Math.abs(tick) < 1e-9;
+        grid.append(svgNode("line", {
+          class: isZero ? "chart-domain" : "chart-grid",
+          x1: margin.left,
+          y1: y,
+          x2: width - margin.right,
+          y2: y,
+          opacity: isZero ? 0.9 : undefined,
+        }));
+        const label = svgNode("text", { class: "chart-axis", x: margin.left - 8, y: y + 4, "text-anchor": "end" });
+        label.textContent = isZero ? "0" : fmtMaybeLift(tick);
+        grid.append(label);
+      });
+      svg.append(grid);
+      svg.append(svgNode("line", { class: "chart-domain", x1: margin.left, y1: height - margin.bottom, x2: width - margin.right, y2: height - margin.bottom }));
+      svg.append(svgNode("line", { class: "chart-domain", x1: margin.left, y1: margin.top, x2: margin.left, y2: height - margin.bottom }));
+      const xLabel = svgNode("text", { class: "chart-label", x: margin.left + innerWidth / 2, y: height - 8, "text-anchor": "middle" });
+      xLabel.textContent = "Raw final score";
+      svg.append(xLabel);
+      const yLabel = svgNode("text", { class: "chart-label", x: 16, y: margin.top + innerHeight / 2, transform: `rotate(-90 16 ${margin.top + innerHeight / 2})`, "text-anchor": "middle" });
+      yLabel.textContent = "Recovery lift";
+      svg.append(yLabel);
+      scenarios.forEach((scenario) => {
+        const circle = svgNode("circle", {
+          cx: xFor(scenario.rawFinalScore),
+          cy: yFor(scenario.recoveryLift),
+          r: 6,
+          fill: trackColor(scenario.track),
+          stroke: "rgba(255,255,255,0.85)",
+          "stroke-width": 1,
+          opacity: 0.92,
+        });
+        const title = svgNode("title");
+        title.textContent = `${displayModelName(scenario.model)} (${scenario.track.toUpperCase()})\nRaw ${fmtScore(scenario.rawFinalScore)}\nRecovered ${fmtScore(scenario.finalScore)}\nLift ${fmtMaybeLift(scenario.recoveryLift)}`;
         circle.append(title);
         svg.append(circle);
       });
@@ -2728,6 +2946,7 @@ def render_html_report(
       renderTrackToggle("visuals-track-toggle", "visualsFamily");
       const scenarios = visualScenarios();
       renderScatterPlot(scenarios);
+      renderRecoveryLiftScatter(scenarios);
       renderAcceptanceBreakdown(scenarios);
       renderLatencyDumbbell(scenarios);
       renderMetricHeatmap(scenarios);
@@ -3112,6 +3331,8 @@ def render_html_report(
     function headToHeadMetrics() {
       return [
         { label: "Final score", key: "finalScore", kind: "higher", format: fmtScore },
+        { label: "Raw score", key: "rawFinalScore", kind: "higher", format: fmtMaybeScore },
+        { label: "Recovery lift", key: "recoveryLift", kind: "higher", format: fmtMaybeLift },
         { label: "Quality core", key: "qualityCore", kind: "higher", format: fmtPct },
         { label: "Latency factor", key: "latencyFactor", kind: "higher", format: (value) => Number(value || 0).toFixed(3) },
         { label: "Warmup", key: "warmupMs", kind: "lower", format: fmtSeconds },
@@ -3122,6 +3343,7 @@ def render_html_report(
         { label: "Avg format", key: "avgFormatRatio", kind: "higher", format: fmtPct },
         { label: "Avg instruction", key: "avgInstructionRatio", kind: "higher", format: fmtPct },
         { label: "Avg brevity", key: "avgBrevityRatio", kind: "higher", format: fmtPct },
+        { label: "Recovered thought", key: "avgThoughtLeakageDensity", kind: "lower", format: fmtPct },
         { label: "Avg case score", key: "avgCaseScore", kind: "higher", format: fmtPct },
         { label: "P10 case score", key: "p10CaseScore", kind: "higher", format: fmtPct },
         { label: "Success", key: "successRate", kind: "higher", format: fmtPct },
@@ -3194,6 +3416,9 @@ def render_html_report(
       if (kind === "neutral") {
         return ["is-tie", "is-tie"];
       }
+      if (leftValue == null || rightValue == null) {
+        return ["is-tie", "is-tie"];
+      }
       if (leftValue === rightValue) {
         return ["is-tie", "is-tie"];
       }
@@ -3220,6 +3445,10 @@ def render_html_report(
       score.textContent = fmtScore(scenario.finalScore);
 
       top.append(copy, score);
+        const rawLine = document.createElement("div");
+        rawLine.className = "compare-card-meta";
+        rawLine.textContent = `Raw ${fmtMaybeScore(scenario.rawFinalScore)} • Lift ${fmtMaybeLift(scenario.recoveryLift)}`;
+        copy.append(rawLine);
 
       const badges = document.createElement("div");
       badges.className = "badge-row";
@@ -3366,7 +3595,7 @@ def render_html_report(
       score.textContent = `Score ${fmtScore(best.finalScore)}`;
       const scoreFormula = document.createElement("div");
       scoreFormula.className = "score-formula";
-      scoreFormula.textContent = "100 x quality_core x latency, where quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)";
+      scoreFormula.textContent = "100 x quality_core x latency, where case_score already includes validation, thought, and instruction penalties. Strict near-miss format outputs can earn partial credit, and quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)";
       scoreStack.append(score, scoreFormula);
       top.append(copy, scoreStack);
 
@@ -3379,6 +3608,7 @@ def render_html_report(
         ["Quality core / latency", `${fmtPct(best.qualityCore)} / ${best.latencyFactor.toFixed(3)}`],
         ["Quality / format", `${fmtPct(best.avgQualityRatio)} / ${fmtPct(best.avgFormatRatio)}`],
         ["Instruction / brevity", `${fmtPct(best.avgInstructionRatio)} / ${fmtPct(best.avgBrevityRatio)}`],
+        ["Recovered thought", `${fmtPct(best.avgThoughtLeakageDensity)} avg • ${best.avgThoughtMarkerCount.toFixed(2)} markers`],
       ].forEach(([label, value]) => {
         const item = document.createElement("div");
         item.className = "detail-item";
@@ -3576,7 +3806,7 @@ def render_html_report(
     function renderScenarioTable(scenarios) {
       const root = document.getElementById("scenario-table");
       if (!scenarios.length) {
-        root.replaceChildren(emptyRow("No scenarios selected for comparison.", 11));
+        root.replaceChildren(emptyRow("No scenarios selected for comparison.", 15));
         return;
       }
       const rows = sortRows(scenarios, "scenario", {
@@ -3586,9 +3816,12 @@ def render_html_report(
         avgInferenceMs: (item) => item.avgInferenceMs,
         p95InferenceMs: (item) => item.p95InferenceMs,
         finalScore: (item) => item.finalScore,
+        rawFinalScore: (item) => item.rawFinalScore ?? -1,
+        recoveryLift: (item) => item.recoveryLift ?? -999,
         avgPreservationRatio: (item) => item.avgPreservationRatio,
         avgQualityRatio: (item) => item.avgQualityRatio,
         avgInstructionRatio: (item) => item.avgInstructionRatio,
+        avgThoughtLeakageDensity: (item) => item.avgThoughtLeakageDensity,
         maxPreservationRatio: (item) => item.maxPreservationRatio,
         successRate: (item) => item.successRate,
         exactPassRate: (item) => item.exactPassRate,
@@ -3616,9 +3849,12 @@ def render_html_report(
           textCell(fmtLatency(item.avgInferenceMs)),
           textCell(fmtLatency(item.p95InferenceMs)),
           textCell(fmtScore(item.finalScore)),
+          textCell(fmtMaybeScore(item.rawFinalScore)),
+          textCell(fmtMaybeLift(item.recoveryLift)),
           textCell(fmtPct(item.avgPreservationRatio)),
           textCell(fmtPct(item.avgQualityRatio)),
           textCell(fmtPct(item.avgInstructionRatio)),
+          textCell(fmtPct(item.avgThoughtLeakageDensity)),
           textCell(fmtPct(item.maxPreservationRatio)),
           textCell(fmtPct(item.successRate)),
           textCell(fmtPct(item.exactPassRate)),
@@ -3666,7 +3902,7 @@ def render_html_report(
       const root = document.getElementById("slowest-case-table");
       const rows = computeSlowestCases(scenarios);
       if (!rows.length) {
-        root.replaceChildren(emptyRow("No case data available for the current selection.", 8));
+        root.replaceChildren(emptyRow("No case data available for the current selection.", 9));
         return;
       }
       const sorted = sortRows(rows, "slowest", {
@@ -3677,6 +3913,7 @@ def render_html_report(
         exactPreservationRatio: (item) => item.exactPreservationRatio,
         summaryQualityRatio: (item) => item.summaryQualityRatio,
         instructionFollowingScore: (item) => item.instructionFollowingScore,
+        thoughtLeakageDensity: (item) => item.thoughtLeakageDensity,
         status: (item) => item.status,
       });
       root.replaceChildren(...sorted.map((item) => {
@@ -3707,6 +3944,7 @@ def render_html_report(
           textCell(fmtPct(item.exactPreservationRatio)),
           textCell(fmtPct(item.summaryQualityRatio)),
           textCell(fmtPct(item.instructionFollowingScore)),
+          textCell(fmtPct(item.thoughtLeakageDensity)),
           textCell(item.error ? "error" : "ok", item.error ? "status-error" : "status-ok"),
         );
         return row;
@@ -3763,7 +4001,7 @@ def render_html_report(
         modelRoot.replaceChildren(emptyState("No scenario is available for the selected track."));
         detailRoot.replaceChildren(emptyState("Select a scenario above to inspect its per-case results."));
         visualRoot.replaceChildren();
-        caseRoot.replaceChildren(emptyRow("No case data for the current selection.", 7));
+        caseRoot.replaceChildren(emptyRow("No case data for the current selection.", 12));
         return;
       }
 
@@ -3784,6 +4022,10 @@ def render_html_report(
       score.textContent = fmtScore(scenario.finalScore);
       headTop.append(headCopy, score);
       modelHead.append(headTop);
+        const rawMeta = document.createElement("div");
+        rawMeta.className = "compare-card-meta";
+        rawMeta.textContent = `Raw ${fmtMaybeScore(scenario.rawFinalScore)} • Lift ${fmtMaybeLift(scenario.recoveryLift)}`;
+        modelHead.append(rawMeta);
       modelRoot.replaceChildren(modelHead);
 
       const visibleCases = state.caseMode === "failed"
@@ -3793,9 +4035,14 @@ def render_html_report(
         caseLabel: (item) => `${item.caseId} ${item.title}`,
         domain: (item) => item.domain,
         inferenceMs: (item) => item.inferenceMs,
+        caseScore: (item) => item.caseScore,
+        rawCaseScore: (item) => item.rawCaseScore ?? -1,
+        recoveryLift: (item) => item.recoveryLift ?? -999,
         exactPreservationRatio: (item) => item.exactPreservationRatio,
         summaryQualityRatio: (item) => item.summaryQualityRatio,
         instructionFollowingScore: (item) => item.instructionFollowingScore,
+        thoughtLeakageDensity: (item) => item.thoughtLeakageDensity,
+        rawThoughtLeakageDensity: (item) => item.rawThoughtLeakageDensity ?? -1,
         status: (item) => item.status,
       });
 
@@ -3805,17 +4052,24 @@ def render_html_report(
       statGrid.className = "detail-grid";
       [
         ["Scenario", scenarioLabel(scenario)],
-        ["Final score", fmtScore(scenario.finalScore)],
+        ["Recovered / raw score", `${fmtScore(scenario.finalScore)} / ${fmtMaybeScore(scenario.rawFinalScore)}`],
+        ["Recovery lift", fmtMaybeLift(scenario.recoveryLift)],
         ["Summary", `${fmtPct(scenario.successRate)} success • ${fmtPct(scenario.exactPassRate)} exact`],
         ["Avg instruction", fmtPct(scenario.avgInstructionRatio)],
         ["Avg quality", fmtPct(scenario.avgQualityRatio)],
         ["Avg format", fmtPct(scenario.avgFormatRatio)],
         ["Avg preserve", fmtPct(scenario.avgPreservationRatio)],
         ["Avg brevity", fmtPct(scenario.avgBrevityRatio)],
-        ["Avg / p10 case score", `${fmtPct(scenario.avgCaseScore)} / ${fmtPct(scenario.p10CaseScore)}`],
-        ["Quality core / latency", `${fmtPct(scenario.qualityCore)} / ${scenario.latencyFactor.toFixed(3)}`],
+        ["Recovered thought", `${fmtPct(scenario.avgThoughtLeakageDensity)} • ${scenario.avgThoughtMarkerCount.toFixed(2)} markers`],
+        ["Raw thought", `${fmtMaybePct(scenario.rawAvgThoughtLeakageDensity)} • ${scenario.rawAvgThoughtMarkerCount.toFixed(2)} markers`],
+        ["Recovered avg / p10 case", `${fmtPct(scenario.avgCaseScore)} / ${fmtPct(scenario.p10CaseScore)}`],
+        ["Raw avg / p10 case", `${fmtMaybePct(scenario.rawAvgCaseScore)} / ${fmtMaybePct(scenario.rawP10CaseScore)}`],
+        ["Recovered quality core / latency", `${fmtPct(scenario.qualityCore)} / ${scenario.latencyFactor.toFixed(3)}`],
+        ["Raw quality core", scenario.rawQualityCore == null ? "n/a" : fmtPct(scenario.rawQualityCore)],
         ["Max preserve", fmtPct(scenario.maxPreservationRatio)],
         ["Avg / p95 latency", `${fmtLatency(scenario.avgInferenceMs)} / ${fmtLatency(scenario.p95InferenceMs)}`],
+        ["Recovered accept / soft / reject", `${fmtInt(scenario.acceptedCount)} / ${fmtInt(scenario.softAcceptedCount)} / ${fmtInt(scenario.rejectedCount)}`],
+        ["Raw accept / soft / reject", `${fmtInt(scenario.rawAcceptedCount)} / ${fmtInt(scenario.rawSoftAcceptedCount)} / ${fmtInt(scenario.rawRejectedCount)}`],
         ["Case volume", `${fmtInt(scenario.caseCount)} asks • ${fmtInt(scenario.errorCount)} errors`],
       ].forEach(([label, value]) => {
         const item = document.createElement("div");
@@ -3832,7 +4086,7 @@ def render_html_report(
       renderDetailVisuals(scenario);
 
       if (!sortedCases.length) {
-        caseRoot.replaceChildren(emptyRow("No cases match the current detail filters.", 7));
+        caseRoot.replaceChildren(emptyRow("No cases match the current detail filters.", 12));
         return;
       }
       caseRoot.replaceChildren(...sortedCases.map((item) => {
@@ -3865,9 +4119,14 @@ def render_html_report(
           askCell,
           textCell(item.domain, "mono"),
           textCell(fmtLatency(item.inferenceMs)),
+          textCell(fmtPct(item.caseScore)),
+          textCell(fmtMaybePct(item.rawCaseScore)),
+          textCell(fmtCaseLift(item.recoveryLift)),
           textCell(fmtPct(item.exactPreservationRatio)),
           textCell(fmtPct(item.summaryQualityRatio)),
           textCell(fmtPct(item.instructionFollowingScore)),
+          textCell(fmtPct(item.thoughtLeakageDensity)),
+          textCell(fmtMaybePct(item.rawThoughtLeakageDensity)),
           textCell(item.error ? "error" : "ok", item.error ? "status-error" : "status-ok"),
         );
         return row;

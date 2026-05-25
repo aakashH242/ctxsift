@@ -17,7 +17,7 @@ CtxSift integrates with **LiteLLM** to handle remote requests. This means any pr
 
 Remote mode requires `litellm` and other networking dependencies. Install them using the `remote` extra:
 
-```bash
+```bash frame="none"
 uv tool install "ctxsift[remote]"
 ```
 
@@ -27,7 +27,7 @@ uv tool install "ctxsift[remote]"
 
 To route compression requests to a remote provider, you must configure the base URL, model name, and API key.
 
-```bash
+```bash frame="none"
 # Configure the API base endpoint
 ctxsift config set remote.base_url https://api.openai.com/v1
 
@@ -42,13 +42,34 @@ Once `remote.base_url` is non-empty, CtxSift automatically redirects all compres
 
 ---
 
+## Latest tested remote models
+
+These rows come from the latest local remote benchmark snapshot at `benchmark/results/remote-models-20260523T233753Z`. They are sorted by average latency, fastest first, because the practical remote choice is usually a latency-versus-quality tradeoff, not just a score chase. `Score` here means the benchmark's main recovered score.
+
+| Model | Avg. Inference (s) | Score | Comments |
+|---|:-:|:-:|---|
+| `gpt-4.1` | 1.33 | **88.17** | Best remote model in the current run and also the fastest among the top-tier results. Highest-quality hosted option right now. |
+| `gpt-4o` | 1.43 | 86.28 | Strong all-rounder with good speed and quality. Better current result than `gpt-4o-mini`, but with more rejects than `gpt-4.1`. |
+| `gpt-4o-mini` | 1.52 | 84.61 | Very fast and very reliable, with only 1 rejected case. Good hosted default when cost matters more than absolute top score. |
+| `gpt-4.1-mini` | 1.59 | 86.99 | Close to `gpt-4.1` quality while staying quick. Strong pick if you want most of the quality without using the flagship model. |
+| `gpt-5.4-nano` | 1.83 | 85.73 | Fast and solid in the current run. Worth considering if you specifically want this family. |
+| `gpt-5.4-mini` | 2.11 | 86.68 | Highest accepted-case count in the remote set, but slightly slower than the 4.1 and 4o family models above it. |
+| `gpt-5-nano` | 4.46 | 5.59 | Catastrophic benchmark result for CtxSift right now. Do not use this for compression. |
+| `gpt-5-mini` | 7.40 | 32.13 | Also performed poorly in the current run, with many empty or invalid outputs. Not recommended. |
+
+<Aside type="tip">
+If you want the strongest hosted result, use `gpt-4.1`. If you want a fast and cheaper everyday hosted default, `gpt-4o-mini` is the safest current pick.
+</Aside>
+
+---
+
 ## Provider examples
 
 Here are configuration commands for common model providers:
 
 ### OpenAI
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url "https://api.openai.com/v1"
 ctxsift config set remote.model_name "gpt-4o-mini"
 ctxsift config set remote.api_key "sk-proj-..."
@@ -56,7 +77,7 @@ ctxsift config set remote.api_key "sk-proj-..."
 
 ### Anthropic
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url "https://api.anthropic.com/v1"
 ctxsift config set remote.model_name "claude-3-5-haiku-20241022"
 ctxsift config set remote.api_key "sk-ant-..."
@@ -66,7 +87,7 @@ ctxsift config set remote.api_key "sk-ant-..."
 
 If you are hosting a model locally but on a separate server or container, route requests to the OpenAI-compatible proxy port:
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url "http://localhost:11434/v1" # Ollama port
 ctxsift config set remote.model_name "qwen2.5-coder:1.5b"
 ctxsift config set remote.api_key "ollama" # Dummy key
@@ -76,7 +97,7 @@ ctxsift config set remote.api_key "ollama" # Dummy key
 
 ## The `reasoning_mode` setting
 
-```bash
+```bash frame="none"
 ctxsift config set remote.reasoning_mode auto
 ```
 
@@ -104,7 +125,7 @@ sequenceDiagram
     participant Provider as Remote LLM API
     participant LocalDB as Local SQLite DB (sqlite-vec)
     
-    User/Agent->>CLI: ctxsift compress "summarize errors" -- pytest
+    User/Agent->>CLI: ctxsift compress --intent recall "summarize the failing tests and first useful error for later recall" -- pytest
     CLI->>Provider: Send raw command output & instruction
     Provider-->>CLI: Return compressed summary
     CLI->>LocalDB: Compute local vector embedding & store record

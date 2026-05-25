@@ -38,19 +38,23 @@ Before running the install commands, ensure your environment meets these system 
 
 ---
 
-## Choose your installation command
+## Choose your installation path
 
-Use `uv tool install` to install CtxSift in an isolated environment that is globally accessible on your terminal path.
+You can use standalone installer scripts given below or let your agent install **CtxSift** for you by using the installation skill.
+When installing manually, use `uv tool install` to install CtxSift in an your environment that is globally accessible on your terminal path.
 
 <InstallerDownloads title="Automated Installation" description="Install with standalone scripts or let your agent install it with the install skill."/>
 
 ---
 
+<details>
+<summary>Manual installation</summary>
+
 <Tabs>
   <TabItem label="Local (CPU)">
     Use this if you do not have a dedicated GPU. CtxSift will run compression locally using GGUF-quantized models via an embedded `llama.cpp` runtime.
 
-    ```bash
+    ```bash frame="none"
     uv tool install ctxsift
     ```
   </TabItem>
@@ -58,7 +62,7 @@ Use `uv tool install` to install CtxSift in an isolated environment that is glob
   <TabItem label="Local (GPU)">
     Use this if you have an NVIDIA GPU supporting CUDA. CtxSift will run local compression using PyTorch and Hugging Face `Transformers`.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[gpu]"
     ```
   </TabItem>
@@ -66,7 +70,7 @@ Use `uv tool install` to install CtxSift in an isolated environment that is glob
   <TabItem label="GPU with Quantization">
     For machines with limited VRAM (e.g., under 8 GB) that still want to run local GPU compression. This includes `bitsandbytes` to load models in 8-bit or 4-bit NormalFloat modes.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[gpu,quant]"
     ```
   </TabItem>
@@ -74,7 +78,7 @@ Use `uv tool install` to install CtxSift in an isolated environment that is glob
   <TabItem label="Remote Only">
     Select this to offload all compression tasks to hosted model providers (such as OpenAI, Anthropic, Gemini, or a local vLLM/Ollama network proxy) using LiteLLM. Recall embeddings will still run locally on CPU.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[remote]"
     ```
   </TabItem>
@@ -82,15 +86,77 @@ Use `uv tool install` to install CtxSift in an isolated environment that is glob
   <TabItem label="All Extras">
     Installs every dependency, including GPU drivers, quantization libraries, and remote proxy integrations.
 
-    ```bash
+    ```bash frame="none"
     uv tool install "ctxsift[all]"
     ```
   </TabItem>
 </Tabs>
 
+</details>
+
+## Install the agent skill
+
+After installing the CLI, the recommended way to install the CtxSift agent skill is through guided setup:
+
+```bash frame="none"
+ctxsift configure
+```
+
+The `configure` command can install the skill for a much wider host list now, including `copilot`, `antigravity`, `claude-code`, `codex`, `cursor`, `windsurf-cascade`, `cline`, `roo-code`, `kilo-code`, `continue`, `aider`, `opencode`, `gemini-cli`, `qwen-code`, `kiro`, `jetbrains-junie`, `openhands`, `zed-agent`, `sourcegraph-amp`, `augment-auggie`, `factory-droid`, `amazon-q-developer`, `replit-agent`, `devin`, `codegen`, `google-jules`, and `other`.
+
+Instead of typing host names manually, configure now shows a numbered multi-select list and then asks for global/workspace scope and target-path details only where needed.
+
+For the full prompt flow, supported targets, and scope details, see [Configure](/docs/getting-started/configure/#agent-skill-installation).
+
+If you prefer manual installation, download the packaged skill file from [here](https://raw.githubusercontent.com/aakashH242/ctxsift/refs/heads/main/src/ctxsift/agent_skill_template.md)
+
+## Supported agents
+
+CtxSift ships with first-class install support for a broad set of coding-agent hosts. The supported host decides two things during setup:
+
+- whether installation is available at `global`, `workspace`, or both scopes
+- whether CtxSift writes a dedicated `SKILL.md` file or updates a shared instruction surface such as `AGENTS.md`, `GEMINI.md`, or a rules/workflows folder
+
+The current support matrix is:
+
+| Agent | Global | Workspace | Typical target shape |
+|---|---|---|---|
+| `copilot` | Yes | Yes | Dedicated `SKILL.md` |
+| `antigravity` | Yes | Yes | Dedicated plugin skill |
+| `claude-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `codex` | Yes | No | Dedicated `SKILL.md` |
+| `cursor` | Yes | Yes | Dedicated `SKILL.md` |
+| `windsurf-cascade` | Yes | Yes | Workflow or rules file |
+| `cline` | Yes | Yes | Dedicated `SKILL.md` |
+| `roo-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `kilo-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `continue` | Yes | Yes | Rules file |
+| `aider` | Yes | Yes | Instruction file referenced from config |
+| `opencode` | Yes | Yes | Dedicated `SKILL.md` |
+| `gemini-cli` | Yes | Yes | Shared `GEMINI.md` |
+| `qwen-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `kiro` | Yes | Yes | Dedicated `SKILL.md` |
+| `jetbrains-junie` | No | Yes | Shared `AGENTS.md`-style file |
+| `openhands` | No | Yes | Dedicated `SKILL.md` |
+| `zed-agent` | Yes | Yes | Rules file |
+| `sourcegraph-amp` | Yes | Yes | Dedicated `SKILL.md` |
+| `augment-auggie` | Yes | Yes | Dedicated `SKILL.md` |
+| `factory-droid` | Yes | Yes | Dedicated `SKILL.md` |
+| `amazon-q-developer` | No | Yes | Rules file |
+| `replit-agent` | No | Yes | Shared `replit.md` |
+| `devin` | No | Yes | Shared `AGENTS.md` |
+| `codegen` | No | Yes | Shared `AGENTS.md` |
+| `google-jules` | No | Yes | Shared `AGENTS.md` |
+| `other` | Custom | Custom | Any path you choose |
+
+`other` is the fallback when your agent is not on the built-in list or when you want to install the skill into a different instruction file or folder than the suggested default.
+
+Hosts that use shared instruction files are handled conservatively. CtxSift writes only its own managed block so that the rest of your existing project or user instructions stay intact.
+
+---
 If `ctxsift` is not found after installation, update your shell integration and reopen the terminal:
 
-```bash
+```bash frame="none"
 uv tool update-shell
 ```
 
@@ -107,12 +173,12 @@ To force `uv` to compile or install CtxSift with a specific PyTorch index aligni
 ### Examples:
 
 **For CUDA 12.1 (Standard default):**
-```bash
+```bash frame="none"
 uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
 ```
 
 **For CUDA 11.8 (Older GPU rigs):**
-```bash
+```bash frame="none"
 uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu118
 ```
 
@@ -125,7 +191,7 @@ Once the installation is complete, verify that the `ctxsift` command is availabl
 ### 1. Run the system diagnostics probe
 Run `ctxsift doctor` to check the status of your drivers, databases, and dependencies.
 
-```bash
+```bash frame="none"
 ctxsift doctor
 ```
 
@@ -141,7 +207,7 @@ A healthy environment should output positive signals for SQLite, Git, and your s
 ### 2. Test a basic compression pipeline
 Confirm the CLI can execute compression pipelines by running a mock string through a dry-run compression call:
 
-```bash
+```bash frame="none"
 echo "Line 1: critical error occurred
 Line 2: debug trace details
 Line 3: closing process" | ctxsift compress --intent summary "extract error details"

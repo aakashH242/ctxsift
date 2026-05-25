@@ -21,9 +21,7 @@ def isolated_config_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
     return platform_path
 
 
@@ -117,6 +115,7 @@ def test_configure_writes_workspace_scope_by_default(
     assert 'gguf_filename = "granite-4.0-350m-Q8_0.gguf"' in text
     assert 'quantization = "none"' in text
     assert 'model = "microsoft/harrier-oss-v1-0.6b"' in text
+    assert "recovery_enabled = true" in text
 
 
 def test_configure_can_set_local_model_cache_path(
@@ -142,6 +141,32 @@ def test_configure_can_set_local_model_cache_path(
     assert "Local model cache path override" in result.output
     text = isolated_config_paths.read_text(encoding="utf-8")
     assert 'model_cache_path = "D:/ctxsift-model-cache"' in text
+
+
+def test_configure_can_disable_response_recovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(configure_flow, "_cuda_available", lambda: False)
+
+    result = runner.invoke(
+        app,
+        ["configure"],
+        input=_configure_input(
+            compression_mode="local",
+            recovery_enabled="n",
+            save_target="global",
+            write_ignore_answer="",
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Keep deterministic response recovery enabled?" in result.output
+    assert "Unsure? Keep recovery enabled and run a benchmark" in result.output
+    text = isolated_config_paths.read_text(encoding="utf-8")
+    assert "recovery_enabled = false" in text
 
 
 def test_configure_hides_database_path_override_and_clears_existing_value(
@@ -403,6 +428,7 @@ def test_init_command_is_not_available() -> None:
 
 def _configure_input(
     compression_mode: str,
+    recovery_enabled: str = "",
     recall_default_limit: str = "10",
     recall_min_score: str = "120",
     weak_fallback_min_score: str = "90",
@@ -419,6 +445,7 @@ def _configure_input(
         "512",
         "90000",
         "1",
+        recovery_enabled,
     ]
     if compression_mode == "local":
         values.extend([local_device, ""])

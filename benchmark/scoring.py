@@ -8,10 +8,10 @@ import re
 from typing import Any, Sequence
 
 from benchmark.stats import percentile
+from ctxsift.compression.intent import CompressionIntent, canonical_mode_for_intent
 from ctxsift.models.base import ModelCompressionInput
 from ctxsift.models.text_profile_common import (
     has_requested_structure,
-    instruction_output_mode,
     is_plain_text_contract,
     validate_instruction_aware_output,
 )
@@ -64,16 +64,19 @@ _COMMAND_PREFIXES = (
     "./",
 )
 
-_FAMILY_WEIGHTS: dict[str, tuple[float, float, float, float]] = {
-    "recall": (0.45, 0.25, 0.20, 0.10),
-    "summary": (0.25, 0.40, 0.20, 0.15),
-    "explanation": (0.20, 0.50, 0.20, 0.10),
-    "structured": (0.20, 0.30, 0.40, 0.10),
-    "instruction_following": (0.20, 0.30, 0.40, 0.10),
-    "exact_format": (0.15, 0.10, 0.70, 0.05),
+_INTENT_WEIGHTS: dict[CompressionIntent, tuple[float, float, float, float]] = {
+    CompressionIntent.RECALL: (0.45, 0.25, 0.20, 0.10),
+    CompressionIntent.SUMMARY: (0.25, 0.40, 0.20, 0.15),
+    CompressionIntent.EXACT_LINES: (0.45, 0.10, 0.40, 0.05),
+    CompressionIntent.EXACT_FORMAT: (0.15, 0.10, 0.70, 0.05),
+    CompressionIntent.JSON: (0.20, 0.30, 0.40, 0.10),
+    CompressionIntent.YAML: (0.20, 0.30, 0.40, 0.10),
+    CompressionIntent.TABLE: (0.20, 0.30, 0.40, 0.10),
+    CompressionIntent.BULLET_LIST: (0.20, 0.30, 0.40, 0.10),
 }
-_DEFAULT_FAMILY_WEIGHTS = _FAMILY_WEIGHTS["summary"]
+_DEFAULT_INTENT_WEIGHTS = _INTENT_WEIGHTS[CompressionIntent.SUMMARY]
 _LATENCY_TARGET_MS = 2000.0
+_STRICT_NEAR_MISS_CAP = 0.75
 
 
 def missing_tokens(output: str, required_tokens: tuple[str, ...]) -> tuple[str, ...]:
@@ -141,7 +144,7 @@ def instruction_following_score(
     request: ModelCompressionInput,
     output: str,
     *,
-    family: str | None = None,
+    intent: CompressionIntent | None = None,
     output_mode: str | None = None,
     expected_output: str | None = None,
     required_anchors: tuple[str, ...] = (),
@@ -156,11 +159,12 @@ def instruction_following_score(
     validation = validate_instruction_aware_output(request, cleaned)
     if validation.status == "rejected":
         return 0.0
-    mode = _normalized_output_mode(output_mode or instruction_output_mode(request.instruction))
+    resolved_intent = intent or request.intent
+    mode = _resolved_output_mode(resolved_intent, output_mode)
     base_score = format_adherence_score(
         request,
         cleaned,
-        family=family or "",
+        intent=resolved_intent,
         output_mode=mode,
         expected_output=expected_output or "",
         format_check=format_check,
@@ -181,7 +185,7 @@ def format_adherence_score(
     request: ModelCompressionInput,
     output: str,
     *,
-    family: str = "",
+    intent: CompressionIntent | None = None,
     output_mode: str = "",
     expected_output: str = "",
     format_check: str = "none",
@@ -191,7 +195,8 @@ def format_adherence_score(
     cleaned = output.strip()
     if not cleaned:
         return 0.0
-    mode = _normalized_output_mode(output_mode or instruction_output_mode(request.instruction))
+    resolved_intent = intent or request.intent
+    mode = _resolved_output_mode(resolved_intent, output_mode)
     normalized_format = format_check.strip().casefold()
     if normalized_format == "exact_match":
         return _exact_match_score(cleaned, expected_output)
@@ -219,7 +224,7 @@ def format_adherence_score(
         return _table_shape_score(cleaned, expected_output)
     if mode == "regex_constrained":
         return _regex_shape_score(cleaned, expected_output, pass_rule)
-    if mode == "structured" or family.strip().casefold() in {"structured", "exact_format"}:
+    if mode == "structured" or canonical_mode_for_intent(resolved_intent) == "structured":
         return 1.0 if has_requested_structure(cleaned) else 0.5
     return 1.0 if is_plain_text_contract(cleaned) else 0.5
 
@@ -227,24 +232,31 @@ def format_adherence_score(
 def case_benchmark_score(
     *,
     validation_status: str,
-    family: str,
+    intent: CompressionIntent,
     anchor_score: float,
     semantic_score: float,
     format_score: float,
     brevity_score: float,
+    instruction_score: float,
+    thought_leakage_density: float = 0.0,
 ) -> float:
     """Return the per-case benchmark score before scenario aggregation."""
     validation_factor = _validation_factor(validation_status)
     if validation_factor <= 0.0:
         return 0.0
-    w_anchor, w_semantic, w_format, w_brevity = _family_weights(family)
+    w_anchor, w_semantic, w_format, w_brevity = _intent_weights(intent)
     blended = (
         (w_anchor * _clamp_ratio(anchor_score))
         + (w_semantic * _clamp_ratio(semantic_score))
         + (w_format * _clamp_ratio(format_score))
         + (w_brevity * _clamp_ratio(brevity_score))
     )
-    return validation_factor * blended
+    return (
+        validation_factor
+        * _thought_penalty(thought_leakage_density)
+        * _instruction_penalty(intent, instruction_score, format_score)
+        * blended
+    )
 
 
 def quality_core_score(case_scores: Sequence[float]) -> float:
@@ -262,41 +274,14 @@ def latency_factor_score(observed_latency_ms: float) -> float:
 
 def final_benchmark_score(
     *,
-    case_count: int,
-    success_count: int,
-    avg_exact_preservation_ratio: float = 0.0,
-    avg_summary_quality_ratio: float = 0.0,
-    avg_instruction_following_score: float = 0.0,
-    avg_brevity_ratio: float = 1.0,
-    accepted_count: int | None = None,
-    soft_accepted_count: int = 0,
-    avg_inference_ms: float = 0.0,
-    p95_inference_ms: float = 0.0,
-    case_scores: Sequence[float] | None = None,
-    observed_latency_ms: float | None = None,
+    case_scores: Sequence[float],
+    observed_latency_ms: float,
 ) -> float:
-    """Collapse scenario metrics into one headline score.
-
-    Prefer `case_scores` for the current formula. Aggregate-only inputs remain as a
-    legacy fallback for older persisted results.
-    """
-    if case_count <= 0:
+    """Collapse per-case scores into one headline score."""
+    if not case_scores:
         return 0.0
-    if case_scores is None:
-        case_scores = _legacy_case_scores(
-            case_count=case_count,
-            success_count=success_count,
-            avg_exact_preservation_ratio=avg_exact_preservation_ratio,
-            avg_summary_quality_ratio=avg_summary_quality_ratio,
-            avg_instruction_following_score=avg_instruction_following_score,
-            avg_brevity_ratio=avg_brevity_ratio,
-            accepted_count=accepted_count,
-            soft_accepted_count=soft_accepted_count,
-        )
     quality_core = quality_core_score(case_scores)
-    latency_factor = latency_factor_score(
-        observed_latency_ms if observed_latency_ms is not None else avg_inference_ms
-    )
+    latency_factor = latency_factor_score(observed_latency_ms)
     score = 100.0 * quality_core * latency_factor
     return max(0.0, min(100.0, score))
 
@@ -314,9 +299,8 @@ def _clamp_ratio(value: float) -> float:
     return max(0.0, min(1.0, value))
 
 
-def _family_weights(family: str) -> tuple[float, float, float, float]:
-    normalized = family.strip().casefold().replace("-", "_")
-    return _FAMILY_WEIGHTS.get(normalized, _DEFAULT_FAMILY_WEIGHTS)
+def _intent_weights(intent: CompressionIntent) -> tuple[float, float, float, float]:
+    return _INTENT_WEIGHTS.get(intent, _DEFAULT_INTENT_WEIGHTS)
 
 
 def _validation_factor(validation_status: str) -> float:
@@ -328,8 +312,34 @@ def _validation_factor(validation_status: str) -> float:
     return 0.0
 
 
+def _thought_penalty(thought_leakage_density: float) -> float:
+    density = _clamp_ratio(thought_leakage_density)
+    if density <= 0.0:
+        return 1.0
+    return max(0.65, 1.0 - (0.60 * density))
+
+
+def _instruction_penalty(
+    intent: CompressionIntent,
+    instruction_score: float,
+    format_score: float,
+) -> float:
+    clamped = _clamp_ratio(instruction_score)
+    if canonical_mode_for_intent(intent) == "plain-text":
+        return 0.75 + (0.25 * clamped)
+    strict_base = 0.40 + (0.60 * clamped)
+    format_weakness = 1.0 - _clamp_ratio(format_score)
+    return 1.0 - ((1.0 - strict_base) * format_weakness)
+
+
 def _normalized_output_mode(value: str) -> str:
     return value.strip().casefold().replace("-", "_")
+
+
+def _resolved_output_mode(intent: CompressionIntent, output_mode: str | None) -> str:
+    if output_mode:
+        return _normalized_output_mode(output_mode)
+    return _normalized_output_mode(canonical_mode_for_intent(intent))
 
 
 def _normalized_exact_text(text: str) -> str:
@@ -343,17 +353,83 @@ def _normalized_expected_lines(text: str) -> list[str]:
 def _exact_match_score(output: str, expected_output: str) -> float:
     if _normalized_exact_text(output) == _normalized_exact_text(expected_output):
         return 1.0
-    return _ordered_line_match_ratio(
-        _normalized_expected_lines(expected_output),
-        _normalized_expected_lines(output),
+    return max(
+        _ordered_line_match_ratio(
+            _normalized_expected_lines(expected_output),
+            _normalized_expected_lines(output),
+        ),
+        _strict_near_miss_text_score(output, expected_output),
     )
+
+
+def _strict_near_miss_text_score(output: str, expected_output: str) -> float:
+    expected = _normalized_exact_text(expected_output)
+    actual = _normalized_exact_text(output)
+    if not expected or not actual:
+        return 0.0
+    token_score = _strict_token_f1_score(expected, actual)
+    line_shape_score = _strict_line_shape_score(expected, actual)
+    prefix_score = _leading_token_prefix_ratio(expected, actual)
+    return min(
+        _STRICT_NEAR_MISS_CAP,
+        (0.70 * token_score) + (0.15 * line_shape_score) + (0.15 * prefix_score),
+    )
+
+
+def _strict_token_f1_score(expected_output: str, actual_output: str) -> float:
+    expected_tokens = _strict_tokens(expected_output)
+    actual_tokens = _strict_tokens(actual_output)
+    if not expected_tokens or not actual_tokens:
+        return 0.0
+    expected_counts = Counter(expected_tokens)
+    actual_counts = Counter(actual_tokens)
+    overlap = sum((expected_counts & actual_counts).values())
+    if overlap == 0:
+        return 0.0
+    precision = overlap / sum(actual_counts.values())
+    recall = overlap / sum(expected_counts.values())
+    return (2 * precision * recall) / (precision + recall)
+
+
+def _strict_tokens(text: str) -> tuple[str, ...]:
+    return tuple(token.casefold() for token in _TOKEN_RE.findall(text))
+
+
+def _strict_line_shape_score(expected_output: str, actual_output: str) -> float:
+    expected_lines = [line for line in expected_output.splitlines() if line.strip()]
+    actual_lines = [line for line in actual_output.splitlines() if line.strip()]
+    if not expected_lines or not actual_lines:
+        return 0.0
+    if len(expected_lines) == len(actual_lines):
+        return 1.0
+    if len(expected_lines) == 1 or len(actual_lines) == 1:
+        return 0.0
+    return min(len(expected_lines), len(actual_lines)) / max(len(expected_lines), len(actual_lines))
+
+
+def _leading_token_prefix_ratio(expected_output: str, actual_output: str, limit: int = 3) -> float:
+    expected_tokens = _strict_tokens(expected_output)
+    actual_tokens = _strict_tokens(actual_output)
+    if not expected_tokens or not actual_tokens:
+        return 0.0
+    max_prefix = min(limit, len(expected_tokens), len(actual_tokens))
+    if max_prefix <= 0:
+        return 0.0
+    matches = 0
+    for expected_token, actual_token in zip(expected_tokens[:max_prefix], actual_tokens[:max_prefix]):
+        if expected_token != actual_token:
+            break
+        matches += 1
+    return matches / max_prefix
 
 
 def _regex_shape_score(output: str, expected_output: str, pass_rule: str) -> float:
     pattern = _regex_pattern_from_pass_rule(pass_rule)
     if pattern is None:
-        return 1.0 if _normalized_exact_text(output) == _normalized_exact_text(expected_output) else 0.0
-    return 1.0 if pattern.fullmatch(output.strip()) else 0.0
+        return _exact_match_score(output, expected_output)
+    if pattern.fullmatch(output.strip()):
+        return 1.0
+    return _strict_near_miss_text_score(output, expected_output)
 
 
 def _regex_pattern_from_pass_rule(pass_rule: str) -> re.Pattern[str] | None:
@@ -449,6 +525,10 @@ def _markdown_table_rows(text: str) -> list[list[str]]:
 
 def _shape_similarity(expected: object, actual: object) -> float:
     if isinstance(expected, dict):
+        if isinstance(actual, list):
+            if len(actual) != 1:
+                return 0.0
+            return 0.75 * _shape_similarity(expected, actual[0])
         if not isinstance(actual, dict):
             return 0.0
         expected_keys = set(expected)
@@ -463,6 +543,12 @@ def _shape_similarity(expected: object, actual: object) -> float:
         child_score = sum(child_scores) / len(child_scores) if child_scores else 0.0
         return (0.5 * key_score) + (0.5 * child_score)
     if isinstance(expected, list):
+        if isinstance(actual, dict):
+            if not expected:
+                return 0.0
+            exemplar = expected[0]
+            length_score = 1.0 / max(len(expected), 1)
+            return 0.75 * _shape_similarity(exemplar, actual) * length_score
         if not isinstance(actual, list):
             return 0.0
         if not expected:
@@ -472,7 +558,7 @@ def _shape_similarity(expected: object, actual: object) -> float:
         exemplar = expected[0]
         child_scores = [_shape_similarity(exemplar, item) for item in actual]
         length_score = min(len(actual), len(expected)) / max(len(actual), len(expected), 1)
-        return (0.7 * (sum(child_scores) / len(child_scores))) + (0.3 * length_score)
+        return (sum(child_scores) / len(child_scores)) * length_score
     if expected is None:
         return 1.0 if actual is None else 0.0
     return 1.0 if type(expected) is type(actual) else 0.0
@@ -482,35 +568,6 @@ def _latency_factor(observed_latency_ms: float) -> float:
     observed = max(observed_latency_ms, 1.0)
     factor = (_LATENCY_TARGET_MS / observed) ** 0.15
     return max(0.85, min(1.0, factor))
-
-
-def _legacy_case_scores(
-    *,
-    case_count: int,
-    success_count: int,
-    avg_exact_preservation_ratio: float,
-    avg_summary_quality_ratio: float,
-    avg_instruction_following_score: float,
-    avg_brevity_ratio: float,
-    accepted_count: int | None,
-    soft_accepted_count: int,
-) -> list[float]:
-    if case_count <= 0:
-        return []
-    success_rate = _clamp_ratio(success_count / case_count)
-    if accepted_count is None:
-        validation_factor = success_rate
-    else:
-        validation_factor = _clamp_ratio(
-            (accepted_count + (0.85 * max(0, soft_accepted_count))) / case_count
-        )
-    approximate_case_score = validation_factor * (
-        (0.25 * _clamp_ratio(avg_exact_preservation_ratio))
-        + (0.40 * _clamp_ratio(avg_summary_quality_ratio))
-        + (0.20 * _clamp_ratio(avg_instruction_following_score))
-        + (0.15 * _clamp_ratio(avg_brevity_ratio))
-    )
-    return [approximate_case_score] * case_count
 
 
 def _strip_exact_tokens(text: str, exact_tokens: tuple[str, ...]) -> str:
@@ -631,5 +688,3 @@ def _normalize_verbatim_line(line: str) -> str:
     if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in {'"', "'", "`"}:
         cleaned = cleaned[1:-1].strip()
     return cleaned
-
-

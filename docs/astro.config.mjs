@@ -29,6 +29,25 @@ export default defineConfig({
                 },
                 {
                     tag: 'script',
+                    attrs: {
+                        defer: true,
+                        src: 'https://umami.tabmate.org/script.js',
+                        'data-website-id': '02598b51-968c-46ac-8323-f21035b348b9',
+                    },
+                },
+                {
+                    tag: 'script',
+                    attrs: {
+                        defer: true,
+                        src: 'https://umami.tabmate.org/recorder.js',
+                        'data-website-id': '02598b51-968c-46ac-8323-f21035b348b9',
+                        'data-sample-rate': '0.4',
+                        'data-mask-level': 'moderate',
+                        'data-max-duration': '300000',
+                    },
+                },
+                {
+                    tag: 'script',
                     attrs: { type: 'module' },
                     content: `
                         import mermaid from 'https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.esm.min.mjs';
@@ -90,11 +109,13 @@ export default defineConfig({
                         { label: 'Compress', slug: 'docs/concepts/compress' },
                         { label: 'Recall', slug: 'docs/concepts/recall' },
                         { label: 'Freshness', slug: 'docs/concepts/freshness' },
+                        { label: 'Output Processing', slug: 'docs/concepts/output-processing' },
                     ],
                 },
                 {
                     label: 'Guides',
                     items: [
+                        { label: 'Model Selection', slug: 'docs/guides/model-selection' },
                         { label: 'Local Models', slug: 'docs/guides/local-models' },
                         { label: 'Remote Models', slug: 'docs/guides/remote-models' },
                         { label: 'Benchmark', slug: 'docs/guides/benchmark' },

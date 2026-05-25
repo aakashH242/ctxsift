@@ -40,7 +40,6 @@ DETERMINISTIC_PROVIDER = "deterministic"
 MODEL_PROMPT_VERSION = "gemma-transformers-v1"
 DETERMINISTIC_PROMPT_VERSION = "deterministic-v1"
 WHITESPACE_RE = re.compile(r"\s+")
-RUN_OUTPUT_HEADER_RE = re.compile(r"(?m)^(Stdout|Stderr):\nLength: (\d+)\n")
 
 
 async def compress_input(request: CompressionRequest) -> CompressionResult:
@@ -95,6 +94,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             intent=request.intent,
             model_id=backend.cache_model_id,
             max_output_tokens=resolved_config.config.max_output_tokens,
+            recovery_enabled=resolved_config.config.recovery_enabled,
             ctxsift_version=__version__,
             prompt_version=MODEL_PROMPT_VERSION,
         )
@@ -112,6 +112,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
                 raw_input=_model_input_text(request),
                 extracted_signal=signal,
                 max_output_tokens=resolved_config.config.max_output_tokens,
+                recovery_enabled=resolved_config.config.recovery_enabled,
             )
         )
         stored_result = await _store_new_result(
@@ -181,6 +182,7 @@ def build_exact_cache_key(
     intent: CompressionIntent,
     model_id: str,
     max_output_tokens: int,
+    recovery_enabled: bool,
     ctxsift_version: str,
     prompt_version: str,
 ) -> str:
@@ -193,6 +195,7 @@ def build_exact_cache_key(
         intent.value,
         model_id,
         str(max_output_tokens),
+        "recovery:on" if recovery_enabled else "recovery:off",
         ctxsift_version,
         prompt_version,
     )
@@ -239,6 +242,7 @@ async def _deterministic_fallback(
         intent=request.intent,
         model_id=DETERMINISTIC_MODEL_ID,
         max_output_tokens=max_output_tokens,
+        recovery_enabled=True,
         ctxsift_version=__version__,
         prompt_version=DETERMINISTIC_PROMPT_VERSION,
     )
@@ -459,10 +463,12 @@ def _read_run_output_block(lines: list[str], start_index: int) -> tuple[list[str
 
 
 def _run_payload_metadata_text(raw_input: str) -> str:
-    length_delimited_match = RUN_OUTPUT_HEADER_RE.search(raw_input)
-    if length_delimited_match is not None:
-        metadata_prefix = raw_input[: length_delimited_match.start()]
-        return _filtered_metadata_text(metadata_prefix.splitlines())
+    length_delimited_start = _top_level_output_header_start(raw_input, "Stdout")
+    if length_delimited_start is not None:
+        _, position = _parse_length_delimited_section(raw_input, length_delimited_start, "Stdout")
+        if position != length_delimited_start:
+            metadata_prefix = raw_input[:length_delimited_start]
+            return _filtered_metadata_text(metadata_prefix.splitlines())
     lines = raw_input.splitlines()
     return _filtered_metadata_text(lines)
 
@@ -489,24 +495,65 @@ def _filtered_metadata_text(lines: list[str]) -> str:
 
 
 def _length_delimited_output_sections(raw_input: str) -> list[str] | None:
-    sections: list[str] = []
-    saw_output_section = False
-    position = 0
-    while True:
-        match = RUN_OUTPUT_HEADER_RE.search(raw_input, position)
-        if match is None:
-            break
-        saw_output_section = True
-        content_start = match.end()
-        content_length = int(match.group(2))
-        content_end = content_start + content_length
-        if content_end > len(raw_input):
-            return None
-        sections.append(raw_input[content_start:content_end])
-        position = content_end
-    if not saw_output_section:
+    stdout_start = _top_level_output_header_start(raw_input, "Stdout")
+    if stdout_start is None:
         return None
-    return sections
+    stdout_content, position = _parse_length_delimited_section(raw_input, stdout_start, "Stdout")
+    if stdout_content is None:
+        return None
+    position = _skip_section_spacing(raw_input, position)
+    stderr_content, _ = _parse_length_delimited_section(raw_input, position, "Stderr")
+    if stderr_content is None:
+        return None
+    return [
+        _normalize_output_newlines(stdout_content),
+        _normalize_output_newlines(stderr_content),
+    ]
+
+
+def _normalize_output_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def _top_level_output_header_start(raw_input: str, label: str) -> int | None:
+    prefix = f"{label}:\n"
+    if raw_input.startswith(prefix):
+        return 0
+    marker = f"\n{prefix}"
+    index = raw_input.find(marker)
+    if index == -1:
+        return None
+    return index + 1
+
+
+def _parse_length_delimited_section(
+    raw_input: str,
+    start: int,
+    label: str,
+) -> tuple[str | None, int]:
+    header = f"{label}:\nLength: "
+    if start < 0 or not raw_input.startswith(header, start):
+        return None, start
+    length_start = start + len(header)
+    length_end = raw_input.find("\n", length_start)
+    if length_end == -1:
+        return None, start
+    length_text = raw_input[length_start:length_end]
+    if not length_text.isdigit():
+        return None, start
+    content_length = int(length_text)
+    content_start = length_end + 1
+    content_end = content_start + content_length
+    if content_end > len(raw_input):
+        return None, start
+    return raw_input[content_start:content_end], content_end
+
+
+def _skip_section_spacing(raw_input: str, start: int) -> int:
+    position = start
+    while position < len(raw_input) and raw_input[position] == "\n":
+        position += 1
+    return position
 
 
 def _summary_lines(raw_input: str, signal: ExtractedSignal) -> list[str]:

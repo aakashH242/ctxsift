@@ -305,6 +305,7 @@ class AppConfig(StrictModel):
     timeout_ms: int = 90000
     retries: int = 1
     max_output_tokens: int = 512
+    recovery_enabled: bool = True
     db_path: str | None = None
     remote: RemoteModelConfig = Field(default_factory=RemoteModelConfig)
     local: LocalModelConfig = Field(default_factory=LocalModelConfig)

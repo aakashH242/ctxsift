@@ -25,6 +25,7 @@ from ctxsift.models.text_profile_common import (
     build_repair_messages,
     choose_preferred_candidate,
     recover_scaffold_prefixed_output,
+    selected_candidate_index,
     should_attempt_repair,
     validate_instruction_aware_output,
 )
@@ -138,27 +139,48 @@ class TransformersTextBackend(ModelBackend):
                 raise BackendUnavailableError(str(fallback_error)) from fallback_error
 
     def _generate_text(self, runtime: TextRuntime, request: ModelCompressionInput) -> str:
-        first_pass = self._recover_candidate_before_validation(
+        first_raw_text, first_output = self._run_generation(
+            runtime,
             request,
-            self._run_generation(
-                runtime,
-                request,
-                self._prepare_messages(request, self._profile.build_text_messages(request)),
-            ),
+            self._prepare_messages(request, self._profile.build_text_messages(request)),
         )
+        first_pass = self._recover_candidate_before_validation(request, first_output)
+        if request.trace is not None:
+            request.trace.record_first_pass(
+                raw_output=first_raw_text,
+                recovered_output=first_pass,
+            )
         first_validation = validate_instruction_aware_output(request, first_pass)
         if not should_attempt_repair(first_validation):
+            if request.trace is not None:
+                request.trace.record_selected_outputs(
+                    raw_output=first_raw_text,
+                    recovered_output=first_pass,
+                )
             return first_pass
 
-        repaired_output = self._recover_candidate_before_validation(
+        repair_raw_text, repair_output = self._run_generation(
+            runtime,
             request,
-            self._run_generation(
-                runtime,
-                request,
-                self._prepare_messages(request, build_repair_messages(request, first_pass)),
-            ),
+            self._prepare_messages(request, build_repair_messages(request, first_pass)),
         )
+        repaired_output = self._recover_candidate_before_validation(request, repair_output)
+        if request.trace is not None:
+            request.trace.record_repair_pass(
+                raw_output=repair_raw_text,
+                recovered_output=repaired_output,
+            )
         preferred_candidate = choose_preferred_candidate(request, [first_pass, repaired_output])
+        if request.trace is not None:
+            selected_index = selected_candidate_index(request, [first_pass, repaired_output])
+            request.trace.record_selected_outputs(
+                raw_output=_selected_index_output(
+                    [first_raw_text, repair_raw_text], selected_index
+                ),
+                recovered_output=_selected_index_output(
+                    [first_pass, repaired_output], selected_index
+                ),
+            )
         if preferred_candidate is not None:
             return preferred_candidate.output
 
@@ -190,7 +212,7 @@ class TransformersTextBackend(ModelBackend):
         runtime: TextRuntime,
         request: ModelCompressionInput,
         messages: list[dict[str, str]],
-    ) -> str:
+    ) -> tuple[str, str]:
         prompt_text = _apply_text_chat_template(runtime.tokenizer, messages)
         inputs = runtime.tokenizer(prompt_text, return_tensors="pt").to(runtime.input_device)
         input_len = _input_length(inputs["input_ids"])
@@ -198,8 +220,11 @@ class TransformersTextBackend(ModelBackend):
             **inputs,
             **self._profile.generation_kwargs(runtime.tokenizer, request.max_output_tokens),
         )
-        decoded = runtime.tokenizer.decode(outputs[0][input_len:], skip_special_tokens=False)
-        return self._profile.normalize_output(request, decoded)
+        raw_text = runtime.tokenizer.decode(
+            outputs[0][input_len:], skip_special_tokens=False
+        ).strip()
+        normalized = self._profile.normalize_output(request, raw_text)
+        return raw_text, normalized
 
     def _prepare_messages(
         self,
@@ -209,6 +234,14 @@ class TransformersTextBackend(ModelBackend):
         if not self._use_soft_length_hint:
             return messages
         return apply_soft_length_hint(messages, request)
+
+
+def _selected_index_output(candidates: list[str], selected_index: int | None) -> str:
+    if selected_index is None:
+        return ""
+    if not 0 <= selected_index < len(candidates):
+        return ""
+    return candidates[selected_index]
 
 
 TransformersGemmaBackend = TransformersTextBackend

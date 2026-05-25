@@ -16,6 +16,7 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.max_output_tokens == 512
     assert config.timeout_ms == 90000
     assert config.retries == 1
+    assert config.recovery_enabled is True
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
     assert config.local.model == "ibm-granite/granite-4.0-350m-GGUF"
     assert config.local.gguf_filename == "granite-4.0-350m-Q8_0.gguf"
@@ -58,13 +59,9 @@ def test_global_config_prefers_platform_path(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
     platform_path.parent.mkdir(parents=True)
-    legacy_path.parent.mkdir(parents=True)
     platform_path.write_text("max_output_tokens = 640\n", encoding="utf-8")
-    legacy_path.write_text("max_output_tokens = 320\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
     paths = config_store.discover_global_config_paths()
 
@@ -72,19 +69,15 @@ def test_global_config_prefers_platform_path(
     assert paths.write_path == platform_path
 
 
-def test_global_config_falls_back_to_legacy_path(
+def test_global_config_uses_platform_path_when_file_is_missing(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
-    legacy_path.parent.mkdir(parents=True)
-    legacy_path.write_text("max_output_tokens = 320\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
 
     paths = config_store.discover_global_config_paths()
 
-    assert paths.read_path == legacy_path
+    assert paths.read_path == platform_path
     assert paths.write_path == platform_path
 
 
@@ -118,11 +111,6 @@ def test_config_resolution_uses_expected_precedence(
     platform_path.parent.mkdir(parents=True)
     platform_path.write_text("max_output_tokens = 128\n", encoding="utf-8")
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(
-        config_store,
-        "legacy_global_config_path",
-        lambda: tmp_path / "legacy" / "config.toml",
-    )
 
     result = resolve_config(
         ConfigResolutionRequest(
@@ -140,6 +128,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
         {
             "CTXSIFT_LLM_MODEL": "gpt-5-mini",
             "CTXSIFT_TIMEOUT_MS": "1234",
+            "CTXSIFT_RECOVERY_ENABLED": "false",
             "CTXSIFT_EMBEDDING_MODEL": "mini",
             "CTXSIFT_LOCAL_MODEL": "ibm-granite/granite-4.0-350m-GGUF",
             "CTXSIFT_LOCAL_GGUF_FILENAME": "smollm2-360m-instruct-q8_0.gguf",
@@ -169,6 +158,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
 
     assert layer["remote"]["model_name"] == "gpt-5-mini"
     assert layer["timeout_ms"] == 1234
+    assert layer["recovery_enabled"] is False
     assert layer["local"]["model"] == "ibm-granite/granite-4.0-350m-GGUF"
     assert layer["local"]["gguf_filename"] == "smollm2-360m-instruct-q8_0.gguf"
     assert layer["local"]["llama_context_window"] == 16384

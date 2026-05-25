@@ -9,13 +9,11 @@ from ctxsift.models.text_profile_common import (
     build_standard_text_messages,
     deterministic_generation_kwargs,
     normalize_profile_output,
-    normalize_plain_output,
     strip_reasoning_blocks,
-    validate_instruction_aware_output,
 )
 from ctxsift.models.text_profile_types import TextModelProfile
 
-GRANITE_REASONING_TAGS = ("think", "thinking", "thought")
+GRANITE_REASONING_TAGS = ("think", "thinking", "thought", "analysis", "reasoning")
 
 
 def matches_model_name(model_name: str) -> bool:
@@ -34,23 +32,11 @@ def generation_kwargs(tokenizer: object, max_output_tokens: int) -> dict[str, in
     return deterministic_generation_kwargs(tokenizer, max_output_tokens)
 
 
-def normalize_output(request: ModelCompressionInput | str, text: str | None = None) -> str:
+def normalize_output(request: ModelCompressionInput, text: str) -> str:
     """Apply Granite-specific cleanup to generated text."""
-    if text is None:
-        without_think = strip_reasoning_blocks(str(request), *GRANITE_REASONING_TAGS)
-        without_response_wrapper = re.sub(r"</?response>", "", without_think, flags=re.IGNORECASE)
-        return normalize_plain_output(without_response_wrapper)
-    if isinstance(request, str):
-        raise TypeError("request context is required when text is provided")
     without_think = strip_reasoning_blocks(text, *GRANITE_REASONING_TAGS)
     without_response_wrapper = re.sub(r"</?response>", "", without_think, flags=re.IGNORECASE)
     return normalize_profile_output(request, without_response_wrapper)
-
-
-def is_valid_output(request: ModelCompressionInput, text: str) -> bool:
-    """Backward-compatible boolean validation shim for the shared validator."""
-    normalized = normalize_output(request, text)
-    return validate_instruction_aware_output(request, normalized).status != "rejected"
 
 
 PROFILE = TextModelProfile(

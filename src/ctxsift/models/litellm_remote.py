@@ -20,6 +20,7 @@ from ctxsift.models.text_profile_common import (
     build_standard_text_messages,
     choose_preferred_candidate,
     recover_scaffold_prefixed_output,
+    selected_candidate_index,
     should_attempt_repair,
     normalize_instruction_aware_output,
     validate_instruction_aware_output,
@@ -40,19 +41,44 @@ class LiteLLMRemoteBackend(ModelBackend):
         return f"litellm:{self.model_name}@{self._options.base_url}"
 
     async def compress(self, request: ModelCompressionInput) -> str:
-        first_pass = await self._generate_candidate(
+        first_raw_text, first_pass = await self._generate_candidate(
             request,
             self._prepare_messages(request, build_standard_text_messages(request)),
         )
+        if request.trace is not None:
+            request.trace.record_first_pass(
+                raw_output=first_raw_text,
+                recovered_output=first_pass,
+            )
         first_validation = validate_instruction_aware_output(request, first_pass)
         if not should_attempt_repair(first_validation):
+            if request.trace is not None:
+                request.trace.record_selected_outputs(
+                    raw_output=first_raw_text,
+                    recovered_output=first_pass,
+                )
             return first_pass
 
-        repaired_output = await self._generate_candidate(
+        repair_raw_text, repaired_output = await self._generate_candidate(
             request,
             self._prepare_messages(request, build_repair_messages(request, first_pass)),
         )
+        if request.trace is not None:
+            request.trace.record_repair_pass(
+                raw_output=repair_raw_text,
+                recovered_output=repaired_output,
+            )
         preferred_candidate = choose_preferred_candidate(request, [first_pass, repaired_output])
+        if request.trace is not None:
+            selected_index = selected_candidate_index(request, [first_pass, repaired_output])
+            request.trace.record_selected_outputs(
+                raw_output=_selected_index_output(
+                    [first_raw_text, repair_raw_text], selected_index
+                ),
+                recovered_output=_selected_index_output(
+                    [first_pass, repaired_output], selected_index
+                ),
+            )
         if preferred_candidate is not None:
             return preferred_candidate.output
 
@@ -71,14 +97,15 @@ class LiteLLMRemoteBackend(ModelBackend):
         self,
         request: ModelCompressionInput,
         messages: list[dict[str, str]],
-    ) -> str:
-        text = await self._complete_text(request, messages)
-        normalized = normalize_instruction_aware_output(request, text)
-        return recover_scaffold_prefixed_output(
+    ) -> tuple[str, str]:
+        raw_text = await self._complete_text(request, messages)
+        normalized = normalize_instruction_aware_output(request, raw_text)
+        recovered = recover_scaffold_prefixed_output(
             request,
             normalized,
             normalize_output=normalize_instruction_aware_output,
         )
+        return raw_text.strip(), recovered
 
     async def _complete_text(
         self,
@@ -118,6 +145,14 @@ class LiteLLMRemoteBackend(ModelBackend):
         messages: list[dict[str, str]],
     ) -> list[dict[str, str]]:
         return apply_soft_length_hint(messages, request)
+
+
+def _selected_index_output(candidates: list[str], selected_index: int | None) -> str:
+    if selected_index is None:
+        return ""
+    if not 0 <= selected_index < len(candidates):
+        return ""
+    return candidates[selected_index]
 
 
 def _response_text(response: Any) -> str:

@@ -8,6 +8,7 @@ from typing import Any, Sequence
 
 from benchmark.schemas import BenchmarkCase
 from benchmark.scoring import summary_quality_ratio
+from ctxsift.compression.intent import CompressionIntent, canonical_mode_for_intent
 from ctxsift.embeddings import create_in_process_embedding_backend
 from ctxsift.embeddings.base import DocumentEmbeddingRequest, EmbeddingBackendUnavailableError
 from ctxsift.types import EmbeddingConfig
@@ -21,14 +22,6 @@ else:  # pragma: no cover - optional dependency in some environments
     yaml_module = _yaml
 
 
-_EMBEDDING_FAMILIES = {
-    "recall",
-    "summary",
-    "explanation",
-    "instruction_following",
-    "exact_format",
-}
-_STRUCTURED_FAMILIES = {"structured"}
 _EMBEDDING_BATCH_SIZE = 64
 
 
@@ -154,7 +147,6 @@ def build_semantic_scorer(config: EmbeddingConfig) -> BenchmarkSemanticScorer | 
 
 
 def _semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
-    normalized_family = case.family.strip().casefold().replace("-", "_")
     cleaned_output = output.strip()
     if not cleaned_output:
         return _SemanticPlan(
@@ -163,34 +155,17 @@ def _semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
             embedding_expected_text=None,
             blend_weight=0.0,
         )
-    if normalized_family in _STRUCTURED_FAMILIES:
+    canonical_mode = canonical_mode_for_intent(case.intent)
+    if canonical_mode == "structured":
         return _structured_semantic_plan(case, cleaned_output)
-    if normalized_family in _EMBEDDING_FAMILIES:
-        return _embedding_semantic_plan(case, cleaned_output)
-    return _SemanticPlan(
-        base_score=summary_quality_ratio(cleaned_output, case.scoring_target, case.anchor_tokens),
-        embedding_output_text=None,
-        embedding_expected_text=None,
-        blend_weight=0.0,
-    )
+    if case.intent is CompressionIntent.EXACT_LINES:
+        return _exact_lines_semantic_plan(case, cleaned_output)
+    if case.intent is CompressionIntent.EXACT_FORMAT:
+        return _exact_format_semantic_plan(case, cleaned_output)
+    return _plain_text_semantic_plan(case, cleaned_output)
 
 
-def _embedding_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
-    normalized_family = case.family.strip().casefold().replace("-", "_")
-    if normalized_family == "exact_format":
-        return _SemanticPlan(
-            base_score=summary_quality_ratio(output, case.scoring_target, case.anchor_tokens),
-            embedding_output_text=output,
-            embedding_expected_text=case.scoring_target.strip() or case.ideal_summary.strip(),
-            blend_weight=0.35,
-        )
-    if normalized_family == "instruction_following":
-        return _SemanticPlan(
-            base_score=summary_quality_ratio(output, case.scoring_target, case.anchor_tokens),
-            embedding_output_text=output,
-            embedding_expected_text=case.scoring_target.strip() or case.ideal_summary.strip(),
-            blend_weight=0.75,
-        )
+def _plain_text_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
     return _SemanticPlan(
         base_score=-1.0,
         embedding_output_text=output,
@@ -199,15 +174,35 @@ def _embedding_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
     )
 
 
+def _exact_lines_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
+    return _SemanticPlan(
+        base_score=summary_quality_ratio(output, case.scoring_target, case.anchor_tokens),
+        embedding_output_text=None,
+        embedding_expected_text=None,
+        blend_weight=0.0,
+    )
+
+
+def _exact_format_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
+    return _SemanticPlan(
+        base_score=summary_quality_ratio(output, case.scoring_target, case.anchor_tokens),
+        embedding_output_text=output,
+        embedding_expected_text=case.scoring_target.strip() or case.ideal_summary.strip(),
+        blend_weight=0.35,
+    )
+
+
 def _structured_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan:
     expected = case.scoring_target.strip()
     actual_value = _parse_structured_payload(
         output,
+        intent=case.intent,
         output_mode=case.output_mode,
         format_check=case.judgement.format_check,
     )
     expected_value = _parse_structured_payload(
         expected,
+        intent=case.intent,
         output_mode=case.output_mode,
         format_check=case.judgement.format_check,
     )
@@ -230,6 +225,7 @@ def _structured_semantic_plan(case: BenchmarkCase, output: str) -> _SemanticPlan
 def _parse_structured_payload(
     text: str,
     *,
+    intent: CompressionIntent,
     output_mode: str,
     format_check: str,
 ) -> object | None:
@@ -241,6 +237,10 @@ def _parse_structured_payload(
         return _parse_yaml(text)
     if normalized_format == "table_shape" or normalized_mode == "table":
         return _parse_markdown_table(text)
+    if normalized_format == "bullet_shape" or normalized_mode == "bullet_list":
+        return _parse_bullet_list(text)
+    if canonical_mode_for_intent(intent) == "structured" and intent is CompressionIntent.BULLET_LIST:
+        return _parse_bullet_list(text)
     return None
 
 
@@ -281,6 +281,15 @@ def _parse_markdown_table(text: str) -> list[dict[str, str]] | None:
             return None
         parsed.append(dict(zip(headers, row, strict=True)))
     return parsed
+
+
+def _parse_bullet_list(text: str) -> list[str] | None:
+    items = [line.strip()[2:].strip() for line in text.splitlines() if line.strip()]
+    if not items:
+        return None
+    if any(not line.strip().startswith("- ") for line in text.splitlines() if line.strip()):
+        return None
+    return items
 
 
 def _structured_value_similarity(expected: object, actual: object) -> float:

@@ -58,6 +58,14 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
         default=current.retries,
         type=int,
     )
+    _render_note(
+        "Unsure? Keep recovery enabled and run a benchmark with your desired model to find whether it helps or not.",
+        title="Response recovery",
+    )
+    recovery_enabled = typer.confirm(
+        "Keep deterministic response recovery enabled?",
+        default=current.recovery_enabled,
+    )
     local = _local_config_for_mode(current, compression_mode)
     remote = _remote_config_for_mode(current, compression_mode)
     _render_section("Embeddings")
@@ -134,6 +142,7 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
             "timeout_ms": timeout_ms,
             "retries": retries,
             "max_output_tokens": max_output_tokens,
+            "recovery_enabled": recovery_enabled,
             "db_path": None,
             "remote": remote.model_dump(mode="json"),
             "local": local.model_dump(mode="json"),

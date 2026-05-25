@@ -67,7 +67,7 @@ default-groups = ["dev"]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/ctxsift"]
-include = ["src/ctxsift/agent_skill_template.md"]
+include = ["src/ctxsift/agent_skill_template.md", "src/ctxsift/agent_hosts_catalog.json"]
 
 [tool.hatch.build.targets.sdist]
 only-include = [

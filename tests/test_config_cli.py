@@ -17,9 +17,7 @@ def isolated_config_paths(
     monkeypatch: pytest.MonkeyPatch,
 ) -> Path:
     platform_path = tmp_path / "platform" / "config.toml"
-    legacy_path = tmp_path / "legacy" / "config.toml"
     monkeypatch.setattr(config_store, "platform_global_config_path", lambda: platform_path)
-    monkeypatch.setattr(config_store, "legacy_global_config_path", lambda: legacy_path)
     return platform_path
 
 
@@ -55,6 +53,21 @@ def test_config_set_writes_global_file_and_show_reads_it(
     assert "Resolved from: global" in show_result.stdout
     assert "max_output_tokens = 768" in show_result.stdout
     assert isolated_config_paths.exists()
+
+
+def test_config_set_supports_recovery_enabled_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(app, ["config", "set", "recovery_enabled", "false", "--global"])
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert show_result.exit_code == 0
+    assert "recovery_enabled = false" in show_result.stdout
 
 
 def test_config_show_redacts_secret_values(

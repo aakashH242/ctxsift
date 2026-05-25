@@ -43,11 +43,24 @@ Each case produces four component scores:
 | **Format** | The output matched the requested shape |
 | **Brevity** | The output stayed near the allowed budget |
 
-Each case is then validated as `accepted`, `soft_accepted`, or `rejected`. Rejections are reserved for hard failures such as empty output, control-token leakage, prompt echoing, broken structured output, or returning prose when the task asked for an exact value.
+Each case is then validated as `accepted`, `soft_accepted`, or `rejected`. Rejections are reserved for hard failures such as empty output, control-token leakage, prompt echoing, visible thought leakage in strict outputs, broken structured output, or returning prose when the task asked for an exact value.
+
+Each benchmark run now stores **two views**:
+
+- **Recovered**: the main score. This is after CtxSift does deterministic cleanup, including safe visible-thought cleanup when that can be done without breaking the requested contract.
+- **Raw**: the side score. This is the same model answer before that recovery step.
+
+The difference between them is the **recovery lift**. That tells you whether the model was already clean, or whether the product had to rescue it. This is especially useful for models that answer with lines like `Okay, the user wants...`, `I should...`, or leaked wrappers such as `<think>...</think>`.
 
 The final score is based on per-case scores first, then rolled up into a scenario score:
 
 ```text
+case_score =
+  validation_factor *
+  thought_penalty *
+  instruction_penalty *
+  blended_quality
+
 quality_core = 0.80 * mean(case_scores) + 0.20 * p10(case_scores)
 
 latency_factor = clamp(0.85, 1.00, (2000ms / observed_ms)^0.15)
@@ -55,38 +68,63 @@ latency_factor = clamp(0.85, 1.00, (2000ms / observed_ms)^0.15)
 final_score = 100 * quality_core * latency_factor
 ```
 
-This means the benchmark rewards strong average quality, but it also punishes unstable models with weak tail behavior. Latency matters, but only as a mild penalty.
+`blended_quality` is the same intent-weighted mix of anchor, semantic, format, and brevity scores.
+
+`instruction_penalty` is intent-sensitive:
+
+- plain-text intents: `0.75 + 0.25 * instruction_following_score`
+- strict intents: start from `0.40 + 0.60 * instruction_following_score`, then only apply that penalty when `format_score` is weak. If a strict answer already matches the requested format perfectly, there is no extra instruction penalty on top.
+
+Strict format scoring is graded too. For `exact_match`, `regex`, and structured shape checks, CtxSift gives partial credit to close near-miss outputs instead of treating them the same as totally wrong outputs. A command that misses a prefix or punctuation can still score partway. A raw log dump, wrong command type, or incomplete structured payload still scores very poorly.
+
+Cases can also take a visible-thought penalty before the scenario rollup. If the answer still contains model reasoning text, the case score is reduced based on how much of the output is thought leakage. Clean answers stay at full weight.
+
+This is not limited to `<think>...</think>` wrappers. CtxSift also looks for common visible meta-reasoning lines such as `Okay, the user wants...`, `I should return...`, or `However, the instruction says...`. Recovery only trims the leading preamble when that is safe. If stray reasoning is still left in the answer body, the score still drops.
+
+This means the benchmark rewards strong average quality, but it also punishes unstable models with weak tail behavior. Latency matters, but only as a mild penalty. The headline score in the viewer is the **recovered** score. The raw score uses the same formula on the unrecovered output.
+
+The viewer now expects the current result schema. Older benchmark JSON from before the raw/recovered split and per-case score storage should be rerun instead of relying on viewer-side score reconstruction.
 
 <Aside type="note">
 The 2000 ms latency target is neutral. Faster than that does not earn a bonus. Slower than that applies a capped penalty of up to 15%.
 </Aside>
 
-The weights also change by family. `recall` rows care more about exact anchors, while `exact_format` rows care much more about output shape.
+The weights now change by explicit intent, not by the older family label. `recall` rows care more about exact anchors, while `exact-format` rows care much more about output shape. `family` is still useful in the dashboard, but it no longer decides the scoring contract.
 
-| Family | Anchor | Semantic | Format | Brevity |
+| Intent | Anchor | Semantic | Format | Brevity |
 |---|---:|---:|---:|---:|
 | `recall` | 0.45 | 0.25 | 0.20 | 0.10 |
 | `summary` | 0.25 | 0.40 | 0.20 | 0.15 |
-| `explanation` | 0.20 | 0.50 | 0.20 | 0.10 |
-| `structured` | 0.20 | 0.30 | 0.40 | 0.10 |
-| `instruction_following` | 0.20 | 0.30 | 0.40 | 0.10 |
-| `exact_format` | 0.15 | 0.10 | 0.70 | 0.05 |
+| `exact-lines` | 0.45 | 0.10 | 0.40 | 0.05 |
+| `exact-format` | 0.15 | 0.10 | 0.70 | 0.05 |
+| `json` / `yaml` / `table` / `bullet-list` | 0.20 | 0.30 | 0.40 | 0.10 |
 
 ---
 
 ## Reading results
 
-When you open the viewer, the most useful fields are the headline score, the acceptance breakdown, and the latency pair.
+When you open the viewer, start with the recovered score, then check the raw score and the recovery lift.
 
 | Metric | How to read it |
 |---|---|
-| **Final score** | Best single comparison number |
+| **Recovered score** | Best single comparison number |
+| **Raw score** | How clean the model answer was before recovery |
+| **Recovery lift** | How much deterministic recovery helped |
+| **Thought density** | How much visible reasoning leaked into the answer |
 | **Quality core** | Output quality before the latency penalty |
 | **Accepted / Soft / Rejected** | Reliability signal |
 | **Average / P95 latency** | Normal speed and tail speed |
 | **Preserve / Quality / Format / Brevity** | Shows why the model scored the way it did |
 
 Latency should be compared carefully. CPU-to-CPU runs on the same machine are fair. GPU-to-GPU runs on the same machine are fair. Remote latency is more volatile because provider load and network path matter. Quality numbers travel better across tracks than raw speed does.
+
+If recovered and raw are close, the model is naturally clean. If recovered is much higher, the product is rescuing messy output. If both are low, the model is simply a weak fit for this task. If raw thought density is high, the model is leaking reasoning into the answer even when some of the core facts are right.
+
+In the detail view, case rows now show recovered thought density and raw thought density separately. That makes it easy to tell whether cleanup removed visible reasoning, or whether the model stayed clean by itself.
+
+The viewer also includes a recovery-lift scatter: `raw score` on the x-axis, `recovery lift` on the y-axis, and color by CPU / GPU / remote track. Points above zero are runs where recovery helped overall. Points below zero are runs where recovery hurt a little.
+
+That same deterministic recovery path is enabled in normal product output by default. If you want to compare behavior with and without that recovery step, turn it off with `recovery_enabled = false` or `CTXSIFT_RECOVERY_ENABLED=false`.
 
 The scenario matrix lives in `benchmark/matrix.json` and defines the three main tracks used in the repo:
 
@@ -104,45 +142,127 @@ The scenario matrix lives in `benchmark/matrix.json` and defines the three main 
 Use score as the main signal. Use latency as a secondary signal unless you are comparing runs from the same machine and setup.
 </Aside>
 
+### Write your own `matrix.json`
+
+The runner does not guess which models you want to compare. It reads them from `benchmark/matrix.json` by default, or from a custom file passed with `--matrix`.
+
+The file format is:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "cpu-my-model",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "unsloth/Qwen3.5-0.8B-GGUF",
+      "gguf_filename": "Qwen3.5-0.8B-Q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
+    {
+      "name": "gpu-my-model",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-0.8B",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "remote-my-model",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-4.1-mini",
+      "quantization": "none",
+      "device": "remote",
+      "concurrency": 8
+    }
+  ]
+}
+```
+
+Each scenario row becomes one benchmark run target.
+
+#### Scenario fields
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | Yes | Unique scenario name. This is what you pass to `--scenario`. Keep it short and stable. |
+| `track` | Yes | High-level bucket for the viewer: `cpu`, `gpu`, or `remote`. |
+| `phase` | Yes | Group name for bulk runs with `--phase`, such as `cpu-screen` or `remote-screen`. |
+| `model` | Yes | Model identifier. For CPU/GPU this is the Hugging Face repo or model id. For remote this is the provider model name passed through LiteLLM. |
+| `quantization` | Yes | Quantization label stored with the scenario. Use `none` unless you are intentionally benchmarking another quantized GPU setup. |
+| `device` | Yes | Runtime path: `cpu`, `cuda`, or `remote`. |
+| `gguf_filename` | CPU only | Required for CPU GGUF runs. Omit it for GPU and remote runs. |
+| `dtype` | No | GPU precision override. Default: `auto`. |
+| `attn_implementation` | No | GPU attention backend override. Default: `auto`. |
+| `max_output_tokens` | No | Per-scenario compression budget. Default when omitted: `768`. |
+| `concurrency` | No | Number of in-flight cases for that scenario. Default: `1`. Most useful for remote runs. |
+| `enabled` | No | Whether this scenario should be considered by the runner. Default: `true`. |
+
+#### What to change for each track
+
+- **CPU**: set `track` to `cpu`, `device` to `cpu`, and provide both `model` and `gguf_filename`.
+- **GPU**: set `track` to `gpu`, `device` to `cuda`, and use a normal Transformers model id. Do not set `gguf_filename`.
+- **Remote**: set `track` to `remote`, `device` to `remote`, and use the provider model name in `model`. The actual base URL and API key still come from your CtxSift config or env file, not from `matrix.json`.
+
+#### Practical rules
+
+- `name` should be unique. If two rows share the same name, your CLI filtering becomes ambiguous.
+- `track` and `device` should agree. Do not create rows like `track=cpu` with `device=cuda`.
+- `phase` is just a label, but it should match the track you plan to run together. For example, keep CPU rows under `cpu-screen`.
+- `quantization` is not used for CPU GGUF runtime behavior. It is mainly a scenario label there, and should normally stay `none`.
+- `concurrency` higher than `1` is most useful for remote runs. For local CPU and many small local GPU models, higher concurrency can distort latency or exhaust memory.
+
+#### Use a custom matrix file
+
+If you do not want to edit the repo's default matrix, write your own file and pass it explicitly:
+
+```bash frame="none"
+uv run python -m benchmark.runner --matrix my-matrix.json --scenario remote-my-model --remote --env-file .env
+```
+
+That is the easiest way to keep one small matrix per machine, provider, or experiment.
+
 ### List all scenarios
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --list-scenarios
 ```
 
 ### Run one scenario
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario cpu-granite-4.0-350m-no-quant
 ```
 
 ### Run a full screening phase
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --phase cpu-screen
 ```
 
 ### Run a smaller subset for a quick smoke test
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario gpu-lfm2.5-1.2b-instruct-no-quant --max-cases 50
 ```
 
 ### Run selected case IDs only
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario cpu-granite-4.0-350m-no-quant --case-id pytest-01 --case-id kubectl-09
 ```
 
 ### Print model output during the run
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario gpu-qwen3.5-0.8b-no-quant --show-output
 ```
 
 ### Name the run yourself
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --scenario gpu-qwen2.5-1.5b-no-quant --name smoke
 ```
 
@@ -150,7 +270,7 @@ If you do not provide `--name`, each scenario gets its own timestamped folder un
 
 For remote scenarios, use the same dataset and scoring rules through the configured LiteLLM backend:
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.runner --remote --env-file .env --scenario remote-gpt-4o-mini
 ```
 
@@ -158,7 +278,7 @@ The runner loads the env file first, resolves the standard remote configuration,
 
 To inspect results in the local dashboard:
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.viewer --open ./benchmark/results/
 ```
 
@@ -166,13 +286,13 @@ If you want the latest generated snapshot directly, open the static viewer page 
 
 [Open the latest snapshot](/benchmark-viewer.html)
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.viewer --open ./benchmark/results/remote-gpt-5.4-mini-20260518T065257Z
 ```
 
 You can also point the viewer at one run folder instead of the full tree:
 
-```bash
+```bash frame="none"
 uv run python -m benchmark.viewer --open ./benchmark/results/remote-gpt-5.4-mini-20260518T065257Z
 ```
 

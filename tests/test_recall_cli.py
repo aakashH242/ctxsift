@@ -7,7 +7,7 @@ from typer.testing import CliRunner
 
 import ctxsift.cli as cli
 from ctxsift.cli import app
-from ctxsift.file_fingerprint import sha256_if_reasonable
+from ctxsift.shared.hashing import sha256_if_reasonable
 from ctxsift.storage import initialize_database, insert_record_bundle
 from ctxsift.types import ExtractedTermRecord, ReferencedFileRecord, StoredRecord
 

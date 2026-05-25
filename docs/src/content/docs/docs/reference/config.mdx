@@ -36,6 +36,8 @@ Below is the complete reference of all configuration options organized by group.
   Inference request timeout duration in milliseconds.
 * **`retries`** (Integer, Default: `1`)
   The number of times CtxSift will attempt to retry an inference request if it fails.
+* **`recovery_enabled`** (Boolean, Default: `true`)
+  Enables deterministic output recovery before CtxSift returns the final answer. Applies to both local and remote compression. Unsure? Keep it enabled and benchmark your target model.
 
 ---
 

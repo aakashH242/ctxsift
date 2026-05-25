@@ -1,0 +1,226 @@
+---
+title: Model Selection Guide
+description: Choose the right CtxSift compression model for your machine, latency budget, and quality target.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+If you already know exactly which model you want, go to the local or remote guides and set it directly. If you do not, start here.
+The purpose of this document is not to list every model that can work.
+The goal is to narrow the choice to the few models that make sense for CtxSift's actual job: compress noisy command output into something an agent can reuse later without losing anchors, breaking structure, or wasting tokens.
+
+The recommendations below are based on the latest bundled benchmark snapshots in this repo:
+
+- CPU: `benchmark/results/cpu-models-20260524T014526Z`
+- GPU: `benchmark/results/gpu-models-20260524T212353Z`
+- Remote: `benchmark/results/remote-models-20260523T233753Z`
+
+`Score` below means the benchmark's main recovered score, not the raw unrecovered score.
+
+---
+
+## Start with the runtime path
+
+Use this first. Most bad model decisions happen because people start from the model family instead of the runtime they actually have.
+
+| Your setup | Start here |
+|---|---|
+| CPU only, no CUDA | Stay on the local GGUF path |
+| CUDA GPU available | Use the local Transformers GPU path |
+| You are fine calling external APIs | Use the remote path |
+| You are unsure | Start local first, then benchmark before spending money or VRAM |
+
+If privacy, offline operation, and local recall matter most, stay local. If you want the highest-quality compression and do not mind provider cost or network dependence, use remote.
+
+---
+
+## If you want the simplest answer
+
+These are the shortest honest recommendations right now.
+
+| Situation | Best first choice | Why |
+|---|---|---|
+| You just installed CtxSift on CPU | `ibm-granite/granite-4.0-350m-GGUF` | It is the built-in default and the fastest tested CPU model |
+| You want the best local CPU upgrade | `unsloth/Qwen3.5-0.8B-GGUF` | Best CPU score in the current run, without becoming painfully slow |
+| You want the best practical CUDA default | `LiquidAI/LFM2.5-1.2B-Instruct` | Fastest GPU model by far, while still scoring well |
+| You want the highest local GPU quality | `Qwen/Qwen3.5-2B` | Best GPU score in the current run |
+| You want the best hosted quality | `gpt-4.1` | Best remote result in the current run |
+| You want a cheaper hosted default | `gpt-4o-mini` | Fast, reliable, and much cheaper than flagship remote models |
+
+If you do not want to think about it any further, those are the right starting points.
+
+---
+
+## CPU model choices
+
+CPU is where the tradeoff matters most, because one step up in quality can easily cost you 2x or 3x latency.
+
+### Keep the default when
+
+- you want the quickest path to a working install
+- you care most about low latency on CPU
+- you do not want to think about model tuning yet
+
+The current default, `ibm-granite/granite-4.0-350m-GGUF`, is still the fastest tested CPU model in the latest run at `2.14 s` average inference. That is why it remains the product default. The point of the default is not to win the benchmark. The point is to be safe, small, and quick enough to make first-run local compression feel usable.
+
+### Upgrade to Qwen3.5 0.8B when
+
+- you want the best local CPU quality
+- you can tolerate roughly `4.5 s` average inference instead of `2.1 s`
+- you want a clear step up without moving to CUDA or remote
+
+`unsloth/Qwen3.5-0.8B-GGUF` is the strongest CPU model in the current run at `56.45`. This is the main CPU recommendation if the default feels too weak.
+
+### Consider the small LFM or Qwen2.5 variants when
+
+- you care about CPU latency almost as much as the default
+- you still want a noticeable quality step up
+
+Two interesting middle-ground CPU options in the current run are:
+
+| Model | Avg. Inference (s) | Score | Why you would choose it |
+|---|:-:|:-:|---|
+| `LiquidAI/LFM2.5-350M-GGUF` | 2.38 | 49.92 | Near-default speed with a healthier score |
+| `Qwen/Qwen2.5-0.5B-Instruct-GGUF` | 3.30 | 53.06 | Stronger score than the small LFM, still much faster than the top CPU pick |
+
+These are good if you want something meaningfully better than Granite 350M without paying the full latency cost of the top CPU choice.
+
+### Avoid these unless you have a specific reason
+
+- `unsloth/gemma-3-270m-it-GGUF`
+- `unsloth/gemma-3-1b-it-GGUF`
+- `LiquidAI/LFM2-350M-Extract-GGUF`
+
+They are not unusable in an absolute sense, but in the current CtxSift benchmark they are weak enough that there is usually a better option at nearby speed.
+
+---
+
+## GPU model choices
+
+GPU changes the tradeoff shape. Once you have CUDA, the question is usually not "can I run local compression at all?" The question becomes "do I want speed or do I want the best local score?"
+
+### Use LFM2.5 1.2B first
+
+If you are on CUDA and you want the least risky starting point, use `LiquidAI/LFM2.5-1.2B-Instruct`.
+
+Why:
+
+- it was the fastest GPU model in the current run at `0.81 s`
+- it still scored `54.61`
+- it is the easiest local CUDA model to recommend without caveats
+
+This is the right default for most people with a usable NVIDIA card.
+
+### Move to Qwen3.5 2B when quality matters more than latency
+
+If your goal is "best local CUDA score, even if it is slower", move to `Qwen/Qwen3.5-2B`.
+
+In the latest run:
+
+- `Qwen/Qwen3.5-2B` scored `61.07`
+- average inference was `16.92 s`
+
+That is a real quality step up, but it is also a large latency jump. Use it when the stronger compression is worth the wait.
+
+### The middle-ground CUDA picks
+
+These are the two models worth considering between the fast default and the best-quality upgrade:
+
+| Model | Avg. Inference (s) | Score | Comment |
+|---|:-:|:-:|---|
+| `Qwen/Qwen3.5-0.8B` | 3.43 | 59.13 | Strong small GPU model and much faster than the 2B tier |
+| `Qwen/Qwen2.5-1.5B-Instruct` | 7.80 | 59.28 | Slightly higher score, but at more than double the latency |
+
+If you want a sharper local model than LFM, but do not want to jump all the way to Qwen3.5 2B, these are the main two to compare.
+
+### GPU models that are not current favorites
+
+The current benchmark does not make a strong case for:
+
+- `unsloth/gemma-3-1b-it`
+- `ibm-granite/granite-4.0-micro`
+- `ibm-granite/granite-3.3-2b-instruct`
+
+Again, this does not mean they are universally bad models. It means they are not especially strong CtxSift compression picks relative to the better options in the same local run.
+
+---
+
+## Remote model choices
+
+Remote is mostly a cost, latency, and quality decision.
+
+### Use gpt-4.1 when you want the best result
+
+`gpt-4.1` is the strongest hosted result in the latest run:
+
+- `88.17` score
+- `1.33 s` average inference
+- `1` rejected case
+
+If you are optimizing for quality first, that is the current remote winner.
+
+### Use gpt-4o-mini when you want the safest everyday default
+
+`gpt-4o-mini` is not the best score in the remote set, but it is one of the easiest remote recommendations because it stays:
+
+- fast
+- reliable
+- relatively cheaper than flagship hosted models
+
+It posted `84.61` with only `1` rejected case, which is strong enough for a default hosted path.
+
+### Use gpt-4.1-mini when you want a middle ground
+
+`gpt-4.1-mini` is the practical middle between `gpt-4.1` and `gpt-4o-mini` in the current run. It keeps most of the quality shape of the flagship result while staying close in speed.
+
+### Remote models to avoid right now
+
+Do not use these for CtxSift compression based on the current benchmark:
+
+- `gpt-5-nano`
+- `gpt-5-mini`
+
+Both underperformed badly in the latest run. This is not a pricing opinion or a general model judgment. It is a CtxSift compression benchmark result.
+
+---
+
+## Choose by priority
+
+If you prefer to think in priorities instead of hardware paths, use this matrix.
+
+| Priority | Recommended choice |
+|---|---|
+| Fastest local CPU path | `ibm-granite/granite-4.0-350m-GGUF` |
+| Best local CPU quality | `unsloth/Qwen3.5-0.8B-GGUF` |
+| Best near-default CPU upgrade | `LiquidAI/LFM2.5-350M-GGUF` |
+| Fastest practical local CUDA path | `LiquidAI/LFM2.5-1.2B-Instruct` |
+| Best local CUDA quality | `Qwen/Qwen3.5-2B` |
+| Best hosted quality | `gpt-4.1` |
+| Cheapest safe hosted default | `gpt-4o-mini` |
+
+---
+
+## When the benchmark should overrule this guide
+
+This page is auto-generated from the benchmark snapshots bundled in the repo. That is already far better than generic model advice, but it is still not your exact machine.
+
+You should run the benchmark yourself when:
+
+- your CPU is much weaker or much stronger than the benchmark machine
+- your GPU has very different VRAM or throughput characteristics
+- you care about one narrow class of outputs more than the full benchmark corpus
+- you want to compare recovered score versus raw score for your own target model
+
+Use the benchmark when the choice is close. Use this guide when you just want the right short list.
+
+<Aside type="tip">
+If you benchmark your own model and it looks messy in raw output but strong after recovery, that is not automatically bad. The main question is whether the recovered score is high and the remaining hard rejects are acceptable for your workflow.
+</Aside>
+
+---
+
+## Related pages
+
+- [Local Models Guide](/docs/guides/local-models/)
+- [Remote Models Guide](/docs/guides/remote-models/)
+- [Benchmark Guide](/docs/guides/benchmark/)

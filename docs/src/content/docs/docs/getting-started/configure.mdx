@@ -5,18 +5,86 @@ description: Set up CtxSift's model provider, runtime settings, and workspace co
 
 import { Aside } from '@astrojs/starlight/components';
 
-Run the guided setup once to get everything working:
+CtsSift has a guided setup that you can run to get everything setup after install. Typically, you will only need to run
+this once.
 
-```bash
+```bash frame="none"
 ctxsift configure
 ```
 
-This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill. You only need to run it once per setup.
+This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill.
+This will also pre-download the required models so that you can start using it right away.
 
-After running it, verify everything is reachable:
+After running it, verify everything is working:
 
-```bash
+```bash frame="none"
 ctxsift doctor
+```
+
+---
+
+## Agent skill installation
+
+> If you prefer manual installation, download the skill from [here](https://raw.githubusercontent.com/aakashH242/ctxsift/refs/heads/main/src/ctxsift/agent_skill_template.md).
+
+
+`ctxsift configure` can install the CtxSift skill for supported agent hosts as part of the same guided flow.
+
+During configure, you will be asked:
+
+1. `Install the CtxSift agent skill for supported coding agents?` (default: `no`)
+2. `Install for (numbers, ranges, names, or all)` with a numbered host list
+3. Scope prompts per selected host
+4. Target-path prompts for hosts that do not use one fixed built-in location
+
+Supported host names:
+
+- `copilot`
+- `antigravity`
+- `claude-code`
+- `codex`
+- `cursor`
+- `windsurf-cascade`
+- `cline`
+- `roo-code`
+- `kilo-code`
+- `continue`
+- `aider`
+- `opencode`
+- `gemini-cli`
+- `qwen-code`
+- `kiro`
+- `jetbrains-junie`
+- `openhands`
+- `zed-agent`
+- `sourcegraph-amp`
+- `augment-auggie`
+- `factory-droid`
+- `amazon-q-developer`
+- `replit-agent`
+- `devin`
+- `codegen`
+- `google-jules`
+- `other` (custom target)
+
+If you want to see the full support matrix before running setup, including which hosts are global-only, workspace-only, or shared-file based, see [Supported agents](/docs/getting-started/installation/#supported-agents).
+
+For the newly added hosts, configure uses the documented global/workspace support from the host catalog and then suggests a default target path for that scope. Some hosts use a dedicated skill folder, while others use shared files such as `AGENTS.md`, `GEMINI.md`, or a rules/workflows folder. For shared files, CtxSift writes only its managed block instead of overwriting the whole file.
+
+For `other`, and for any host where you want a different location than the suggested default, configure asks for a target path. You can provide:
+
+- a full file path ending in `SKILL.md`, or
+- a directory path (for example `.agents/skills/ctxsift`) and CtxSift writes `SKILL.md` inside it.
+
+<Aside type="note">
+If configure is run in a non-interactive context (for example closed stdin), the skill-install prompts are skipped and config setup continues normally.
+</Aside>
+
+Configure prints one line per install result, such as:
+
+```text
+Installed CtxSift skill for Copilot (workspace) at /path/to/repo/.github/skills/ctxsift/SKILL.md
+Already current CtxSift skill for Codex (global) at /home/user/.codex/skills/ctxsift/SKILL.md
 ```
 
 ---
@@ -41,14 +109,14 @@ Environment variable > Workspace config > Global config > Default
 
 To see what CtxSift is actually resolving (secrets redacted):
 
-```bash
+```bash frame="none"
 ctxsift config show           # workspace-aware resolved config
 ctxsift config show --global  # global config file only
 ```
 
 To write one key at a time:
 
-```bash
+```bash frame="none"
 ctxsift config set <key> <value>           # writes to workspace config
 ctxsift config set <key> <value> --global  # writes to global config
 ```
@@ -74,7 +142,7 @@ CPU mode uses embedded `llama.cpp` with a GGUF model. You supply a Hugging Face 
 `local.gguf_filename` is **required** when `local.device` is `cpu`. CtxSift will validate this and fail with a clear error if it is missing.
 </Aside>
 
-```bash
+```bash frame="none"
 ctxsift config set local.model unsloth/Qwen3.5-0.8B-GGUF --global
 ctxsift config set local.gguf_filename Qwen3.5-0.8B-Q8_0.gguf --global
 ```
@@ -94,7 +162,7 @@ CUDA mode uses Transformers. Supply a standard Hugging Face text-generation mode
 | `local.quantization` | `none` | `CTXSIFT_LOCAL_QUANTIZATION` |
 | `local.model_cache_path` | _(empty)_ | `CTXSIFT_MODEL_CACHE_PATH` |
 
-```bash
+```bash frame="none"
 ctxsift config set local.model LiquidAI/LFM2.5-1.2B-Instruct --global
 ctxsift config set local.device cuda --global
 ```
@@ -127,7 +195,7 @@ Set `remote.base_url` to switch from local to a hosted provider via LiteLLM.
 | `remote.api_version` | _(empty)_ | `CTXSIFT_LLM_API_VERSION` |
 | `remote.reasoning_mode` | `auto` | `CTXSIFT_LLM_REASONING_MODE` |
 
-```bash
+```bash frame="none"
 ctxsift config set remote.base_url https://api.openai.com/v1 --global
 ctxsift config set remote.model_name gpt-4o-mini --global
 ctxsift config set remote.api_key YOUR_KEY --global
@@ -152,11 +220,24 @@ These apply to all compression regardless of local or remote mode.
 | `max_output_tokens` | `512` | `CTXSIFT_MAX_OUTPUT_TOKENS` |
 | `timeout_ms` | `90000` | `CTXSIFT_TIMEOUT_MS` |
 | `retries` | `1` | `CTXSIFT_RETRIES` |
+| `recovery_enabled` | `true` | `CTXSIFT_RECOVERY_ENABLED` |
 
-```bash
+```bash frame="none"
 ctxsift config set max_output_tokens 768
 ctxsift config set timeout_ms 120000
+ctxsift config set recovery_enabled false
 ```
+
+<Aside type="note">
+CtxSift implements a mechanism that tries to recover malformed or corrupt model outputs based on the intent of the caller's instructions.
+The goal of this recovery step is to ensure noise is removed and the caller receives only the most high-signal tokens. Based on our
+benchmarks, we found that output recovery is mostly beneficial but may hurt a few models, such as `gpt-4.1`. Learn more
+about output recovery [here](/docs/concepts/output-processing/#recovery).
+
+If you are unsure, keep `recovery_enabled` as true and run a benchmark with your desired model to find whether it helps or not.
+See how to run a [benchmark](/docs/guides/benchmark/#running-it).
+
+</Aside>
 
 ---
 
@@ -216,7 +297,7 @@ CtxSift serves local models through background daemons — one per effective run
 
 When `daemon.enabled` is `false`, CtxSift falls back to in-process model loading — slower cold starts and no cross-workspace model reuse.
 
-```bash
+```bash frame="none"
 ctxsift daemon status
 ctxsift daemon stop --all
 ```
@@ -237,11 +318,12 @@ Controls how long compressed records are kept before background cleanup removes 
 
 All env vars at a glance:
 
-```bash
+```bash frame="none"
 # General
 CTXSIFT_MAX_OUTPUT_TOKENS=512
 CTXSIFT_TIMEOUT_MS=90000
 CTXSIFT_RETRIES=1
+CTXSIFT_RECOVERY_ENABLED=true
 
 # Remote
 CTXSIFT_LLM_BASE_URL=

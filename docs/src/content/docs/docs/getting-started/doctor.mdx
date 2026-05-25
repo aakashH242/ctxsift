@@ -1,166 +1,192 @@
 ---
 title: Doctor
-description: Verify runtime health, optional dependencies, and your chosen model path before using compress and recall.
+description: Verify optional dependencies, local runtime support, and remote configuration.
 ---
 
-import { Aside } from '@astrojs/starlight/components';
+The `doctor` command verifies you have the minimum needed dependencies for your installation mode. You can run it with:
 
-```bash
+```bash frame="none"
 ctxsift doctor
 ```
 
-Run this after `ctxsift configure`. Doctor checks every part of the runtime that CtxSift depends on and tells you what is working, what is missing, and what is optional.
+Doctor is the fastest way to check whether your chosen runtime path is actually usable.
 
-<Aside type="tip">
-Doctor does not modify anything. It is safe to run at any time — in CI, after changing config, or after upgrading.
-</Aside>
+## What doctor checks
+
+Doctor reports required and optional runtime conditions, including:
+
+- Python and platform support
+- workspace initialization
+- optional remote dependencies
+- local inference prerequisites
+- CUDA availability when relevant
+- configured model and backend paths
+
+Doctor should not be treated as a cosmetic step. It is the fastest way to catch a bad local model path, a missing optional package, or an incomplete remote setup before you start using compress and recall in a real workflow.
+
+## Typical workflow
+
+```bash frame="none"
+ctxsift configure
+ctxsift doctor
+```
+
+If doctor fails, fix the dependency or configuration issue first.
 
 ---
 
 ## What doctor checks
 
-Doctor runs all checks in one pass and reports each one with a severity and status. The checks are grouped below by what they cover.
+`ctxsift doctor` resolves your effective config for the current directory (same resolution behavior as runtime), then runs a set of probes that are:
 
-### Required checks
+1. Always-on core checks
+2. Mode-aware checks (local vs remote)
+3. Feature-aware checks (quantization, GGUF, optional packages)
 
-These must pass for CtxSift to function at all.
-
-| Check | What it tests |
-|---|---|
-| `database` | Can CtxSift create and initialize its SQLite workspace database at the resolved path |
-| `sqlite_core` | Core SQLite is importable and connectable |
-| `sqlite_fts5` | SQLite FTS5 virtual table extension is available (used for lexical recall search) |
-
-If `database` fails, the resolved DB path is printed in the error. Common causes: a path that does not exist yet, or a permissions issue on the target directory.
-
-If `sqlite_fts5` fails, your Python's SQLite was built without FTS5 support. This is rare on standard installs but can happen with some minimal system builds.
-
-### Warning checks
-
-These are not hard blockers, but failures mean reduced functionality or a misconfiguration that will cause problems when you actually run a command.
-
-| Check | What it tests | When it fires |
-|---|---|---|
-| `git_workspace` | Whether the current directory is inside a Git repo | Always — non-Git workspaces get reduced freshness metadata |
-| `remote_config` | Whether `remote.base_url` is set but `remote.model_name` is missing | Only when remote mode is enabled |
-| `sqlite_vec` | Whether the `sqlite-vec` extension loaded and whether the indexed model matches the configured embedding model | Always — mismatch means recall degrades to FTS5 only |
-| `local_runtime` | Whether the configured local model path is resolvable as either llama.cpp or Transformers | Only when local compression is active |
-| `litellm` | Whether LiteLLM is installed | Only when `remote.base_url` is set |
-| `gguf_artifact` | Whether the configured `.gguf` file is already in the local Hugging Face cache | Only on CPU llama.cpp path |
-
-### Optional checks
-
-These affect performance and feature availability but do not block operation.
-
-| Check | What it tests | Impact if missing |
-|---|---|---|
-| `cuda` | Whether PyTorch sees a usable CUDA device | Local GPU compression and GPU embedding acceleration unavailable |
-| `onnxruntime` | Whether ONNX Runtime is installed | Embedding inference stays on the Torch path (slower on CPU) |
-| `flashattention` | Whether `flash-attn` or a compatible kernels package is installed | Attention defaults to SDPA; throughput may be lower on supported GPUs |
-| `llama_cpp` | Whether `llama-cpp-python` is installed | CPU llama.cpp path unavailable |
-| `accelerate` | Whether Hugging Face Accelerate is installed | Required for BitsAndBytes quantization on CUDA |
-| `bitsandbytes` | Whether BitsAndBytes is installed | Required for `bnb-8bit` / `bnb-4bit-*` quantization modes |
+Doctor is read-mostly, but it may initialize/validate your workspace database path to confirm schema health and extension availability.
 
 ---
 
-## Reading the output
+## How to read doctor output
 
-Each check is printed as:
+Each line is rendered as:
 
-```
+```text frame="none"
 [severity] check_name: status - detail
 ```
 
-For example:
+Status logic:
 
-```
-[required] database: ok - Database initialized at /repo/.git/ctxsift/ctxsift.db (schema=v3).
-[warning]  sqlite_vec: ok - sqlite-vec is available (vec_version=0.1.3, dim=896).
-[optional] cuda: ok - CUDA is available.
-[optional] onnxruntime: warning - ONNX Runtime is not installed.
-[warning]  gguf_artifact: ok - Configured GGUF artifact ibm-granite/granite-4.0-350m-GGUF/granite-4.0-350m-Q8_0.gguf is not cached locally yet. Configure or first use will download it.
-```
-
-A `warning` or `optional` status on a check does not mean doctor failed — it means that specific feature is reduced or the configuration has an issue worth looking at. Only `required` failures block basic operation.
+- `required` + failing status means a hard blocker for normal operation.
+- `warning` + failing status means degraded behavior or misconfiguration risk.
+- `optional` + failing status means a capability is unavailable, but CtxSift may still run via fallback paths.
 
 ---
 
-## Common failures and fixes
+## Check reference
 
-**`database` fails — path error**
+| Check name | When it appears | Why it matters | If it fails |
+|---|---|---|---|
+| `database` | Always | Verifies DB path can initialize and schema is usable | CtxSift storage cannot operate reliably |
+| `git_workspace` | Always | Detects git metadata support in current cwd | Compression/recall still work, but git-aware context is reduced |
+| `remote_config` | Always | Ensures remote settings are coherent when remote mode is enabled | Remote mode may be partially configured and unusable |
+| `sqlite_core` | Always | Confirms core SQLite availability | Hard blocker for storage |
+| `sqlite_fts5` | Always | Confirms FTS5 virtual table support | Recall text search path is broken |
+| `sqlite_vec` | Always (or skipped detail after DB failure) | Confirms vector extension + embedding-model compatibility | Recall may fall back to FTS5-only |
+| `cuda` | Optional | Indicates whether torch CUDA path is usable | Local CUDA acceleration unavailable |
+| `onnxruntime` | Optional | Enables faster CPU embeddings path in supported setups | Embeddings can still run via torch fallback |
+| `flashattention` | Optional | Extra attention backend for supported CUDA stacks | Usually safe to ignore unless you expect this backend |
+| `litellm` | Remote mode only | Required adapter package for remote providers | Remote compression will not run |
+| `local_runtime` | Local mode only | Validates local runtime backend can resolve from config | Local compression backend unusable until fixed |
+| `llama_cpp` | Local CPU (llama.cpp) path | Confirms CPU local runtime package availability | CPU local compression unavailable |
+| `gguf_artifact` | Local CPU (llama.cpp) path | Verifies configured GGUF file resolution/cache state | Wrong GGUF config blocks CPU local compression |
+| `accelerate` | Local CUDA with quantization enabled | Required support package for quantized transformer loading | Quantized load path may fail |
+| `bitsandbytes` | Local CUDA with `bnb-*` quantization modes | Required for BnB quantization | BnB quantized path will fail |
 
-CtxSift could not initialize the SQLite database. Usually a missing parent directory or a permissions issue.
+---
 
-```bash
-# Check what path CtxSift is trying to use
-ctxsift config show | grep db_path
+## Mode-specific interpretation
+
+### Local CPU (llama.cpp)
+
+Prioritize these checks:
+
+1. `database`, `sqlite_core`, `sqlite_fts5`
+2. `local_runtime`, `llama_cpp`, `gguf_artifact`
+3. `sqlite_vec`
+
+If `gguf_artifact` says "not cached locally yet," that is not necessarily an error. First run may download it.
+
+### Local CUDA
+
+Prioritize these checks:
+
+1. `database`, `sqlite_core`, `sqlite_fts5`
+2. `local_runtime`, `cuda`
+3. `accelerate` and `bitsandbytes` (only if quantization is enabled)
+
+`flashattention` is performance-oriented, not a strict requirement for most environments.
+
+### Remote compression
+
+Prioritize these checks:
+
+1. `remote_config` (base URL + model name coherence)
+2. `litellm`
+3. Core storage checks (`database`, `sqlite_core`, `sqlite_fts5`, `sqlite_vec`)
+
+Even in remote compression mode, embeddings/recall are still local checks.
+
+---
+
+## Common failure patterns and fixes
+
+### `remote_config` warns about missing model name
+
+Cause: `remote.base_url` is set but `remote.model_name` is empty.
+
+Fix:
+
+```bash frame="none"
+ctxsift config set remote.model_name <provider-model>
 ```
 
-**`sqlite_fts5` fails**
+### `litellm` missing in remote mode
 
-Your Python build's SQLite does not include FTS5. Try a standard Python installer from [python.org](https://www.python.org/downloads/) rather than a minimal system package.
+Cause: remote extras not installed.
 
-**`remote_config` fails — missing model name**
+Fix:
 
-`remote.base_url` is set but `remote.model_name` is empty. Fix:
-
-```bash
-ctxsift config set remote.model_name gpt-4o-mini --global
-```
-
-**`sqlite_vec` — model mismatch warning**
-
-The vector index in the database was built with a different embedding model than what is currently configured. Recall will degrade to FTS5 only. Either revert to the previous model or reinitialize the workspace database to rebuild the index with the new model.
-
-**`litellm` fails — not installed**
-
-Remote compression is configured but LiteLLM is missing:
-
-```bash
+```bash frame="none"
 uv tool install "ctxsift[remote]"
 ```
 
-**`llama_cpp` fails — not installed**
+### `llama_cpp` missing in local CPU mode
 
-CPU local compression path requires `llama-cpp-python`, which is bundled in the base install. If it is missing, reinstall:
+Cause: base local CPU runtime dependency unavailable.
 
-```bash
-uv tool install ctxsift --force-reinstall
+Fix:
+
+1. Reinstall or upgrade CtxSift base package.
+2. Ensure your platform build prerequisites are present (compiler toolchain).
+
+### `bitsandbytes` fails with `bnb-*` quantization
+
+Cause: quantization mode selected, but package/runtime compatibility missing.
+
+Fix:
+
+```bash frame="none"
+uv tool install "ctxsift[gpu,quant]"
 ```
 
-**`gguf_artifact` — not cached yet**
+Then re-run doctor.
 
-Not a failure. The GGUF file will be downloaded automatically on first compress run. Doctor is just telling you it is not pre-cached yet.
+### `sqlite_vec` model mismatch warning
 
-**`cuda` optional — unavailable**
+Cause: vector index in DB was built with a different embedding model than current config.
 
-PyTorch is not installed or does not see a GPU. If you want GPU acceleration:
+Impact: recall degrades to FTS5-only until alignment is restored.
 
-```bash
-uv tool install "ctxsift[gpu]"
-```
+Fix options:
 
-**`onnxruntime` optional — not installed**
-
-Embedding inference on CPU stays on the Torch path. ONNX is faster for the default Harrier model on CPU. It is installed automatically with the base package on most setups. If it is missing:
-
-```bash
-uv tool install ctxsift --force-reinstall
-```
-
-**`flashattention` optional — not installed**
-
-Flash Attention is not required. SDPA is the fallback. On Windows, Flash Attention is usually not available and this is expected.
+1. Revert embedding model to the prior value.
+2. Rebuild/reinitialize workspace DB to regenerate vector index with the current embedding model.
 
 ---
 
-## Typical setup flow
+## Recommended usage cadence
 
-```bash
-ctxsift configure   # set model and config
-ctxsift doctor      # verify everything resolves
-```
+Run `doctor`:
 
-If doctor shows no `required` failures, you are ready. Optional and warning checks are worth reading but do not block use.
+1. Right after `ctxsift configure`
+2. After changing local/remote backend settings
+3. After changing embedding model or quantization mode
+4. After upgrading Python, CUDA, PyTorch, or optional runtime packages
 
-Next: [Compress](/docs/concepts/compress/) and [Recall](/docs/concepts/recall/).
+For most teams, this catches setup drift before it shows up as compression failures or degraded recall quality.
+
+---
+## After doctor passes
+
+Read [Compress](/docs/concepts/compress/) and [Recall](/docs/concepts/recall/) to understand the two core operations.

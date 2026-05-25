@@ -10,12 +10,35 @@ import pytest
 from ctxsift.compression.intent import CompressionIntent
 from ctxsift.compression import pipeline as compression
 from ctxsift.compression import compress_input, summarize_deterministically
+from ctxsift.execution import CommandExecutionResult
 from ctxsift.git_metadata import GitMetadata
 from ctxsift.models.base import BackendUnavailableError
 from ctxsift.models.transformers_backend import TransformersTextBackend
-from ctxsift.compression.run_payload import CommandCapture, render_run_payload
+from ctxsift.compression.run_payload import render_run_payload
 from ctxsift.types import AppConfig, CompressionRequest, LocalModelConfig
 from ctxsift.types import WorkspaceContext
+
+
+def _command_result(
+    *,
+    command: list[str],
+    cwd: str,
+    stdout: str,
+    stderr: str,
+    exit_code: int,
+    duration_ms: int,
+    shell: bool = False,
+) -> CommandExecutionResult:
+    return CommandExecutionResult(
+        stdout=stdout,
+        stderr=stderr,
+        exit_code=exit_code,
+        duration_ms=duration_ms,
+        command_display=" ".join(command),
+        argv=tuple(command),
+        shell=shell,
+        cwd=cwd,
+    )
 
 
 def test_compress_input_returns_local_passthrough_without_storing_when_backend_is_unavailable(
@@ -208,7 +231,7 @@ def test_compress_input_run_mode_sends_only_output_text_to_model_backend(
             return "Model summary"
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
-    capture = CommandCapture(
+    capture = _command_result(
         command=["python", "-c", "print('hello')"],
         cwd=str(repo_path),
         stdout="hello\n",
@@ -235,7 +258,7 @@ def test_compress_input_run_mode_sends_only_output_text_to_model_backend(
         mode="run",
         cwd=str(repo_path),
         command="python -c print('hello')",
-        command_args=capture.command,
+        command_args=list(capture.argv),
         command_exit_code=capture.exit_code,
         command_duration_ms=capture.duration_ms,
     )
@@ -265,7 +288,7 @@ def test_compress_input_run_mode_preserves_literal_fence_lines_in_command_output
             return "Model summary"
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FakeBackend())
-    capture = CommandCapture(
+    capture = _command_result(
         command=["python", "-c", "print('hello')"],
         cwd=str(repo_path),
         stdout="before\n```\nafter\n",
@@ -292,7 +315,7 @@ def test_compress_input_run_mode_preserves_literal_fence_lines_in_command_output
         mode="run",
         cwd=str(repo_path),
         command="python -c print('hello')",
-        command_args=capture.command,
+        command_args=list(capture.argv),
         command_exit_code=capture.exit_code,
         command_duration_ms=capture.duration_ms,
     )
@@ -302,6 +325,39 @@ def test_compress_input_run_mode_preserves_literal_fence_lines_in_command_output
     assert result.compressed_output == "Model summary"
     assert compression._run_payload_output_text(request.raw_input) == "before\n```\nafter\n\nwarn"
     assert seen["raw_input"] == "before\n```\nafter\n\nwarn"
+
+
+def test_run_payload_output_text_ignores_length_like_lines_inside_legacy_fenced_output() -> None:
+    raw_input = "\n".join(
+        [
+            "Workspace root: /repo",
+            "Git repo: True",
+            "",
+            "Command: demo",
+            "Shell mode: False",
+            "Cwd: /repo",
+            "Exit code: 1",
+            "Duration ms: 3",
+            "",
+            "Stdout:",
+            "```text",
+            "real line",
+            "Stdout:",
+            "Length: 4",
+            "fake",
+            "```",
+            "",
+            "Stderr:",
+            "```text",
+            "warn",
+            "```",
+        ]
+    )
+
+    assert (
+        compression._run_payload_output_text(raw_input)
+        == "real line\nStdout:\nLength: 4\nfake\nwarn"
+    )
 
 
 def test_compress_input_uses_remote_backend_when_base_url_is_configured(
@@ -487,7 +543,7 @@ def test_compress_input_remote_failure_passthrough_uses_run_output_body(
             )
         ),
     )
-    capture = CommandCapture(
+    capture = _command_result(
         command=["python", "-c", "print('hello')"],
         cwd=str(repo_path),
         stdout="hello\n",
@@ -514,7 +570,7 @@ def test_compress_input_remote_failure_passthrough_uses_run_output_body(
         mode="run",
         cwd=str(repo_path),
         command="python -c print('hello')",
-        command_args=capture.command,
+        command_args=list(capture.argv),
         command_exit_code=capture.exit_code,
         command_duration_ms=capture.duration_ms,
     )
@@ -606,7 +662,7 @@ def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_fil
             raise BackendUnavailableError("model unavailable")
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
-    capture = CommandCapture(
+    capture = _command_result(
         command=["python", "-c", "print('src/generated.py')"],
         cwd=str(repo_path),
         stdout="src/real.py:12:3\n",
@@ -633,7 +689,7 @@ def test_compress_input_run_mode_ignores_inline_command_code_when_extracting_fil
         mode="run",
         cwd=str(repo_path),
         command="python -c print('src/generated.py')",
-        command_args=capture.command,
+        command_args=list(capture.argv),
         command_exit_code=capture.exit_code,
         command_duration_ms=capture.duration_ms,
     )
@@ -660,7 +716,7 @@ def test_compress_input_run_mode_with_empty_output_does_not_promote_inline_comma
             raise BackendUnavailableError("model unavailable")
 
     monkeypatch.setattr(compression, "create_compression_backend", lambda config: FailingBackend())
-    capture = CommandCapture(
+    capture = _command_result(
         command=["python", "-c", "print('src/generated.py')"],
         cwd=str(repo_path),
         stdout="",
@@ -687,7 +743,7 @@ def test_compress_input_run_mode_with_empty_output_does_not_promote_inline_comma
         mode="run",
         cwd=str(repo_path),
         command="python -c print('src/generated.py')",
-        command_args=capture.command,
+        command_args=list(capture.argv),
         command_exit_code=capture.exit_code,
         command_duration_ms=capture.duration_ms,
     )
