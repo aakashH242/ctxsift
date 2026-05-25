@@ -1,0 +1,272 @@
+---
+title: Output Processing
+description: How CtxSift normalizes, validates, and sometimes recovers model output before it is stored, returned, or scored.
+---
+
+import { Aside } from '@astrojs/starlight/components';
+
+When CtxSift asks a model to compress noisy output, the model's first answer is not treated as final truth.
+
+CtxSift runs that answer through an output-processing pipeline before it stores the record, returns the final text, or scores the model in the benchmark. That pipeline exists because many real models do at least one of these:
+
+- wrap otherwise-correct output in code fences
+- echo prompt scaffolding like `Instruction:` or `Output form:`
+- leak chat control tokens like `<|im_end|>`
+- leak visible reasoning such as `Okay, the user wants...`
+- return the right facts in a slightly wrong wrapper
+
+Output processing is CtxSift's answer to that mess. It tries to make the final output usable without pretending the model was cleaner than it really was.
+
+---
+
+## The four stages
+
+At a high level, CtxSift processes model output in four steps:
+
+1. The model returns a raw answer
+2. CtxSift **normalizes** it into a cleaner candidate
+3. CtxSift **validates** that candidate against the requested intent
+4. If recovery is enabled and the answer looks salvageable, CtxSift tries **deterministic recovery**
+
+The important split is:
+
+- **Normalization** is always on
+- **Recovery** is optional and controlled by `recovery_enabled`
+
+Normalization makes the output easier to judge. Recovery tries to rescue outputs that are close enough to be safely repaired.
+
+---
+
+## Stage 1: Raw output
+
+The raw output is the model's first visible answer before CtxSift cleans it up.
+
+This matters most in the benchmark. The benchmark keeps the raw answer so it can answer a simple question honestly: how clean was the model by itself?
+
+In normal product use, CtxSift does not return the raw answer. It returns the recovered final answer by default.
+
+---
+
+## Stage 2: Normalization
+
+Normalization is the always-on cleanup pass. It is not meant to "fix" the answer semantically. It is meant to remove wrappers and obvious junk so validation can judge the actual payload more fairly.
+
+Depending on intent, normalization can do things like:
+
+- strip leaked reasoning tags such as `<thinking>` or `<analysis>`
+- strip known chat control tokens such as `<|im_end|>` and similar wrappers
+- collapse outer blank lines
+- strip plain-text headings and bullet wrappers
+- unwrap a single fenced block when that is safe for the requested contract
+- trim leading visible thought preamble such as `Okay, the user wants...`
+
+The exact cleanup is intent-aware.
+
+### Plain-text intents
+
+For `summary` and `recall`, normalization is more forgiving. If the answer contains a safe removable preamble or a fence wrapper around otherwise-normal prose, CtxSift will usually strip it.
+
+That is why a model can answer with:
+
+```text
+Okay, the user wants the failing test ids.
+
+- tests/api/test_users.py::test_create_user
+- tests/api/test_users.py::test_delete_user
+```
+
+and still end up with a clean final plain-text result.
+
+### Strict intents
+
+For `exact-lines`, `exact-format`, `json`, `yaml`, `table`, and `bullet-list`, normalization is stricter.
+
+CtxSift will still remove some clearly extraneous wrappers, but only when doing so does not change the meaning of the payload. For example:
+
+- a whole-answer fence like ```` ```json ... ``` ```` can be unwrapped
+- a visible thought preamble can be trimmed if the remaining payload still matches the requested contract
+
+But if the inner payload still does not satisfy the requested exact or structured shape, normalization does not try to invent a fix.
+
+<Aside type="tip">
+Normalization is not a paraphraser. It only does deterministic cleanup that CtxSift can justify from the text already present.
+</Aside>
+
+---
+
+## Stage 3: Validation
+
+After normalization, CtxSift validates the candidate against the requested intent.
+
+This is where output processing becomes contract-aware. A candidate that is fine for `summary` can still be invalid for `json`, and a candidate that is acceptable for `recall` can still fail `exact-format`.
+
+Validation checks for things like:
+
+- empty output
+- prompt scaffolding echo
+- role token leakage
+- leaked control tokens
+- leaked visible thought
+- missing anchors for exact-line style tasks
+- obvious structured contract breakage
+- obvious exact-format contract breakage
+
+Validation produces one of three outcomes:
+
+| Status | Meaning |
+|---|---|
+| `accepted` | The candidate looks valid for the requested intent |
+| `soft_accepted` | The candidate is usable, but has quality problems such as sparse leakage or recoverable wrapper mistakes |
+| `rejected` | The candidate clearly fails the requested contract |
+
+This is also where CtxSift distinguishes different kinds of output damage.
+
+### Sparse vs dense leakage
+
+For plain-text intents, sparse leaked control tokens or sparse visible thought are usually treated as quality defects, not automatic hard failures.
+
+For strict intents, the standard is much tighter. If leaked wrapper text or leaked reasoning makes the output unusable as exact text or machine-readable structure, the answer is rejected unless safe cleanup can remove the wrapper without changing the payload.
+
+---
+
+## Recovery
+
+Recovery is the optional fourth stage, controlled by `recovery_enabled`.
+
+If recovery is on, CtxSift checks whether the answer looks like a **salvageable wrapper failure** rather than a fundamentally wrong answer. If so, it generates a small set of deterministic recovery candidates and picks the best one.
+
+This is not another model call. It is a rule-based repair pass over the same text.
+
+Typical recovery cases include:
+
+- prompt scaffolding at the top, with the real answer underneath
+- a single fenced block around otherwise-valid JSON, YAML, table text, or plain text
+- a leading visible thought preamble before the actual payload
+- known control tokens around an otherwise-correct answer
+
+Recovery does **not** try to repair the content itself. It does not invent missing fields, infer missing objects, or rewrite wrong commands into right ones.
+
+If the answer is fundamentally wrong, recovery leaves it wrong and validation still fails.
+
+---
+
+## Safe fence unwrap
+
+One common case is fenced output:
+
+````text
+```json
+{"file":"src/app.py","line":14}
+```
+````
+
+For strict and structured intents, CtxSift now treats this as a recoverable wrapper problem when all of the following are true:
+
+- the whole answer is just one fenced block
+- the instruction did not explicitly ask for fenced output
+- the inner payload parses or matches the requested contract after unwrap
+
+That means:
+
+- **raw benchmark view** still records the wrapper mistake
+- **recovered view** can accept the unwrapped payload
+
+If the inner payload still does not parse or does not match the requested shape, the answer stays rejected.
+
+---
+
+## Visible thought leakage
+
+CtxSift treats visible reasoning as a first-class failure mode.
+
+This includes both tag-style leakage and prose-style meta reasoning:
+
+- `<think>...</think>`
+- `<analysis>...</analysis>`
+- `Okay, the user wants...`
+- `I should return...`
+- `However, the instruction says...`
+
+For plain-text intents, CtxSift can safely trim a **leading** visible-thought preamble in recovered output. That helps keep the product output clean while still allowing the benchmark to notice that the model leaked reasoning in the first place.
+
+For strict intents, visible thought is much more dangerous because even one extra meta line can break exact text or machine-readable structure. In those cases, recovery only helps if the thought text is a removable wrapper around an otherwise valid payload.
+
+The benchmark also tracks visible-thought density directly so semantic similarity alone cannot let a rambly answer score too well.
+
+---
+
+## Raw vs recovered in the benchmark
+
+The benchmark keeps two views of every answer:
+
+| View | What it means |
+|---|---|
+| **Raw** | The model's output before deterministic recovery |
+| **Recovered** | The final output after normalization, validation-aware cleanup, and deterministic recovery |
+
+The viewer shows:
+
+- **recovered score** as the main score
+- **raw score** beside it
+- **recovery lift** so you can see how much recovery helped or hurt
+
+This split matters because it separates two different questions:
+
+1. How good is the model on its own?
+2. How usable is the final product output after CtxSift's deterministic cleanup?
+
+If raw and recovered are close, the model is naturally clean. If recovered is much higher, the model is messy but salvageable. If both are low, the model is simply not a good fit.
+
+---
+
+## Product behavior
+
+In normal product use, CtxSift returns the recovered output by default.
+
+That means product behavior is intentionally closer to "what the agent can actually use" than "what the model literally emitted first." The benchmark still preserves both views so evaluation stays honest.
+
+You can disable deterministic recovery if you want to compare behavior directly:
+
+```bash frame="none"
+ctxsift config set recovery_enabled false
+```
+
+or:
+
+```bash frame="none"
+CTXSIFT_RECOVERY_ENABLED=false
+```
+
+This toggle applies to both local and remote compression.
+
+<Aside type="note">
+Unsure whether recovery helps your target model? Leave it enabled, run the benchmark for that model, and compare raw score, recovered score, and recovery lift.
+</Aside>
+
+---
+
+## What output processing does not do
+
+Output processing is deliberately conservative. It does **not**:
+
+- rewrite wrong facts into right ones
+- synthesize missing JSON keys or missing table rows
+- guess commands that were never returned
+- turn a bad exact-match answer into a good one by semantic similarity
+- hide raw benchmark quality by pretending the model was cleaner than it was
+
+That line matters. CtxSift is trying to rescue safe wrapper failures, not launder weak generations into fake correctness.
+
+---
+
+## In practice
+
+The easiest way to think about output processing is:
+
+- **normalization** removes obvious wrappers and formatting junk
+- **validation** checks whether the candidate matches the requested intent
+- **recovery** rescues safe wrapper failures when possible
+- **benchmark raw vs recovered** tells you whether the model was clean on its own or whether the product had to save it
+
+If you want the full contract for what each intent asks the model to produce, see [Compress](/docs/concepts/compress/).
+

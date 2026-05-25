@@ -170,6 +170,8 @@ The latency target is **2000 ms**. Finishing faster than 2000 ms is fully neutra
 
 The headline **recovered** score is mainly a quality score, with a small penalty for being slow and an explicit penalty for weak tail behavior (the p10 term in `quality_core`). The raw score uses the same formula, just on the pre-recovery output.
 
+For strict intents, format scoring is also graded now. Close strict near-miss outputs can earn partial credit when they clearly match the requested command, exact-format, or structured shape but miss some exact rendering details. Truly wrong strict outputs still stay near zero.
+
 ### Intent-aware weighting
 
 Not every benchmark intent cares about the same thing. A `summary` row mainly cares about whether the answer is useful and concise. An `exact-format` row cares much more about matching the requested shape exactly. So the benchmark now weights each case by its explicit `intent`, not by its broader dashboard family.
@@ -198,6 +200,8 @@ Some cases also carry an explicit `format_check` in the dataset. When set, this 
 | `table_shape` | Output must be a markdown table with the correct column header and count |
 | `bullet_shape` | Every non-empty output line must start with `- ` |
 | `regex` | Output must fully match the regex pattern declared in the case's `pass_rule` |
+
+For strict checks such as `exact_match`, `regex`, and structured shape checks, CtxSift now separates a close strict near-miss from a genuinely wrong output. A missing command prefix or punctuation/rendering drift can earn partial format credit. A raw log dump, wrong command type, or incomplete structured payload still scores badly.
 
 ### Semantic quality
 
@@ -255,6 +259,77 @@ This lets you run a wide screening pass first, then a narrower second pass where
 ## Running It Locally
 
 > NOTE: Latency results may vary a lot based on your hardware, provider, and current system load. Treat score as the main comparison signal and latency as a secondary operational signal.
+
+### Writing `matrix.json`
+
+Before you run the benchmark, make sure you actually have a scenario matrix. The runner reads `benchmark/matrix.json` by default, and each row in that file is one benchmark target.
+
+The file shape is:
+
+```json
+{
+  "scenarios": [
+    {
+      "name": "cpu-my-model",
+      "track": "cpu",
+      "phase": "cpu-screen",
+      "model": "unsloth/Qwen3.5-0.8B-GGUF",
+      "gguf_filename": "Qwen3.5-0.8B-Q8_0.gguf",
+      "quantization": "none",
+      "device": "cpu"
+    },
+    {
+      "name": "gpu-my-model",
+      "track": "gpu",
+      "phase": "gpu-screen",
+      "model": "Qwen/Qwen3.5-0.8B",
+      "quantization": "none",
+      "device": "cuda"
+    },
+    {
+      "name": "remote-my-model",
+      "track": "remote",
+      "phase": "remote-screen",
+      "model": "gpt-4.1-mini",
+      "quantization": "none",
+      "device": "remote",
+      "concurrency": 8
+    }
+  ]
+}
+```
+
+Each scenario row maps to one model configuration the runner can execute.
+
+| Field | Required | Meaning |
+|---|---|---|
+| `name` | Yes | Unique scenario name. This is what you pass to `--scenario`. |
+| `track` | Yes | Viewer bucket: `cpu`, `gpu`, or `remote`. |
+| `phase` | Yes | Batch label for `--phase`, such as `cpu-screen`, `gpu-screen`, or `remote-screen`. |
+| `model` | Yes | Model id. For CPU/GPU, use the Hugging Face id. For remote, use the provider model name. |
+| `quantization` | Yes | Quantization label for the scenario. Usually `none` unless you are intentionally testing a quantized GPU setup. |
+| `device` | Yes | Runtime path: `cpu`, `cuda`, or `remote`. |
+| `gguf_filename` | CPU only | Required for GGUF CPU runs. Leave it out for GPU and remote rows. |
+| `dtype` | No | GPU precision override. Default: `auto`. |
+| `attn_implementation` | No | GPU attention backend override. Default: `auto`. |
+| `max_output_tokens` | No | Per-scenario output budget. Default when omitted: `768`. |
+| `concurrency` | No | In-flight case count. Default: `1`. Most useful for remote runs. |
+| `enabled` | No | Whether the runner should consider this row. Default: `true`. |
+
+Practical rules:
+
+- CPU rows should use `track=cpu`, `device=cpu`, and include `gguf_filename`.
+- GPU rows should use `track=gpu`, `device=cuda`, and should not include `gguf_filename`.
+- Remote rows should use `track=remote`, `device=remote`. The actual remote base URL and API key still come from config or env, not from `matrix.json`.
+- `name` should be unique.
+- `track` and `device` should agree.
+- `phase` is just a grouping label, but keep it aligned with the track you want to bulk-run together.
+
+If you do not want to edit the repo's default matrix, pass your own file explicitly:
+
+```bash frame="none"
+uv run python -m benchmark.runner --matrix my-matrix.json --scenario remote-my-model --remote --env-file .env
+```
 
 ### List scenarios
 
@@ -362,6 +437,7 @@ The viewer currently shows:
 - a head-to-head compare panel
 - recovered score as the main score
 - raw score and recovery lift beside it
+- a recovery-lift scatter with `raw score` on the x-axis and `recovery lift` on the y-axis, colored by CPU / GPU / remote track
 - visible-thought density so you can quickly see whether a model is answering cleanly or thinking out loud in user-visible text, whether that leaked out as think-tags or as prose like `I should...`
 
 In the detail view, the case table now shows **recovered thought** and **raw thought** separately, so it is obvious whether cleanup removed visible reasoning or the model stayed clean on its own.
@@ -381,6 +457,8 @@ Then check the **raw** score:
 - if recovered is much higher, recovery is doing real work
 - if both are low, the model is just a poor fit for this task
 - if raw thought density is high, the model is leaking reasoning into the answer even when the core facts are partly right
+
+CtxSift now uses that same deterministic recovery path in normal product output by default. If you want to compare behavior with and without that recovery step, turn it off with `recovery_enabled = false` or `CTXSIFT_RECOVERY_ENABLED=false`.
 
 That means:
 

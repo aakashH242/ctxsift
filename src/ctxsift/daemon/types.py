@@ -113,6 +113,7 @@ class CompressRequestPayload(StrictModel):
     raw_input: str
     extracted_signal: ExtractedSignal
     max_output_tokens: int
+    recovery_enabled: bool = True
 
 
 class CompressResponsePayload(StrictModel):

@@ -55,6 +55,21 @@ def test_config_set_writes_global_file_and_show_reads_it(
     assert isolated_config_paths.exists()
 
 
+def test_config_set_supports_recovery_enabled_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(app, ["config", "set", "recovery_enabled", "false", "--global"])
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert show_result.exit_code == 0
+    assert "recovery_enabled = false" in show_result.stdout
+
+
 def test_config_show_redacts_secret_values(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

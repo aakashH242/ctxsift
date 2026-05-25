@@ -23,6 +23,48 @@ Depending on your hardware capability, CtxSift recommends specific models optimi
 
 ---
 
+## Latest tested local compression models
+
+These tables come from the latest local benchmark snapshots bundled in the repo:
+
+- CPU: `benchmark/results/cpu-models-20260524T014526Z`
+- GPU: `benchmark/results/gpu-models-20260524T212353Z`
+
+They are sorted by average latency, fastest first, because raw score alone hides the practical tradeoff. `Score` here means the benchmark's main recovered score. Treat the timing numbers as relative to the benchmark machine, not as universal promises for your own hardware.
+
+### CPU models
+
+| Name | Avg. Inference (s) | Score | Comments |
+|---|:-:|:-:|---|
+| `ibm-granite/granite-4.0-350m-GGUF` | 2.14 | 46.93 | Current built-in CPU default. Fastest tested CPU path and good enough for everyday use, but no longer the strongest quality option. |
+| `LiquidAI/LFM2.5-350M-GGUF` | 2.38 | 49.92 | Nearly Granite-default latency with better quality. Good low-latency alternative when you want a quick upgrade without jumping to a larger model. |
+| `Qwen/Qwen2.5-0.5B-Instruct-GGUF` | 3.30 | 53.06 | Strong for its size and still quick, but it rejects more cases than the best CPU choices. |
+| `unsloth/gemma-3-270m-it-GGUF` | 3.53 | 38.55 | Very small and fast, but quality is weak. Only worth it when your machine is extremely constrained. |
+| `unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF` | 3.67 | 51.86 | Solid code-heavy CPU option. Better balanced than the base Qwen2.5-0.5B if you mostly compress developer tooling output. |
+| `unsloth/Qwen3.5-0.8B-GGUF` | 4.54 | **56.45** | Best CPU model overall in the current run. This is the main CPU upgrade we recommend over the default. |
+| `unsloth/SmolLM2-360M-Instruct-GGUF` | 5.48 | 47.64 | Usable lightweight fallback, but not clearly stronger than faster alternatives above it. |
+| `unsloth/gemma-3-1b-it-GGUF` | 5.55 | 40.15 | Middling quality for the latency. Usually skip it. |
+| `LiquidAI/LFM2.5-1.2B-Instruct-GGUF` | 6.48 | 48.25 | Very low hard-reject count, but too many soft accepts keep the score moderate. |
+| `LiquidAI/LFM2-700M-GGUF` | 6.76 | 49.15 | Reasonable middle-ground model, but slower than better-scoring alternatives. |
+| `LiquidAI/LFM2-350M-Extract-GGUF` | 7.81 | 39.74 | Extract-tuned and weak as a general-purpose CtxSift compression model. |
+| `unsloth/Qwen3-0.6B-GGUF` | 13.91 | 53.10 | Good quality, but too slow on CPU relative to Qwen3.5-0.8B unless you specifically want Qwen3. |
+
+### GPU models
+
+| Name | Avg. Inference (s) | Score | Comments |
+|---|:-:|:-:|---|
+| `LiquidAI/LFM2.5-1.2B-Instruct` | 0.81 | 54.61 | Current CUDA recommendation. Fastest GPU model by a wide margin and still strong enough to be the practical default. |
+| `Qwen/Qwen3.5-0.8B` | 3.43 | 59.13 | Strong small GPU model. Much faster than the 2B-tier options while still posting a very good score. |
+| `Qwen/Qwen2.5-1.5B-Instruct` | 7.80 | 59.28 | Slightly higher score than Qwen3.5-0.8B, but at more than double the latency. |
+| `unsloth/gemma-3-1b-it` | 11.81 | 42.69 | Weak for the latency. Not a strong CUDA pick. |
+| `ibm-granite/granite-4.0-micro` | 15.30 | 47.45 | Usable, but outclassed by faster or better-scoring Qwen and LFM models. |
+| `Qwen/Qwen3.5-2B` | 16.92 | **61.07** | Best GPU score in the current run. This is the higher-quality CUDA upgrade when you are willing to pay for more latency. |
+| `ibm-granite/granite-3.3-2b-instruct` | 17.43 | 46.43 | Reliable enough, but the score does not justify the latency against better Qwen options. |
+| `HuggingFaceTB/SmolLM2-1.7B-Instruct` | 17.67 | 53.00 | Decent fallback GPU model, but not especially compelling against LFM for speed or Qwen for quality. |
+| `Qwen/Qwen3-1.7B` | 33.80 | 58.05 | Good score, but far slower than the main recommended GPU models. |
+
+---
+
 ## CPU compression with `llama.cpp`
 
 When running on the CPU, CtxSift uses an embedded `llama.cpp` runner. This engine requires models in the **GGUF** format. 
@@ -33,7 +75,7 @@ When running on the CPU, CtxSift uses an embedded `llama.cpp` runner. This engin
 - Loads specific pre-quantized files directly (e.g. `Q8_0` or `Q4_K_M`).
 
 ### Recommended GGUF settings
-To change the CPU model to the highly performant `Qwen3.5-0.8B-GGUF`:
+If you want a clear CPU quality upgrade over the default Granite 350M model, switch to `Qwen3.5-0.8B-GGUF`:
 
 ```bash frame="none"
 # Set the Hugging Face GGUF repository id
@@ -54,10 +96,10 @@ On CPU, we recommend sticking to **Q8_0** (8-bit quantization) or **Q4_K_M** (4-
 If you have a CUDA-compatible GPU, CtxSift uses the PyTorch/Hugging Face `Transformers` backend. This supports any standard autoregressive text-generation model.
 
 ### Recommended: LiquidAI LFM2.5-1.2B-Instruct
-For local GPU compression, we strongly recommend and bias setup towards **`LiquidAI/LFM2.5-1.2B-Instruct`**.
-- **Superb latency:** Outperforms typical Transformer architectures on execution time.
-- **State-of-the-art accuracy:** Achieves near-GPT-3.5 quality at 1.2 billion parameters.
-- **Context-retention:** Safely handles large traces without losing key error strings.
+For local GPU compression, we still recommend and bias setup toward **`LiquidAI/LFM2.5-1.2B-Instruct`**.
+- **Best speed-to-quality default:** It was the fastest GPU model in the latest local run at `0.81 s` average inference while still scoring `54.61`.
+- **Easy practical win:** It is the safest first CUDA pick before you spend more latency on bigger Qwen models.
+- **Good recovery behavior:** It benefits from CtxSift's deterministic output recovery without depending on it to become usable.
 
 ### Configuring GPU mode
 Ensure you have the GPU dependencies installed:

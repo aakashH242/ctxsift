@@ -1947,6 +1947,11 @@ def render_html_report(
           </div>
         </div>
         <div class="visual-card">
+          <h3>Recovery Lift</h3>
+          <div class="visual-note">Each dot is one model. Farther right means a higher raw score. Above zero means deterministic recovery helped overall. Below zero means recovery hurt a little.</div>
+          <div class="visual-stage" id="recovery-lift-scatter"></div>
+        </div>
+        <div class="visual-card">
           <h3>Average vs P95 Latency</h3>
           <div class="visual-note">Yellow point = average run time. Cyan point = slowest 5% cutoff. Longer gap means less stable latency.</div>
           <div class="visual-stage visual-scroll" id="latency-dumbbell"></div>
@@ -2507,6 +2512,100 @@ def render_html_report(
       );
     }
 
+    function buildLinearTicks(minValue, maxValue, steps) {
+      if (!(Number.isFinite(minValue) && Number.isFinite(maxValue))) {
+        return [0];
+      }
+      if (Math.abs(maxValue - minValue) < 1e-9) {
+        return [minValue];
+      }
+      const ticks = [];
+      for (let index = 0; index <= steps; index += 1) {
+        ticks.push(minValue + ((maxValue - minValue) * index) / steps);
+      }
+      return ticks;
+    }
+
+    function renderRecoveryLiftScatter(scenarios) {
+      const root = document.getElementById("recovery-lift-scatter");
+      if (!scenarios.length) {
+        root.replaceChildren(emptyState("No scenarios selected."));
+        return;
+      }
+      const width = 760;
+      const height = 360;
+      const margin = { top: 16, right: 18, bottom: 42, left: 64 };
+      const innerWidth = width - margin.left - margin.right;
+      const innerHeight = height - margin.top - margin.bottom;
+      const rawScores = scenarios.map((scenario) => Number(scenario.rawFinalScore || 0));
+      const lifts = scenarios.map((scenario) => Number(scenario.recoveryLift || 0));
+      const xMin = 0;
+      const xMax = Math.max(100, ...rawScores, 1);
+      const liftMin = Math.min(0, ...lifts);
+      const liftMax = Math.max(0, ...lifts);
+      const liftSpan = Math.max(1, liftMax - liftMin);
+      const yMin = liftMin - Math.max(0.25, liftSpan * 0.08);
+      const yMax = liftMax + Math.max(0.25, liftSpan * 0.08);
+      const xFor = (score) => margin.left + ((Number(score || 0) - xMin) / Math.max(1, xMax - xMin)) * innerWidth;
+      const yFor = (lift) => margin.top + innerHeight - ((Number(lift || 0) - yMin) / Math.max(1e-6, yMax - yMin)) * innerHeight;
+      const svg = svgNode("svg", { class: "chart-svg", viewBox: `0 0 ${width} ${height}`, role: "img", "aria-label": "Raw score versus recovery lift scatter plot" });
+      const grid = svgNode("g");
+      [0, 25, 50, 75, 100].filter((tick) => tick <= xMax).forEach((tick) => {
+        const x = xFor(tick);
+        grid.append(svgNode("line", { class: "chart-grid", x1: x, y1: margin.top, x2: x, y2: height - margin.bottom }));
+        const label = svgNode("text", { class: "chart-axis", x, y: height - margin.bottom + 18, "text-anchor": "middle" });
+        label.textContent = `${tick}`;
+        grid.append(label);
+      });
+      buildLinearTicks(yMin, yMax, 4).forEach((tick) => {
+        const y = yFor(tick);
+        const isZero = Math.abs(tick) < 1e-9;
+        grid.append(svgNode("line", {
+          class: isZero ? "chart-domain" : "chart-grid",
+          x1: margin.left,
+          y1: y,
+          x2: width - margin.right,
+          y2: y,
+          opacity: isZero ? 0.9 : undefined,
+        }));
+        const label = svgNode("text", { class: "chart-axis", x: margin.left - 8, y: y + 4, "text-anchor": "end" });
+        label.textContent = isZero ? "0" : fmtMaybeLift(tick);
+        grid.append(label);
+      });
+      svg.append(grid);
+      svg.append(svgNode("line", { class: "chart-domain", x1: margin.left, y1: height - margin.bottom, x2: width - margin.right, y2: height - margin.bottom }));
+      svg.append(svgNode("line", { class: "chart-domain", x1: margin.left, y1: margin.top, x2: margin.left, y2: height - margin.bottom }));
+      const xLabel = svgNode("text", { class: "chart-label", x: margin.left + innerWidth / 2, y: height - 8, "text-anchor": "middle" });
+      xLabel.textContent = "Raw final score";
+      svg.append(xLabel);
+      const yLabel = svgNode("text", { class: "chart-label", x: 16, y: margin.top + innerHeight / 2, transform: `rotate(-90 16 ${margin.top + innerHeight / 2})`, "text-anchor": "middle" });
+      yLabel.textContent = "Recovery lift";
+      svg.append(yLabel);
+      scenarios.forEach((scenario) => {
+        const circle = svgNode("circle", {
+          cx: xFor(scenario.rawFinalScore),
+          cy: yFor(scenario.recoveryLift),
+          r: 6,
+          fill: trackColor(scenario.track),
+          stroke: "rgba(255,255,255,0.85)",
+          "stroke-width": 1,
+          opacity: 0.92,
+        });
+        const title = svgNode("title");
+        title.textContent = `${displayModelName(scenario.model)} (${scenario.track.toUpperCase()})\nRaw ${fmtScore(scenario.rawFinalScore)}\nRecovered ${fmtScore(scenario.finalScore)}\nLift ${fmtMaybeLift(scenario.recoveryLift)}`;
+        circle.append(title);
+        svg.append(circle);
+      });
+      root.replaceChildren(
+        buildLegendRow([
+          { label: "CPU", color: trackColor("cpu") },
+          { label: "GPU", color: trackColor("gpu") },
+          { label: "REMOTE", color: trackColor("remote") },
+        ]),
+        svg,
+      );
+    }
+
     function renderAcceptanceBreakdown(scenarios) {
       const root = document.getElementById("acceptance-bars");
       if (!scenarios.length) {
@@ -2847,6 +2946,7 @@ def render_html_report(
       renderTrackToggle("visuals-track-toggle", "visualsFamily");
       const scenarios = visualScenarios();
       renderScatterPlot(scenarios);
+      renderRecoveryLiftScatter(scenarios);
       renderAcceptanceBreakdown(scenarios);
       renderLatencyDumbbell(scenarios);
       renderMetricHeatmap(scenarios);
@@ -3495,7 +3595,7 @@ def render_html_report(
       score.textContent = `Score ${fmtScore(best.finalScore)}`;
       const scoreFormula = document.createElement("div");
       scoreFormula.className = "score-formula";
-      scoreFormula.textContent = "100 x quality_core x latency, where case_score already includes validation, thought, and instruction penalties, and quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)";
+      scoreFormula.textContent = "100 x quality_core x latency, where case_score already includes validation, thought, and instruction penalties. Strict near-miss format outputs can earn partial credit, and quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)";
       scoreStack.append(score, scoreFormula);
       top.append(copy, scoreStack);
 

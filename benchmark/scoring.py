@@ -76,6 +76,7 @@ _INTENT_WEIGHTS: dict[CompressionIntent, tuple[float, float, float, float]] = {
 }
 _DEFAULT_INTENT_WEIGHTS = _INTENT_WEIGHTS[CompressionIntent.SUMMARY]
 _LATENCY_TARGET_MS = 2000.0
+_STRICT_NEAR_MISS_CAP = 0.75
 
 
 def missing_tokens(output: str, required_tokens: tuple[str, ...]) -> tuple[str, ...]:
@@ -352,17 +353,83 @@ def _normalized_expected_lines(text: str) -> list[str]:
 def _exact_match_score(output: str, expected_output: str) -> float:
     if _normalized_exact_text(output) == _normalized_exact_text(expected_output):
         return 1.0
-    return _ordered_line_match_ratio(
-        _normalized_expected_lines(expected_output),
-        _normalized_expected_lines(output),
+    return max(
+        _ordered_line_match_ratio(
+            _normalized_expected_lines(expected_output),
+            _normalized_expected_lines(output),
+        ),
+        _strict_near_miss_text_score(output, expected_output),
     )
+
+
+def _strict_near_miss_text_score(output: str, expected_output: str) -> float:
+    expected = _normalized_exact_text(expected_output)
+    actual = _normalized_exact_text(output)
+    if not expected or not actual:
+        return 0.0
+    token_score = _strict_token_f1_score(expected, actual)
+    line_shape_score = _strict_line_shape_score(expected, actual)
+    prefix_score = _leading_token_prefix_ratio(expected, actual)
+    return min(
+        _STRICT_NEAR_MISS_CAP,
+        (0.70 * token_score) + (0.15 * line_shape_score) + (0.15 * prefix_score),
+    )
+
+
+def _strict_token_f1_score(expected_output: str, actual_output: str) -> float:
+    expected_tokens = _strict_tokens(expected_output)
+    actual_tokens = _strict_tokens(actual_output)
+    if not expected_tokens or not actual_tokens:
+        return 0.0
+    expected_counts = Counter(expected_tokens)
+    actual_counts = Counter(actual_tokens)
+    overlap = sum((expected_counts & actual_counts).values())
+    if overlap == 0:
+        return 0.0
+    precision = overlap / sum(actual_counts.values())
+    recall = overlap / sum(expected_counts.values())
+    return (2 * precision * recall) / (precision + recall)
+
+
+def _strict_tokens(text: str) -> tuple[str, ...]:
+    return tuple(token.casefold() for token in _TOKEN_RE.findall(text))
+
+
+def _strict_line_shape_score(expected_output: str, actual_output: str) -> float:
+    expected_lines = [line for line in expected_output.splitlines() if line.strip()]
+    actual_lines = [line for line in actual_output.splitlines() if line.strip()]
+    if not expected_lines or not actual_lines:
+        return 0.0
+    if len(expected_lines) == len(actual_lines):
+        return 1.0
+    if len(expected_lines) == 1 or len(actual_lines) == 1:
+        return 0.0
+    return min(len(expected_lines), len(actual_lines)) / max(len(expected_lines), len(actual_lines))
+
+
+def _leading_token_prefix_ratio(expected_output: str, actual_output: str, limit: int = 3) -> float:
+    expected_tokens = _strict_tokens(expected_output)
+    actual_tokens = _strict_tokens(actual_output)
+    if not expected_tokens or not actual_tokens:
+        return 0.0
+    max_prefix = min(limit, len(expected_tokens), len(actual_tokens))
+    if max_prefix <= 0:
+        return 0.0
+    matches = 0
+    for expected_token, actual_token in zip(expected_tokens[:max_prefix], actual_tokens[:max_prefix]):
+        if expected_token != actual_token:
+            break
+        matches += 1
+    return matches / max_prefix
 
 
 def _regex_shape_score(output: str, expected_output: str, pass_rule: str) -> float:
     pattern = _regex_pattern_from_pass_rule(pass_rule)
     if pattern is None:
-        return 1.0 if _normalized_exact_text(output) == _normalized_exact_text(expected_output) else 0.0
-    return 1.0 if pattern.fullmatch(output.strip()) else 0.0
+        return _exact_match_score(output, expected_output)
+    if pattern.fullmatch(output.strip()):
+        return 1.0
+    return _strict_near_miss_text_score(output, expected_output)
 
 
 def _regex_pattern_from_pass_rule(pass_rule: str) -> re.Pattern[str] | None:
@@ -458,6 +525,10 @@ def _markdown_table_rows(text: str) -> list[list[str]]:
 
 def _shape_similarity(expected: object, actual: object) -> float:
     if isinstance(expected, dict):
+        if isinstance(actual, list):
+            if len(actual) != 1:
+                return 0.0
+            return 0.75 * _shape_similarity(expected, actual[0])
         if not isinstance(actual, dict):
             return 0.0
         expected_keys = set(expected)
@@ -472,6 +543,12 @@ def _shape_similarity(expected: object, actual: object) -> float:
         child_score = sum(child_scores) / len(child_scores) if child_scores else 0.0
         return (0.5 * key_score) + (0.5 * child_score)
     if isinstance(expected, list):
+        if isinstance(actual, dict):
+            if not expected:
+                return 0.0
+            exemplar = expected[0]
+            length_score = 1.0 / max(len(expected), 1)
+            return 0.75 * _shape_similarity(exemplar, actual) * length_score
         if not isinstance(actual, list):
             return 0.0
         if not expected:
@@ -481,7 +558,7 @@ def _shape_similarity(expected: object, actual: object) -> float:
         exemplar = expected[0]
         child_scores = [_shape_similarity(exemplar, item) for item in actual]
         length_score = min(len(actual), len(expected)) / max(len(actual), len(expected), 1)
-        return (0.7 * (sum(child_scores) / len(child_scores))) + (0.3 * length_score)
+        return (sum(child_scores) / len(child_scores)) * length_score
     if expected is None:
         return 1.0 if actual is None else 0.0
     return 1.0 if type(expected) is type(actual) else 0.0

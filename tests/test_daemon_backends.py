@@ -76,6 +76,46 @@ def test_daemon_compression_backend_retries_once_after_transport_failure(
     ]
 
 
+def test_daemon_compression_backend_forwards_recovery_flag(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = DaemonRegistryRecord(
+        role=DaemonRole.COMPRESSION,
+        signature_hash="abc",
+        model="fake/compression",
+        device="cpu",
+        pid=123,
+        port=4040,
+        auth_token="token",
+    )
+    captured: dict[str, bool] = {}
+
+    monkeypatch.setattr(compression_daemon, "ensure_daemon", lambda spec: record)
+
+    def fake_request(record_arg, payload, timeout_ms):
+        del record_arg, timeout_ms
+        captured["recovery_enabled"] = payload.recovery_enabled
+        return CompressResponsePayload(compressed_output="compressed output")
+
+    monkeypatch.setattr(compression_daemon, "request_compress", fake_request)
+    backend = DaemonCompressionBackend(AppConfig())
+
+    asyncio.run(
+        backend.compress(
+            ModelCompressionInput(
+                intent=CompressionIntent.SUMMARY,
+                instruction="compress",
+                raw_input="stderr here",
+                extracted_signal=ExtractedSignal(),
+                max_output_tokens=32,
+                recovery_enabled=False,
+            )
+        )
+    )
+
+    assert captured["recovery_enabled"] is False
+
+
 def test_daemon_compression_backend_resolves_current_spec_per_request(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

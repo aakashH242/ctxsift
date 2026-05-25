@@ -52,6 +52,7 @@ class ModelCompressionInput:
     extracted_signal: ExtractedSignal
     max_output_tokens: int
     required_anchors: tuple[str, ...] = ()
+    recovery_enabled: bool = True
     evaluation_context: Literal["prod", "benchmark"] = "prod"
     trace: CompressionTrace | None = None
 

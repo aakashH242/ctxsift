@@ -782,6 +782,8 @@ def recover_scaffold_prefixed_output(
     cleaned = text.strip()
     if not cleaned:
         return cleaned
+    if not request.recovery_enabled:
+        return cleaned
     if not _should_attempt_scaffold_recovery(request, cleaned):
         return cleaned
     normalizer = normalize_output or normalize_instruction_aware_output

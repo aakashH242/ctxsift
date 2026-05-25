@@ -32,6 +32,7 @@ class DaemonCompressionBackend(ModelBackend):
             raw_input=request.raw_input,
             extracted_signal=request.extracted_signal,
             max_output_tokens=request.max_output_tokens,
+            recovery_enabled=request.recovery_enabled,
         )
         return await self._call_with_restart(payload)
 

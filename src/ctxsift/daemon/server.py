@@ -112,6 +112,7 @@ class CompressionRuntimeService:
                             raw_input=task.request.raw_input,
                             extracted_signal=task.request.extracted_signal,
                             max_output_tokens=task.request.max_output_tokens,
+                            recovery_enabled=task.request.recovery_enabled,
                         )
                     )
                 )

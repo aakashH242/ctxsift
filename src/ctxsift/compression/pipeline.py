@@ -94,6 +94,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
             intent=request.intent,
             model_id=backend.cache_model_id,
             max_output_tokens=resolved_config.config.max_output_tokens,
+            recovery_enabled=resolved_config.config.recovery_enabled,
             ctxsift_version=__version__,
             prompt_version=MODEL_PROMPT_VERSION,
         )
@@ -111,6 +112,7 @@ async def compress_input(request: CompressionRequest) -> CompressionResult:
                 raw_input=_model_input_text(request),
                 extracted_signal=signal,
                 max_output_tokens=resolved_config.config.max_output_tokens,
+                recovery_enabled=resolved_config.config.recovery_enabled,
             )
         )
         stored_result = await _store_new_result(
@@ -180,6 +182,7 @@ def build_exact_cache_key(
     intent: CompressionIntent,
     model_id: str,
     max_output_tokens: int,
+    recovery_enabled: bool,
     ctxsift_version: str,
     prompt_version: str,
 ) -> str:
@@ -192,6 +195,7 @@ def build_exact_cache_key(
         intent.value,
         model_id,
         str(max_output_tokens),
+        "recovery:on" if recovery_enabled else "recovery:off",
         ctxsift_version,
         prompt_version,
     )
@@ -238,6 +242,7 @@ async def _deterministic_fallback(
         intent=request.intent,
         model_id=DETERMINISTIC_MODEL_ID,
         max_output_tokens=max_output_tokens,
+        recovery_enabled=True,
         ctxsift_version=__version__,
         prompt_version=DETERMINISTIC_PROMPT_VERSION,
     )

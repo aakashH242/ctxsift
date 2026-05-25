@@ -109,11 +109,13 @@ export default defineConfig({
                         { label: 'Compress', slug: 'docs/concepts/compress' },
                         { label: 'Recall', slug: 'docs/concepts/recall' },
                         { label: 'Freshness', slug: 'docs/concepts/freshness' },
+                        { label: 'Output Processing', slug: 'docs/concepts/output-processing' },
                     ],
                 },
                 {
                     label: 'Guides',
                     items: [
+                        { label: 'Model Selection', slug: 'docs/guides/model-selection' },
                         { label: 'Local Models', slug: 'docs/guides/local-models' },
                         { label: 'Remote Models', slug: 'docs/guides/remote-models' },
                         { label: 'Benchmark', slug: 'docs/guides/benchmark' },

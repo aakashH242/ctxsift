@@ -102,11 +102,56 @@ After installing the CLI, the recommended way to install the CtxSift agent skill
 ctxsift configure
 ```
 
-The `configure` command can install the skill for supported agents (`copilot`, `antigravity`, `claude-code`, `codex`, `other`) and handles host-specific scope/path prompts for you.
+The `configure` command can install the skill for a much wider host list now, including `copilot`, `antigravity`, `claude-code`, `codex`, `cursor`, `windsurf-cascade`, `cline`, `roo-code`, `kilo-code`, `continue`, `aider`, `opencode`, `gemini-cli`, `qwen-code`, `kiro`, `jetbrains-junie`, `openhands`, `zed-agent`, `sourcegraph-amp`, `augment-auggie`, `factory-droid`, `amazon-q-developer`, `replit-agent`, `devin`, `codegen`, `google-jules`, and `other`.
+
+Instead of typing host names manually, configure now shows a numbered multi-select list and then asks for global/workspace scope and target-path details only where needed.
 
 For the full prompt flow, supported targets, and scope details, see [Configure](/docs/getting-started/configure/#agent-skill-installation).
 
 If you prefer manual installation, download the packaged skill file from [here](https://raw.githubusercontent.com/aakashH242/ctxsift/refs/heads/main/src/ctxsift/agent_skill_template.md)
+
+## Supported agents
+
+CtxSift ships with first-class install support for a broad set of coding-agent hosts. The supported host decides two things during setup:
+
+- whether installation is available at `global`, `workspace`, or both scopes
+- whether CtxSift writes a dedicated `SKILL.md` file or updates a shared instruction surface such as `AGENTS.md`, `GEMINI.md`, or a rules/workflows folder
+
+The current support matrix is:
+
+| Agent | Global | Workspace | Typical target shape |
+|---|---|---|---|
+| `copilot` | Yes | Yes | Dedicated `SKILL.md` |
+| `antigravity` | Yes | Yes | Dedicated plugin skill |
+| `claude-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `codex` | Yes | No | Dedicated `SKILL.md` |
+| `cursor` | Yes | Yes | Dedicated `SKILL.md` |
+| `windsurf-cascade` | Yes | Yes | Workflow or rules file |
+| `cline` | Yes | Yes | Dedicated `SKILL.md` |
+| `roo-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `kilo-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `continue` | Yes | Yes | Rules file |
+| `aider` | Yes | Yes | Instruction file referenced from config |
+| `opencode` | Yes | Yes | Dedicated `SKILL.md` |
+| `gemini-cli` | Yes | Yes | Shared `GEMINI.md` |
+| `qwen-code` | Yes | Yes | Dedicated `SKILL.md` |
+| `kiro` | Yes | Yes | Dedicated `SKILL.md` |
+| `jetbrains-junie` | No | Yes | Shared `AGENTS.md`-style file |
+| `openhands` | No | Yes | Dedicated `SKILL.md` |
+| `zed-agent` | Yes | Yes | Rules file |
+| `sourcegraph-amp` | Yes | Yes | Dedicated `SKILL.md` |
+| `augment-auggie` | Yes | Yes | Dedicated `SKILL.md` |
+| `factory-droid` | Yes | Yes | Dedicated `SKILL.md` |
+| `amazon-q-developer` | No | Yes | Rules file |
+| `replit-agent` | No | Yes | Shared `replit.md` |
+| `devin` | No | Yes | Shared `AGENTS.md` |
+| `codegen` | No | Yes | Shared `AGENTS.md` |
+| `google-jules` | No | Yes | Shared `AGENTS.md` |
+| `other` | Custom | Custom | Any path you choose |
+
+`other` is the fallback when your agent is not on the built-in list or when you want to install the skill into a different instruction file or folder than the suggested default.
+
+Hosts that use shared instruction files are handled conservatively. CtxSift writes only its own managed block so that the rest of your existing project or user instructions stay intact.
 
 ---
 If `ctxsift` is not found after installation, update your shell integration and reopen the terminal:

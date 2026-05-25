@@ -16,6 +16,7 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.max_output_tokens == 512
     assert config.timeout_ms == 90000
     assert config.retries == 1
+    assert config.recovery_enabled is True
     assert config.remote.reasoning_mode is ReasoningMode.AUTO
     assert config.local.model == "ibm-granite/granite-4.0-350m-GGUF"
     assert config.local.gguf_filename == "granite-4.0-350m-Q8_0.gguf"
@@ -127,6 +128,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
         {
             "CTXSIFT_LLM_MODEL": "gpt-5-mini",
             "CTXSIFT_TIMEOUT_MS": "1234",
+            "CTXSIFT_RECOVERY_ENABLED": "false",
             "CTXSIFT_EMBEDDING_MODEL": "mini",
             "CTXSIFT_LOCAL_MODEL": "ibm-granite/granite-4.0-350m-GGUF",
             "CTXSIFT_LOCAL_GGUF_FILENAME": "smollm2-360m-instruct-q8_0.gguf",
@@ -156,6 +158,7 @@ def test_environment_layer_maps_supported_env_vars() -> None:
 
     assert layer["remote"]["model_name"] == "gpt-5-mini"
     assert layer["timeout_ms"] == 1234
+    assert layer["recovery_enabled"] is False
     assert layer["local"]["model"] == "ibm-granite/granite-4.0-350m-GGUF"
     assert layer["local"]["gguf_filename"] == "smollm2-360m-instruct-q8_0.gguf"
     assert layer["local"]["llama_context_window"] == 16384

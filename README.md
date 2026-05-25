@@ -88,11 +88,49 @@ Then restart your shell and try `ctxsift` again.
 
 ### First-time setup
 
-Run a guided setup to configure your model provider, workspace settings and **install the skill** for your favorite agent harness.
+Run a guided setup to configure your model provider, workspace settings and **install the skill** for your favorite agent harness. Configure now supports a broader host catalog and uses a numbered multi-select flow instead of making you type host names by hand.
 
 ```bash frame="none"
 ctxsift configure
 ```
+
+### Supported agents
+
+CtxSift can install its skill directly for a broad set of coding-agent hosts. Some hosts support both global and workspace installs, some are workspace-only, and `other` lets you write the skill to any custom target path when your harness is not on the built-in list or you want a different layout.
+
+Supported hosts currently include:
+
+- `copilot`
+- `antigravity`
+- `claude-code`
+- `codex`
+- `cursor`
+- `windsurf-cascade`
+- `cline`
+- `roo-code`
+- `kilo-code`
+- `continue`
+- `aider`
+- `opencode`
+- `gemini-cli`
+- `qwen-code`
+- `kiro`
+- `jetbrains-junie`
+- `openhands`
+- `zed-agent`
+- `sourcegraph-amp`
+- `augment-auggie`
+- `factory-droid`
+- `amazon-q-developer`
+- `replit-agent`
+- `devin`
+- `codegen`
+- `google-jules`
+- `other`
+
+Some hosts use a dedicated `SKILL.md` path, while others rely on shared instruction files such as `AGENTS.md`, `GEMINI.md`, or workflow/rules folders. When a host uses a shared file, CtxSift updates only its managed block instead of replacing the rest of the file.
+
+For the full support table and install-scope details, see the docs sections on [installation](docs/src/content/docs/docs/getting-started/installation.mdx) and [configure](docs/src/content/docs/docs/getting-started/configure.mdx).
 
 ### Verify and test your setup
 
@@ -128,53 +166,58 @@ For GPU-based environments, any text-generation models from HuggingFace can be u
 We have [benchmarked](benchmark) a few models to help you get started.
 You can also run the benchmark to see how a model not listed here will perform. Learn more about it [here](benchmark/README.md).
 To view the latest benchmark, open `benchmark/results/viewer.html` to inspect the latest static dashboard snapshot. The viewer now shows two score views: **recovered** as the main score, and **raw** beside it so you can see how much deterministic recovery helped. It also shows visible-thought density, so you can tell when a model is "thinking out loud" in the final answer instead of returning only the requested output. That includes both leaked think-tags and common meta lines like `Okay, the user wants...` or `I should return...`. Benchmark scoring now follows the explicit compression intent for each case, so strict outputs are judged by the contract the caller actually asked for, not by an older family label.
+Strict benchmark rows are also more case-intelligent now: a close exact-format or structured near-miss can earn partial credit, while a truly wrong strict output still scores near zero.
+The same deterministic recovery path is on by default in normal product use too, and you can turn it off with `recovery_enabled` or `CTXSIFT_RECOVERY_ENABLED` if you want to compare behavior with and without that recovery step.
 
-**CPU models** — GGUF quantized models running on CPU via built-in llama.cpp engine. Sorted by score, highest first.
+**CPU models** - GGUF quantized models running on CPU via the built-in `llama.cpp` engine. Sorted by average latency, fastest first.
 
-> Scores reflect the May 2026 benchmark run on an i7-12700F with 64 GiB RAM. Latency numbers are machine-specific — treat them as relative comparisons only.
-
-| Name                                                                                                          | Avg. Inference (s) | Score | Comments |
-|---------------------------------------------------------------------------------------------------------------|:-:|:-:|---|
-| [Qwen3.5-0.8B-GGUF](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF) **(recommended)**                       | 5.6 | **56.14** | Best CPU model overall. Highest score, fewest rejected outputs (only 19 out of 280 cases), and a reasonable ~5–6 s per request. Recommended if you want to switch from the default. |
-| [LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF)                      | 7.4 | 52.69 | Strong second-place CPU model. Low rejection count (13 out of 280) and good quality. Slower than Qwen3.5-0.8B but a solid step up from the smaller models below. |
-| [Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF)                                             | 15.9 | 50.86 | Decent quality but roughly 3× slower than Qwen3.5-0.8B for a lower score. The newer Qwen3.5 variant is the better pick unless you specifically want Qwen3. |
-| [SmolLM2-360M-Instruct-GGUF](https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF)                       | 6.3 | 46.83 | Respectable for a tiny 360M model. A good fallback if you are on a very constrained machine. |
-| [Qwen2.5-Coder-0.5B-Instruct-128K-GGUF](https://huggingface.co/unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF) | 5.2 | 46.74 | Fast and code-aware. Slightly fewer rejections than the base Qwen2.5-0.5B and worth considering for code-heavy workloads. |
-| [gemma-3-270m-it-GGUF](https://huggingface.co/unsloth/gemma-3-270m-it-GGUF)                                   | 3.7 | 43.65 | Fastest model in the group, but higher rejection rate (67 out of 280). Fine when raw speed matters more than reliability. |
-| [granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) **(default)**               | 2.9 | 42.92 | Very fast — the quickest model after Gemma 270M. Quality is middling and rejections are moderate. Worth trying if you need the fastest possible response time and can tolerate some misses. |
-| [Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF)                          | 7.8 | 42.12 | Slower than Qwen3.5 with lower quality. Not the strongest choice unless you specifically want the Qwen2.5 base family. |
-| [Qwen2-500M-Instruct-GGUF](https://huggingface.co/lmstudio-community/Qwen2-500M-Instruct-GGUF)                | 5.9 | 38.67 | High rejection rate (66 out of 280) and the second-lowest score. Not recommended. |
-
-**GPU models** — full-precision Transformers models running on CUDA. Sorted by score, highest first. Tested on an RTX 3060 Ti (8 GiB).
-
-> Latency on GPU depends heavily on your specific card. Use the scores as the main comparison signal.
+> Scores below come from the latest local CPU benchmark snapshot at `benchmark/results/cpu-models-20260524T014526Z` on an i7-12700F with 64 GiB RAM. `Score` here means the benchmark's main recovered score. Treat latency as relative, not absolute.
 
 | Name | Avg. Inference (s) | Score | Comments |
 |------|:-:|:-:|---|
-| [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | 9.7 | **52.99** | Best overall GPU model by score. Solid quality jump over the 1–1.5B options. Good pick if you want the highest quality and don’t mind the extra wait. |
-| [granite-3.3-2b-instruct](https://huggingface.co/ibm-granite/granite-3.3-2b-instruct) | 4.7 | 51.54 | IBM's 2B model. Particularly good at preserving exact values and following structured output contracts like JSON or bullet lists. Also the fastest of the 2B-class models. |
-| [LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) **(recommended)** | 1.2 | 50.38 | Fastest GPU model tested — roughly 4× faster than most others. Best speed-to-quality ratio in this class. Recommended default for GPU setups. |
-| [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B) | 19.5 | 49.58 | Decent quality but much slower than Qwen3.5-2B for a lower score. Hard to recommend unless you specifically want this model. |
-| [granite-4.0-micro](https://huggingface.co/ibm-granite/granite-4.0-micro) | 8.5 | 48.83 | IBM's micro model. Moderate quality and speed, slightly below its 2B sibling. |
-| [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) | 4.6 | 48.78 | Fast and lightweight. A reasonable fallback if you want quick GPU inference without paying for a larger model. |
-| [gemma-3-1b-it](https://huggingface.co/unsloth/gemma-3-1b-it) | 8.6 | 47.29 | Google's 1B Gemma model. Middling quality with a higher rejection count — not the strongest option at this size. |
-| [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | 5.5 | 50.21 | Smaller model that holds up reasonably well on GPU. Best used when VRAM is very tight and you still want decent Qwen3.5 quality. |
-| [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | 3.6 | 45.91 | Fast and lightweight, but quality trails other GPU models at this size. Fine when throughput matters more than peak accuracy. |
+| [granite-4.0-350m-GGUF](https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF) **(default)** | 2.14 | 46.93 | Fastest tested CPU model and still the built-in default. Good first-run choice when you want minimal setup friction, but not the strongest quality pick. |
+| [LFM2.5-350M-GGUF](https://huggingface.co/LiquidAI/LFM2.5-350M-GGUF) | 2.38 | 49.92 | Nearly as fast as Granite 350M, with noticeably better quality and fewer hard failures. Strong low-latency CPU option. |
+| [Qwen2.5-0.5B-Instruct-GGUF](https://huggingface.co/Qwen/Qwen2.5-0.5B-Instruct-GGUF) | 3.30 | 53.06 | Fast and surprisingly strong for its size, but more rejects than the best CPU options. Good if you care about speed first and can tolerate some misses. |
+| [gemma-3-270m-it-GGUF](https://huggingface.co/unsloth/gemma-3-270m-it-GGUF) | 3.53 | 38.55 | Very small and still quick, but quality is weak and rejects are high. Only makes sense when RAM or patience is extremely limited. |
+| [Qwen2.5-Coder-0.5B-Instruct-128K-GGUF](https://huggingface.co/unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF) | 3.67 | 51.86 | Balanced CPU option with decent speed and fewer rejects than base Qwen2.5-0.5B. Worth a look for code-heavy workflows. |
+| [Qwen3.5-0.8B-GGUF](https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF) **(recommended)** | 4.54 | **56.45** | Best CPU model overall in the current run. Clear score leader, still reasonably fast, and only 16 rejected cases out of 280. |
+| [SmolLM2-360M-Instruct-GGUF](https://huggingface.co/unsloth/SmolLM2-360M-Instruct-GGUF) | 5.48 | 47.64 | Small and workable, but not clearly better than faster alternatives above it. Fine as a lightweight fallback. |
+| [gemma-3-1b-it-GGUF](https://huggingface.co/unsloth/gemma-3-1b-it-GGUF) | 5.55 | 40.15 | Middling quality for the latency. Hard to recommend over the faster and stronger Qwen and LFM options nearby. |
+| [LFM2.5-1.2B-Instruct-GGUF](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct-GGUF) | 6.48 | 48.25 | Very low hard-reject count, but many soft accepts pull the score down. Interesting if you care most about avoiding outright failures. |
+| [LFM2-700M-GGUF](https://huggingface.co/LiquidAI/LFM2-700M-GGUF) | 6.76 | 49.15 | Reasonable middle-ground model, but slower than several better-scoring CPU choices. Usually not the first swap to try. |
+| [LFM2-350M-Extract-GGUF](https://huggingface.co/LiquidAI/LFM2-350M-Extract-GGUF) | 7.81 | 39.74 | This extract-tuned variant is not a strong general compression pick in the benchmark. Usually skip it for CtxSift. |
+| [Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF) | 13.91 | 53.10 | Good score, but far too slow on CPU relative to Qwen3.5-0.8B. Only worth it if you specifically want the Qwen3 family. |
 
-**Remote / hosted models** — models accessed through a LiteLLM-compatible endpoint (e.g. OpenAI). Requires `ctxsift[remote]`. Sorted by score, highest first.
+**GPU models** - full-precision Transformers models running on CUDA. Sorted by average latency, fastest first. Tested on an RTX 3060 Ti (8 GiB).
 
-> Remote latency depends on your network and the provider's load at the time of the run. Treat latency numbers here as indicative, not fixed.
+> Scores below come from the latest local GPU benchmark snapshot at `benchmark/results/gpu-models-20260524T212353Z`. `Score` here means the benchmark's main recovered score. GPU latency depends heavily on your card, drivers, and VRAM pressure.
 
 | Name | Avg. Inference (s) | Score | Comments |
 |------|:-:|:-:|---|
-| [gpt-4.1](https://platform.openai.com/docs/models) | 1.8 | **89.76** | Best remote model by a wide margin. Only 1 rejected case out of 280 and near-perfect anchor preservation. The ceiling for hosted compression quality. |
-| [gpt-5.4-mini](https://platform.openai.com/docs/models) | 1.3 | 83.69 | Near the top of the leaderboard at a fraction of the cost of gpt-4.1. Very few rejections (2 out of 280) and fast responses. Strong everyday choice. |
-| [gpt-5.4-nano](https://platform.openai.com/docs/models) | 1.5 | 83.32 | Almost identical results to gpt-5.4-mini. Nano-sized pricing with strong quality. A cost-efficient pick for high-volume setups. |
-| [gpt-4o-mini](https://platform.openai.com/docs/models) | 2.1 | 77.46 | Reliable and fast. Noticeably fewer rejections than gpt-4.1-mini and a solid score. Good value for everyday compression at scale. |
-| [gpt-4.1-mini](https://platform.openai.com/docs/models) | 1.8 | 73.46 | Decent performance. Slightly more rejections than gpt-4o-mini but still a reasonable choice if you are already on gpt-4.1 pricing. |
-| [gpt-4o](https://platform.openai.com/docs/models) | 1.7 | 73.11 | Scores below gpt-4o-mini despite being the larger model. More rejections (24 out of 280). gpt-4o-mini is the better pick in this family. |
-| [gpt-5-mini](https://platform.openai.com/docs/models) | 6.6 | 31.40 | Underperformed significantly — 132 rejected cases out of 280. Slow responses compounded by poor instruction following on structured output tasks. Not recommended in its current form. |
-| [gpt-5-nano](https://platform.openai.com/docs/models) | 4.8 | 7.35 | Failed on almost every case — 244 rejections out of 280. Appears to not follow the compression contract reliably at all. Not suitable for CtxSift use right now. |
+| [LFM2.5-1.2B-Instruct](https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct) **(recommended)** | 0.81 | 54.61 | Fastest GPU model by a wide margin and still strong enough to be the practical default for CUDA setups. Best speed-to-quality starting point. |
+| [Qwen3.5-0.8B](https://huggingface.co/Qwen/Qwen3.5-0.8B) | 3.43 | 59.13 | Strong small GPU model. Much faster than the 2B-tier options while still posting a very good score. |
+| [Qwen2.5-1.5B-Instruct](https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct) | 7.80 | 59.28 | Slightly edges out Qwen3.5-0.8B on score, but at more than double the latency. Good if you want a strong mid-size GPU model. |
+| [gemma-3-1b-it](https://huggingface.co/unsloth/gemma-3-1b-it) | 11.81 | 42.69 | Weak for the latency and rejection profile. Not a strong CUDA pick for CtxSift. |
+| [granite-4.0-micro](https://huggingface.co/ibm-granite/granite-4.0-micro) | 15.30 | 47.45 | Usable, but outclassed by faster or better-scoring Qwen and LFM models in the same benchmark set. |
+| [Qwen3.5-2B](https://huggingface.co/Qwen/Qwen3.5-2B) | 16.92 | **61.07** | Best GPU score in the current run. This is the higher-quality CUDA upgrade if you are willing to spend much more latency for it. |
+| [granite-3.3-2b-instruct](https://huggingface.co/ibm-granite/granite-3.3-2b-instruct) | 17.43 | 46.43 | Reliable enough, but the score does not justify the latency relative to better Qwen options. |
+| [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) | 17.67 | 53.00 | Decent fallback GPU model with moderate quality, but not compelling against LFM for speed or Qwen for quality. |
+| [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B) | 33.80 | 58.05 | Good score, but the latency is steep. Hard to justify unless this exact model family matters to you. |
+
+**Remote / hosted models** - models accessed through a LiteLLM-compatible endpoint such as OpenAI. Requires `ctxsift[remote]`. Sorted by average latency, fastest first.
+
+> Scores below come from the latest local remote benchmark snapshot at `benchmark/results/remote-models-20260523T233753Z`. `Score` here means the benchmark's main recovered score. Remote latency depends on your network path and provider load.
+
+| Name | Avg. Inference (s) | Score | Comments |
+|------|:-:|:-:|---|
+| [gpt-4.1](https://platform.openai.com/docs/models) | 1.33 | **88.17** | Best remote model in the current run and also the fastest among the serious contenders here. Highest quality ceiling with just 1 rejected case. |
+| [gpt-4o](https://platform.openai.com/docs/models) | 1.43 | 86.28 | Strong all-rounder with good speed and quality. Better current benchmark result than its `mini` sibling, but with more rejects than `gpt-4.1`. |
+| [gpt-4o-mini](https://platform.openai.com/docs/models) | 1.52 | 84.61 | Very fast and very reliable, with only 1 rejected case. Good remote default when cost matters more than absolute top score. |
+| [gpt-4.1-mini](https://platform.openai.com/docs/models) | 1.59 | 86.99 | Close to `gpt-4.1` quality while staying quick. A strong hosted pick if you want most of the quality without using the flagship model. |
+| [gpt-5.4-nano](https://platform.openai.com/docs/models) | 1.83 | 85.73 | Fast and solid in the current run. Good value candidate if you specifically want this family. |
+| [gpt-5.4-mini](https://platform.openai.com/docs/models) | 2.11 | 86.68 | Highest accepted-case count in the remote set, but slightly slower than the 4.1 and 4o family models above it. Strong choice. |
+| [gpt-5-nano](https://platform.openai.com/docs/models) | 4.46 | 5.59 | Catastrophic benchmark result for CtxSift right now. Not suitable for compression. |
+| [gpt-5-mini](https://platform.openai.com/docs/models) | 7.40 | 32.13 | Also performed poorly in the current run, with many empty or invalid outputs. Not recommended. |
 
 To learn more about the benchmark based on which, we recommend alternate models, please [see here](benchmark/README.md).
 
@@ -278,7 +321,12 @@ ctxsift config set timeout_ms 120000
 
 # Retry remote or bounded operations twice (env var: CTXSIFT_RETRIES)
 ctxsift config set retries 2
+
+# Disable deterministic recovery (env var: CTXSIFT_RECOVERY_ENABLED)
+ctxsift config set recovery_enabled false
 ```
+
+Unsure? Keep recovery enabled and run a benchmark with your desired model to find whether it helps or not.
 
 </details>
 
