@@ -1169,7 +1169,8 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
     assert "including safe visible-thought cleanup when possible" in html_report
     assert "Recovered / raw score" in html_report
     assert "Recovered thought" in html_report
-    assert "Strict near-miss format outputs can earn partial credit" in html_report
+    assert "How scoring works" in html_report
+    assert "Strict near-miss format outputs can earn partial credit" not in html_report
     assert "Highest final score across CPU scenarios." not in html_report
     assert "Highest final score across GPU scenarios." not in html_report
     assert "Avg and p95 only. Click a row to inspect that scenario below." not in html_report
