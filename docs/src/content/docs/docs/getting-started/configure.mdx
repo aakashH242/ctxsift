@@ -13,7 +13,7 @@ ctxsift configure
 ```
 
 This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill.
-This will also pre-download the required models so that you can get start using it right away.
+This will also pre-download the required models so that you can start using it right away.
 
 After running it, verify everything is working:
 
@@ -33,8 +33,9 @@ ctxsift doctor
 During configure, you will be asked:
 
 1. `Install the CtxSift agent skill for supported coding agents?` (default: `no`)
-2. `Install for (comma-separated)` (default: `copilot, antigravity, claude-code, codex`)
-3. Scope/path prompts per selected host
+2. `Install for (numbers, ranges, names, or all)` with a numbered host list
+3. Scope prompts per selected host
+4. Target-path prompts for hosts that do not use one fixed built-in location
 
 Supported host names:
 
@@ -42,18 +43,35 @@ Supported host names:
 - `antigravity`
 - `claude-code`
 - `codex`
+- `cursor`
+- `windsurf-cascade`
+- `cline`
+- `roo-code`
+- `kilo-code`
+- `continue`
+- `aider`
+- `opencode`
+- `gemini-cli`
+- `qwen-code`
+- `kiro`
+- `jetbrains-junie`
+- `openhands`
+- `zed-agent`
+- `sourcegraph-amp`
+- `augment-auggie`
+- `factory-droid`
+- `amazon-q-developer`
+- `replit-agent`
+- `devin`
+- `codegen`
+- `google-jules`
 - `other` (custom target)
 
-Install targets:
+If you want to see the full support matrix before running setup, including which hosts are global-only, workspace-only, or shared-file based, see [Supported agents](/docs/getting-started/installation/#supported-agents).
 
-| Host | Global target | Workspace target |
-|---|---|---|
-| Copilot | `~/.copilot/skills/ctxsift/SKILL.md` | `.github/skills/ctxsift/SKILL.md` |
-| Antigravity | `~/.gemini/config/plugins/ctxsift/skills/ctxsift/SKILL.md` | `.agents/plugins/ctxsift/skills/ctxsift/SKILL.md` |
-| Claude Code | `~/.claude/skills/ctxsift/SKILL.md` | `.claude/skills/ctxsift/SKILL.md` |
-| Codex | `~/.codex/skills/ctxsift/SKILL.md` (or `$CODEX_HOME/skills/ctxsift/SKILL.md`) | Not supported (global only) |
+For the newly added hosts, configure uses the documented global/workspace support from the host catalog and then suggests a default target path for that scope. Some hosts use a dedicated skill folder, while others use shared files such as `AGENTS.md`, `GEMINI.md`, or a rules/workflows folder. For shared files, CtxSift writes only its managed block instead of overwriting the whole file.
 
-For `other`, configure asks for a custom target path. You can provide:
+For `other`, and for any host where you want a different location than the suggested default, configure asks for a target path. You can provide:
 
 - a full file path ending in `SKILL.md`, or
 - a directory path (for example `.agents/skills/ctxsift`) and CtxSift writes `SKILL.md` inside it.
@@ -202,11 +220,24 @@ These apply to all compression regardless of local or remote mode.
 | `max_output_tokens` | `512` | `CTXSIFT_MAX_OUTPUT_TOKENS` |
 | `timeout_ms` | `90000` | `CTXSIFT_TIMEOUT_MS` |
 | `retries` | `1` | `CTXSIFT_RETRIES` |
+| `recovery_enabled` | `true` | `CTXSIFT_RECOVERY_ENABLED` |
 
 ```bash frame="none"
 ctxsift config set max_output_tokens 768
 ctxsift config set timeout_ms 120000
+ctxsift config set recovery_enabled false
 ```
+
+<Aside type="note">
+CtxSift implements a mechanism that tries to recover malformed or corrupt model outputs based on the intent of the caller's instructions.
+The goal of this recovery step is to ensure noise is removed and the caller receives only the most high-signal tokens. Based on our
+benchmarks, we found that output recovery is mostly beneficial but may hurt a few models, such as `gpt-4.1`. Learn more
+about output recovery [here](/docs/concepts/output-processing/#recovery).
+
+If you are unsure, keep `recovery_enabled` as true and run a benchmark with your desired model to find whether it helps or not.
+See how to run a [benchmark](/docs/guides/benchmark/#running-it).
+
+</Aside>
 
 ---
 
@@ -292,6 +323,7 @@ All env vars at a glance:
 CTXSIFT_MAX_OUTPUT_TOKENS=512
 CTXSIFT_TIMEOUT_MS=90000
 CTXSIFT_RETRIES=1
+CTXSIFT_RECOVERY_ENABLED=true
 
 # Remote
 CTXSIFT_LLM_BASE_URL=

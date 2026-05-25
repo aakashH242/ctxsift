@@ -106,10 +106,7 @@ import { compressionShowcases } from '../data/compression-showcases';
               </h1>
               <p class="landing-copy mt-5">
               Command outputs and state recollection are the biggest sources of token overuse and context clutter.
-                CtxSift is a skill to save tokens by keeping sessions clutter-free and helping agents recover state faster.<br>
-                With CtxSift, your agents use two steps to keep minimal token footprint: <br>
-                1. Extract and cache only what they need from raw outputs<br>
-                2. Look up context later instead of repeatedly re-running commands or dragging raw terminal output back into the session.
+              CtxSift is a skill to save tokens by keeping sessions clutter-free and helping agents recover state faster.<br>
               </p>
 
               <div class="landing-actions">
@@ -137,14 +134,6 @@ import { compressionShowcases } from '../data/compression-showcases';
                   />
                 </a>
               </div>
-
-              <div class="support-pill-row" aria-label="Supported agent harnesses">
-                <span class="support-pill">Codex</span>
-                <span class="support-pill">Antigravity</span>
-                <span class="support-pill">Copilot</span>
-                <span class="support-pill">Claude Code</span>
-                <span class="support-pill">Other Agents</span>
-              </div>
             </div>
 
             <!-- right: animated terminal -->
@@ -160,6 +149,26 @@ import { compressionShowcases } from '../data/compression-showcases';
               </div>
             </div>
           </div>
+
+
+           <!-- SUPPORTED HARNESSES -->
+        <section class="section-stack mt-14" id="why-ctxsift-exists">
+
+              <div aria-label="Supported agent harnesses">
+                <span class="support-pill">Codex</span>
+                <span class="support-pill">Antigravity</span>
+                <span class="support-pill">Copilot</span>
+                <span class="support-pill">Claude Code</span>
+                <span class="support-pill">Cursor</span><br><br>
+                                <span class="support-pill">OpenCode</span>
+                                <span class="support-pill">Cascade</span>
+                                 <span class="support-pill">Replit</span>
+                                 <span class="support-pill">Aider</span>
+                                <span class="support-pill"><a href="/docs/getting-started/installation/#supported-agents">Other Agents</a></span>
+
+</div>
+
+        </section>
         </section>
 
         <!-- WHY IT EXISTS -->
@@ -223,8 +232,11 @@ import { compressionShowcases } from '../data/compression-showcases';
           <div class="landing-panel">
             <div class="landing-kicker">How it works</div>
             <p class="ops-intro">
-              CtxSift gives your agent two core operations - compress raw output, then recall it later when it needs to reconstruct state. Recall results carry
-              freshness status so stale context gets down-ranked automatically. <br><a class="setup-inline-link" href="/docs/blog/command-output-recall/">See why it matters &rarr;</a>
+            With CtxSift, your agents use two steps to keep minimal token footprint: <br>
+1. Extract and cache only what they need from raw outputs<br>
+2. Look up context later instead of repeatedly re-running commands or dragging raw terminal output back into the session.<br>
+That's it. Unlike other token savers, which can get heavy can confuse the agent with multiple tools, CtxSift keeps it simple and light. No multiple tools, MCP servers or sandbox spin-up dependencies.
+               <br><a class="setup-inline-link" href="/docs/blog/command-output-recall/">See why it matters &rarr;</a>
             <div class="ops-timeline">
               <div class="ops-step">
                 <div class="ops-step-badge" aria-hidden="true">&#9889;</div>
@@ -323,28 +335,28 @@ import { compressionShowcases } from '../data/compression-showcases';
               <a href="https://huggingface.co/ibm-granite/granite-4.0-350m-GGUF">
                 <div class="proof-card-label">Built-in default</div>
                 <div class="proof-card-value">Granite 4.0 350M GGUF</div>
-                <div class="proof-card-copy">The default local CPU model. Quickest path to a working install and solid enough for everyday compression tasks.</div>
+                <div class="proof-card-copy">The built-in local CPU default. Fastest tested CPU model in the latest run at 2.14 s average inference, with a 46.93 benchmark score.</div>
               </a>
               </div>
               <div class="proof-card">
                             <a href="https://huggingface.co/unsloth/Qwen3.5-0.8B-GGUF">
                 <div class="proof-card-label">Recommended CPU</div>
                 <div class="proof-card-value">Qwen3.5 0.8B GGUF</div>
-                <div class="proof-card-copy">Best overall CPU model in the current benchmark runs. Highest CPU score with zero rejected outputs.</div>
+                <div class="proof-card-copy">Best overall CPU model in the latest local run: 56.45 score, 4.54 s average inference, and only 16 rejected cases out of 280.</div>
                             </a>
               </div>
               <div class="proof-card">
                             <a href="https://huggingface.co/LiquidAI/LFM2.5-1.2B-Instruct">
                 <div class="proof-card-label">Recommended GPU</div>
                 <div class="proof-card-value">LFM 2.5 1.2B</div>
-                <div class="proof-card-copy">Fastest strong GPU option in the current runs. Best first pick when you want a practical local CUDA setup.</div>
+                <div class="proof-card-copy">Fastest practical CUDA option in the latest local run: 0.81 s average inference with a 54.61 score. Best first GPU pick.</div>
                             </a>
               </div>
               <div class="proof-card">
                             <a href="https://huggingface.co/Qwen/Qwen3.5-2B">
                 <div class="proof-card-label">Higher-quality GPU</div>
                 <div class="proof-card-value">Qwen3.5 2B</div>
-                <div class="proof-card-copy">Strongest practical GPU model in the benchmarked set. Good upgrade when you want more quality without extreme latency.</div>
+                <div class="proof-card-copy">Highest-scoring local GPU model in the latest run: 61.07 score at 16.92 s average inference. Good upgrade when quality matters more than latency.</div>
                             </a>
               </div>
             </div>
@@ -429,8 +441,8 @@ import { compressionShowcases } from '../data/compression-showcases';
                 <a class="common-setup-link" href="/docs/guides/remote-models/">Can I use remote models?</a>
                 <a class="common-setup-link" href="/docs/getting-started/configure/">What are the configuration options?</a>
                 <a class="common-setup-link" href="/docs/getting-started/configure/#agent-skill-installation">How do I install the skill?</a>
-                <a class="common-setup-link" href="/docs/getting-started/configure/#local-cuda">Why is my GPU not detected?</a>
-                                <a class="common-setup-link" href="/docs/getting-started/benchmark/">Which model is best for me?</a>
+                <a class="common-setup-link" href="/docs/getting-started/installation/#advanced-pytorch--cuda-version-alignment">Why is my GPU not detected?</a>
+                                <a class="common-setup-link" href="/docs/guides/model-selection/">Which model is best for me?</a>
               </div>
             </div>
           </div>
