@@ -1052,10 +1052,10 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
     assert "including safe visible-thought cleanup when possible" in html_report
     assert "Recovered / raw score" in html_report
     assert "Recovered thought" in html_report
-    assert (
-        "100 x quality_core x latency, where case_score already includes validation, thought, and instruction penalties, and quality_core = 0.80 x mean(case_score) + 0.20 x p10(case_score)"
-        in html_report
-    )
+    assert 'id="score-formula-details"' in html_report
+    assert "How scoring works" in html_report
+    assert "validation_factor *" in html_report
+    assert "final_score = 100 * quality_core * latency_factor" in html_report
     assert "Highest final score across CPU scenarios." not in html_report
     assert "Highest final score across GPU scenarios." not in html_report
     assert "Avg and p95 only. Click a row to inspect that scenario below." not in html_report
