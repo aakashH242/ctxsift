@@ -280,6 +280,9 @@ ctxsift config set timeout_ms 120000
 
 # Retry remote or bounded operations twice (env var: CTXSIFT_RETRIES)
 ctxsift config set retries 2
+
+# Disable deterministic recovery (env var: CTXSIFT_RECOVERY_ENABLED)
+ctxsift config set recovery_enabled false
 ```
 
 </details>
