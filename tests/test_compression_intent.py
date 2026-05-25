@@ -60,6 +60,33 @@ def test_build_exact_cache_key_differs_by_intent() -> None:
     assert summary_key != recall_key
 
 
+def test_build_exact_cache_key_differs_by_recovery_flag() -> None:
+    recovery_on_key = build_exact_cache_key(
+        workspace_root="/tmp/repo",
+        raw_input_hash="raw-hash",
+        normalized_instruction="summarize failures",
+        intent=CompressionIntent.SUMMARY,
+        model_id="model-id",
+        max_output_tokens=128,
+        recovery_enabled=True,
+        ctxsift_version="0.1.0",
+        prompt_version="prompt-v1",
+    )
+    recovery_off_key = build_exact_cache_key(
+        workspace_root="/tmp/repo",
+        raw_input_hash="raw-hash",
+        normalized_instruction="summarize failures",
+        intent=CompressionIntent.SUMMARY,
+        model_id="model-id",
+        max_output_tokens=128,
+        recovery_enabled=False,
+        ctxsift_version="0.1.0",
+        prompt_version="prompt-v1",
+    )
+
+    assert recovery_on_key != recovery_off_key
+
+
 def test_recall_intent_uses_recall_oriented_prompt_wording() -> None:
     summary_messages = build_standard_text_messages(
         _request(

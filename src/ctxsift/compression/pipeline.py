@@ -182,9 +182,9 @@ def build_exact_cache_key(
     intent: CompressionIntent,
     model_id: str,
     max_output_tokens: int,
-    recovery_enabled: bool,
     ctxsift_version: str,
     prompt_version: str,
+    recovery_enabled: bool = True,
 ) -> str:
     """Build the exact-cache key used for compression lookup."""
     normalized_instruction_hash = sha256_text(normalized_instruction)
