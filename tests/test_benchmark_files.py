@@ -17,6 +17,7 @@ from benchmark.scoring import (
     brevity_ratio,
     case_benchmark_score,
     final_benchmark_score,
+    format_adherence_score,
     instruction_following_score,
     summary_quality_ratio,
 )
@@ -503,6 +504,119 @@ def test_instruction_following_score_respects_output_modes() -> None:
         )
         < 1.0
     )
+
+
+def test_strict_format_scoring_distinguishes_near_miss_from_wrong_output() -> None:
+    request = ModelCompressionInput(
+        intent=CompressionIntent.EXACT_FORMAT,
+        instruction="Output exactly the requested value or lines. No prose, bullets, backticks, or extra whitespace.",
+        raw_input="demo raw input",
+        extracted_signal=ExtractedSignal(),
+        max_output_tokens=64,
+    )
+    expected_output = 'pnpm jest packages/web/src/search/searchBox.test.tsx -t "SearchBox debounces network query before fetch"'
+    near_miss = 'packages/web/src/search/searchBox.test.tsx -t "SearchBox debounces network query before fetch"'
+    wrong_output = "--- FAIL: TestCheckoutAppliesCoupon (0.01s)\ncheckout_test.go:77: got 120 want 100\nFAIL github.com/acme/shop/checkout 0.31s"
+
+    near_score = format_adherence_score(
+        request,
+        near_miss,
+        intent=CompressionIntent.EXACT_FORMAT,
+        output_mode="single_line",
+        expected_output=expected_output,
+        format_check="exact_match",
+    )
+    wrong_score = format_adherence_score(
+        request,
+        wrong_output,
+        intent=CompressionIntent.EXACT_FORMAT,
+        output_mode="single_line",
+        expected_output="go test github.com/acme/shop/checkout -run '^TestCheckoutAppliesCoupon$'",
+        format_check="exact_match",
+    )
+
+    assert 0.0 < wrong_score < near_score < 1.0
+    assert near_score >= 0.55
+    assert wrong_score <= 0.40
+
+
+def test_strict_instruction_score_inherits_partial_credit_for_near_miss_outputs() -> None:
+    request = ModelCompressionInput(
+        intent=CompressionIntent.EXACT_FORMAT,
+        instruction="Output a single shell command that reruns only the failing Jest test file and test name. No explanation.",
+        raw_input="demo raw input",
+        extracted_signal=ExtractedSignal(),
+        max_output_tokens=64,
+    )
+    expected_output = 'pnpm jest packages/web/src/search/searchBox.test.tsx -t "SearchBox debounces network query before fetch"'
+    near_miss = 'packages/web/src/search/searchBox.test.tsx -t "SearchBox debounces network query before fetch"'
+    wrong_output = "migrator-v2-9xk\nprod"
+
+    near_score = instruction_following_score(
+        request,
+        near_miss,
+        intent=CompressionIntent.EXACT_FORMAT,
+        output_mode="single_line",
+        expected_output=expected_output,
+        required_anchors=(
+            "packages/web/src/search/searchBox.test.tsx",
+            "SearchBox debounces network query before fetch",
+        ),
+        format_check="exact_match",
+        max_extra_tokens=0,
+    )
+    wrong_score = instruction_following_score(
+        request,
+        wrong_output,
+        intent=CompressionIntent.EXACT_FORMAT,
+        output_mode="single_line",
+        expected_output="kubectl delete pod migrator-v2-9xk -n prod",
+        required_anchors=("migrator-v2-9xk", "prod"),
+        format_check="exact_match",
+        max_extra_tokens=0,
+    )
+
+    assert 0.0 < wrong_score < near_score < 1.0
+    assert near_score >= 0.55
+    assert wrong_score <= 0.40
+
+
+def test_json_shape_scoring_gives_partial_credit_to_single_matching_object() -> None:
+    request = ModelCompressionInput(
+        intent=CompressionIntent.JSON,
+        instruction="Return JSON only with the requested fields and values. No prose.",
+        raw_input="demo raw input",
+        extracted_signal=ExtractedSignal(),
+        max_output_tokens=64,
+    )
+    expected_output = (
+        '[{"project":"chromium","file":"checkout.spec.ts","line":42,'
+        '"test":"checkout › submits card","error":"expect(page).toHaveURL(/success/) failed"},'
+        '{"project":"webkit","file":"login.spec.ts","line":12,'
+        '"test":"login › remembers session","error":"locator.click timed out"}]'
+    )
+    near_miss = '{\n"project": "chromium",\n"file": "checkout.spec.ts",\n"line": 42,\n"test": "submits card"\n}'
+    invalid = "project=chromium"
+
+    near_score = format_adherence_score(
+        request,
+        near_miss,
+        intent=CompressionIntent.JSON,
+        output_mode="json",
+        expected_output=expected_output,
+        format_check="json_shape",
+    )
+    invalid_score = format_adherence_score(
+        request,
+        invalid,
+        intent=CompressionIntent.JSON,
+        output_mode="json",
+        expected_output=expected_output,
+        format_check="json_shape",
+    )
+
+    assert 0.0 < near_score < 1.0
+    assert invalid_score == 0.0
 
 
 def test_final_benchmark_score_prioritizes_preservation_and_instruction() -> None:
@@ -1047,15 +1161,15 @@ def test_render_html_report_uses_streamlined_track_dashboard() -> None:
     assert "finalScore" in html_report
     assert "rawFinalScore" in html_report
     assert "recoveryLift" in html_report
+    assert "Recovery Lift" in html_report
+    assert "recovery-lift-scatter" in html_report
+    assert "Raw final score" in html_report
     assert "summaryQualityRatio" in html_report
     assert "instructionFollowingScore" in html_report
     assert "including safe visible-thought cleanup when possible" in html_report
     assert "Recovered / raw score" in html_report
     assert "Recovered thought" in html_report
-    assert 'id="score-formula-details"' in html_report
-    assert "How scoring works" in html_report
-    assert "validation_factor *" in html_report
-    assert "final_score = 100 * quality_core * latency_factor" in html_report
+    assert "Strict near-miss format outputs can earn partial credit" in html_report
     assert "Highest final score across CPU scenarios." not in html_report
     assert "Highest final score across GPU scenarios." not in html_report
     assert "Avg and p95 only. Click a row to inspect that scenario below." not in html_report
