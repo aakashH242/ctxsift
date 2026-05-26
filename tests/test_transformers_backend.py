@@ -14,6 +14,7 @@ from ctxsift.models.base import (
     ModelCompressionInput,
     ModelOutputRejectedError,
 )
+import ctxsift.models.local_model_strategy as local_model_strategy_module
 from ctxsift.models.local_model_strategy import (
     LocalModelStrategy,
     PromptRenderMode,
@@ -2057,7 +2058,8 @@ def test_transformers_backend_persists_backend_default_after_missing_chat_templa
         bfloat16="bfloat16",
     )
     monkeypatch.setattr(
-        "ctxsift.models.local_model_strategy.user_config_path",
+        local_model_strategy_module,
+        "user_config_path",
         lambda app_name: tmp_path / app_name,
     )
     monkeypatch.setattr(
