@@ -507,20 +507,6 @@ starlight-toc a[aria-current='true'],
 	color: #e0f0ff;
 }
 
-/* stars badge alignment */
-.stars-badge {
-	display: inline-flex;
-	align-items: center;
-	border-radius: 0.4rem;
-	overflow: hidden;
-	text-decoration: none;
-	transition: opacity 200ms ease-out;
-}
-
-.stars-badge:hover {
-	opacity: 0.85;
-}
-
 /* terminal pre styling */
 .terminal-pre {
 	margin: 0;
