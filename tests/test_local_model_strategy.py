@@ -16,7 +16,7 @@ from ctxsift.models.local_model_strategy import (
     probe_candidate_strategies,
     resolve_local_model_strategy,
     strategy_store_path,
-    synchronize_strategy_store_for_config,
+    synchronize_strategy_store,
     persist_runtime_strategy,
 )
 from ctxsift.types import LocalModelConfig
@@ -66,7 +66,7 @@ def test_synchronize_strategy_store_creates_internal_store(
         lambda app_name: tmp_path / app_name,
     )
 
-    synchronize_strategy_store_for_config(LocalModelConfig())
+    synchronize_strategy_store()
 
     store_path = strategy_store_path()
     assert store_path.exists()

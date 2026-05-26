@@ -236,10 +236,9 @@ def llama_completion_options(
     return options
 
 
-def synchronize_strategy_store_for_config(config: LocalModelConfig) -> None:
-    """Ensure the global internal store exists before later local-model use."""
+def synchronize_strategy_store() -> None:
+    """Ensure the global internal strategy store exists and is refreshed."""
     ensure_strategy_store()
-    del config
 
 
 def persist_runtime_strategy(
