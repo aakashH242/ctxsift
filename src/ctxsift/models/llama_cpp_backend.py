@@ -499,8 +499,8 @@ def _load_optional_tokenizer(
     strategy: LocalModelStrategy,
 ) -> Any | None:
     if (
-        strategy.prompt_renderer.value != "chat_template_text"
-        and strategy.source.value != "default"
+        strategy.prompt_renderer is not PromptRenderMode.CHAT_TEMPLATE_TEXT
+        and strategy.source is not StrategySource.DEFAULT
     ):
         return None
     try:
