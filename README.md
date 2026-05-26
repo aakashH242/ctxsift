@@ -131,6 +131,9 @@ To view the latest benchmark, open `benchmark/results/viewer.html` to inspect th
 
 **CPU models** - GGUF quantized models running on CPU via the built-in `llama.cpp` engine. Sorted by average latency, fastest first.
 
+<details>
+<summary>Benchmarked CPU models</summary>
+
 > Scores below come from the latest local CPU benchmark snapshot at `benchmark/results/cpu-models-20260524T014526Z` on an i7-12700F with 64 GiB RAM. `Score` here means the benchmark's main recovered score. Treat latency as relative, not absolute.
 
 | Name | Avg. Inference (s) | Score | Comments |
@@ -148,6 +151,12 @@ To view the latest benchmark, open `benchmark/results/viewer.html` to inspect th
 | [LFM2-350M-Extract-GGUF](https://huggingface.co/LiquidAI/LFM2-350M-Extract-GGUF) | 7.81 | 39.74 | This extract-tuned variant is not a strong general compression pick in the benchmark. Usually skip it for CtxSift. |
 | [Qwen3-0.6B-GGUF](https://huggingface.co/unsloth/Qwen3-0.6B-GGUF) | 13.91 | 53.10 | Good score, but far too slow on CPU relative to Qwen3.5-0.8B. Only worth it if you specifically want the Qwen3 family. |
 
+</details>
+
+<details>
+
+<summary>Benchmarked GPU models</summary>
+
 **GPU models** - full-precision Transformers models running on CUDA. Sorted by average latency, fastest first. Tested on an RTX 3060 Ti (8 GiB).
 
 > Scores below come from the latest local GPU benchmark snapshot at `benchmark/results/gpu-models-20260524T212353Z`. `Score` here means the benchmark's main recovered score. GPU latency depends heavily on your card, drivers, and VRAM pressure.
@@ -164,7 +173,13 @@ To view the latest benchmark, open `benchmark/results/viewer.html` to inspect th
 | [SmolLM2-1.7B-Instruct](https://huggingface.co/HuggingFaceTB/SmolLM2-1.7B-Instruct) | 17.67 | 53.00 | Decent fallback GPU model with moderate quality, but not compelling against LFM for speed or Qwen for quality. |
 | [Qwen3-1.7B](https://huggingface.co/Qwen/Qwen3-1.7B) | 33.80 | 58.05 | Good score, but the latency is steep. Hard to justify unless this exact model family matters to you. |
 
-**Remote / hosted models** - models accessed through a LiteLLM-compatible endpoint such as OpenAI. Requires `ctxsift[remote]`. Sorted by average latency, fastest first.
+</details>
+
+<details>
+
+<summary>Benchmarked remote models</summary>
+
+**Remote / hosted models** - models accessed through a LiteLLM-compatible endpoint such as OpenAI. Requires `ctxsift[remote]`. Sorted by average latency, fastest first. Note that we have benchmarked OpenAI models but other providers are also supported.
 
 > Scores below come from the latest local remote benchmark snapshot at `benchmark/results/remote-models-20260523T233753Z`. `Score` here means the benchmark's main recovered score. Remote latency depends on your network path and provider load.
 
@@ -177,6 +192,8 @@ To view the latest benchmark, open `benchmark/results/viewer.html` to inspect th
 | [gpt-5.4-nano](https://platform.openai.com/docs/models) | 1.83 | 85.73 | Fast and solid in the current run. Good value candidate if you specifically want this family. |
 | [gpt-5.4-mini](https://platform.openai.com/docs/models) | 2.11 | 86.68 | Highest accepted-case count in the remote set, but slightly slower than the 4.1 and 4o family models above it. Strong choice. |
 | [gpt-5-mini](https://platform.openai.com/docs/models) | 7.40 | 32.13 | Also performed poorly in the current run, with many empty or invalid outputs. Not recommended. |
+
+</details>
 
 To learn more about the benchmark based on which, we recommend alternate models, please [see here](benchmark/README.md).
 

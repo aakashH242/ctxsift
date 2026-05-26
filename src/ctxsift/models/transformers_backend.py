@@ -3,10 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from ctxsift.acceleration import text_attention_choice
@@ -18,6 +17,17 @@ from ctxsift.models.base import (
 )
 from ctxsift.models.local_runtime import ResolvedLocalDevice, resolve_local_device
 from ctxsift.models.local_runtime import should_apply_soft_length_hint
+from ctxsift.models.local_model_strategy import (
+    LocalModelStrategy,
+    PromptRenderMode,
+    StrategySource,
+    apply_transformers_decoding_strategy,
+    persist_runtime_strategy,
+    probe_candidate_strategies,
+    render_nonchat_prompt_with_strategy,
+    render_prompt_with_strategy,
+    resolve_local_model_strategy,
+)
 from ctxsift.models.text_model_profiles import resolve_text_model_profile
 from ctxsift.models.text_profile_common import (
     apply_soft_length_hint,
@@ -47,6 +57,7 @@ class TextRuntime:
     model: Any
     tokenizer: Any
     input_device: str
+    strategy: LocalModelStrategy
 
 
 @dataclass(frozen=True)
@@ -139,7 +150,27 @@ class TransformersTextBackend(ModelBackend):
                 raise BackendUnavailableError(str(fallback_error)) from fallback_error
 
     def _generate_text(self, runtime: TextRuntime, request: ModelCompressionInput) -> str:
-        first_raw_text, first_output = self._run_generation(
+        primary_error: Exception | None = None
+        for strategy in self._candidate_strategies(runtime):
+            runtime_for_strategy = replace(runtime, strategy=strategy)
+            try:
+                output, effective_strategy = self._generate_text_once(runtime_for_strategy, request)
+            except (BackendUnavailableError, ModelOutputRejectedError) as error:
+                if primary_error is None:
+                    primary_error = error
+                continue
+            self._persist_successful_strategy(runtime, effective_strategy)
+            return output
+        if primary_error is not None:
+            raise primary_error
+        raise BackendUnavailableError("Transformers backend returned no viable strategy.")
+
+    def _generate_text_once(
+        self,
+        runtime: TextRuntime,
+        request: ModelCompressionInput,
+    ) -> tuple[str, LocalModelStrategy]:
+        first_raw_text, first_output, effective_strategy = self._run_generation(
             runtime,
             request,
             self._prepare_messages(request, self._profile.build_text_messages(request)),
@@ -157,9 +188,9 @@ class TransformersTextBackend(ModelBackend):
                     raw_output=first_raw_text,
                     recovered_output=first_pass,
                 )
-            return first_pass
+            return first_pass, effective_strategy
 
-        repair_raw_text, repair_output = self._run_generation(
+        repair_raw_text, repair_output, _ = self._run_generation(
             runtime,
             request,
             self._prepare_messages(request, build_repair_messages(request, first_pass)),
@@ -182,7 +213,7 @@ class TransformersTextBackend(ModelBackend):
                 ),
             )
         if preferred_candidate is not None:
-            return preferred_candidate.output
+            return preferred_candidate.output, effective_strategy
 
         repair_validation = validate_instruction_aware_output(request, repaired_output)
 
@@ -195,6 +226,24 @@ class TransformersTextBackend(ModelBackend):
                 repaired_output,
             )
         )
+
+    def _candidate_strategies(self, runtime: TextRuntime) -> list[LocalModelStrategy]:
+        if runtime.strategy.source is not StrategySource.DEFAULT:
+            return [runtime.strategy]
+        return probe_candidate_strategies(runtime.tokenizer, runtime.strategy)
+
+    def _persist_successful_strategy(
+        self,
+        runtime: TextRuntime,
+        strategy: LocalModelStrategy,
+    ) -> None:
+        persisted = persist_runtime_strategy(
+            self._config,
+            backend=self.provider_name,
+            strategy=strategy,
+        )
+        if self._runtime is runtime:
+            self._runtime = replace(runtime, strategy=persisted)
 
     def _recover_candidate_before_validation(
         self,
@@ -212,19 +261,31 @@ class TransformersTextBackend(ModelBackend):
         runtime: TextRuntime,
         request: ModelCompressionInput,
         messages: list[dict[str, str]],
-    ) -> tuple[str, str]:
-        prompt_text = _apply_text_chat_template(runtime.tokenizer, messages)
-        inputs = runtime.tokenizer(prompt_text, return_tensors="pt").to(runtime.input_device)
+    ) -> tuple[str, str, LocalModelStrategy]:
+        prompt_text = _apply_text_chat_template(runtime.tokenizer, messages, runtime.strategy)
+        effective_strategy = runtime.strategy
+        if prompt_text.used_fallback_prompt:
+            effective_strategy = _fallback_prompt_strategy(runtime.strategy)
+        inputs = runtime.tokenizer(prompt_text.text, return_tensors="pt").to(runtime.input_device)
         input_len = _input_length(inputs["input_ids"])
+        generation_kwargs = apply_transformers_decoding_strategy(
+            base_kwargs=self._profile.generation_kwargs(
+                runtime.tokenizer,
+                request.max_output_tokens,
+            ),
+            tokenizer=runtime.tokenizer,
+            max_output_tokens=request.max_output_tokens,
+            strategy=runtime.strategy,
+        )
         outputs = runtime.model.generate(
             **inputs,
-            **self._profile.generation_kwargs(runtime.tokenizer, request.max_output_tokens),
+            **generation_kwargs,
         )
         raw_text = runtime.tokenizer.decode(
             outputs[0][input_len:], skip_special_tokens=False
         ).strip()
         normalized = self._profile.normalize_output(request, raw_text)
-        return raw_text, normalized
+        return raw_text, normalized, effective_strategy
 
     def _prepare_messages(
         self,
@@ -332,7 +393,17 @@ def _create_text_runtime(
                 error,
             )
     input_device = _runtime_input_device(model, resolved_device.torch_device)
-    return TextRuntime(model=model, tokenizer=tokenizer, input_device=input_device)
+    strategy = resolve_local_model_strategy(
+        config,
+        backend="transformers",
+        tokenizer=tokenizer,
+    )
+    return TextRuntime(
+        model=model,
+        tokenizer=tokenizer,
+        input_device=input_device,
+        strategy=strategy,
+    )
 
 
 def _load_model(
@@ -423,18 +494,65 @@ def _normalize_runtime_device(device: Any) -> str | None:
     return str(device)
 
 
-def _apply_text_chat_template(tokenizer: Any, messages: list[dict[str, str]]) -> str:
-    kwargs = {"tokenize": False, "add_generation_prompt": True}
+@dataclass(frozen=True)
+class PromptText:
+    """Rendered prompt text plus whether a generic fallback was used."""
+
+    text: str
+    used_fallback_prompt: bool = False
+
+
+def _apply_text_chat_template(
+    tokenizer: Any,
+    messages: list[dict[str, str]],
+    strategy: LocalModelStrategy,
+) -> PromptText:
+    if strategy.prompt_renderer is PromptRenderMode.BACKEND_DEFAULT:
+        return PromptText(text=_fallback_prompt(messages), used_fallback_prompt=False)
+    if strategy.prompt_renderer is PromptRenderMode.ALPACA_INSTRUCTION:
+        return PromptText(
+            text=render_nonchat_prompt_with_strategy(messages, strategy),
+            used_fallback_prompt=False,
+        )
+    if not callable(getattr(tokenizer, "apply_chat_template", None)):
+        return PromptText(text=_fallback_prompt(messages), used_fallback_prompt=True)
     try:
-        signature = inspect.signature(tokenizer.apply_chat_template)
-    except (TypeError, ValueError):
-        signature = None
-    if signature is not None:
-        if "enable_thinking" in signature.parameters:
-            kwargs["enable_thinking"] = False
-        if "thinking" in signature.parameters:
-            kwargs["thinking"] = False
-    return tokenizer.apply_chat_template(messages, **kwargs)
+        return PromptText(text=render_prompt_with_strategy(tokenizer, messages, strategy))
+    except ValueError as error:
+        if _is_missing_chat_template_error(error):
+            return PromptText(text=_fallback_prompt(messages), used_fallback_prompt=True)
+        raise
+
+
+def _fallback_prompt(messages: list[dict[str, str]]) -> str:
+    lines: list[str] = []
+    for message in messages:
+        role = message.get("role", "user").strip().title() or "User"
+        content = message.get("content", "").strip()
+        if not content:
+            continue
+        lines.append(f"{role}:\n{content}")
+    lines.append("Assistant:\n")
+    return "\n\n".join(lines)
+
+
+def _is_missing_chat_template_error(error: ValueError) -> bool:
+    message = str(error)
+    return "chat_template" in message and "not set" in message
+
+
+def _fallback_prompt_strategy(strategy: LocalModelStrategy) -> LocalModelStrategy:
+    updated_source = (
+        StrategySource.DISCOVERED
+        if strategy.source is StrategySource.DEFAULT
+        else strategy.source
+    )
+    return strategy.model_copy(
+        update={
+            "prompt_renderer": PromptRenderMode.BACKEND_DEFAULT,
+            "source": updated_source,
+        }
+    )
 
 
 def _input_length(input_ids: Any) -> int:

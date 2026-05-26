@@ -1,7 +1,6 @@
 """Tests for the local Transformers text backend and profile behavior."""
 
 import asyncio
-import inspect
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -14,6 +13,12 @@ from ctxsift.models.base import (
     CompressionTrace,
     ModelCompressionInput,
     ModelOutputRejectedError,
+)
+from ctxsift.models.local_model_strategy import (
+    LocalModelStrategy,
+    PromptRenderMode,
+    StrategySource,
+    ensure_strategy_store,
 )
 from ctxsift.models.gemma_profile import (
     build_text_messages,
@@ -59,6 +64,7 @@ from ctxsift.models.text_profile_common import (
 from ctxsift.models.transformers_backend import (
     TransformersGemmaBackend,
     TransformersTextBackend,
+    TextRuntime,
     _apply_text_chat_template,
     _resolve_device,
     _runtime_input_device,
@@ -744,6 +750,10 @@ def test_transformers_backend_supports_qwen3_profile_and_disables_thinking(
         "add_generation_prompt": True,
         "enable_thinking": False,
     }
+    assert fake_model.generate_calls[0]["do_sample"] is True
+    assert fake_model.generate_calls[0]["temperature"] == pytest.approx(0.7)
+    assert fake_model.generate_calls[0]["top_p"] == pytest.approx(0.8)
+    assert fake_model.generate_calls[0]["top_k"] == 20
 
 
 def test_transformers_backend_supports_qwen35_profile(
@@ -798,6 +808,79 @@ def test_transformers_backend_supports_qwen35_profile(
     assert result == "Model answer"
     assert backend._profile.family_name == "qwen3.5"
     assert fake_tokenizer.last_messages is not None
+    assert fake_model.generate_calls[0]["do_sample"] is True
+    assert fake_model.generate_calls[0]["temperature"] == pytest.approx(1.0)
+    assert fake_model.generate_calls[0]["top_p"] == pytest.approx(1.0)
+    assert fake_model.generate_calls[0]["top_k"] == 20
+
+
+def test_transformers_backend_uses_alpaca_prompt_and_sampled_decode_for_supra(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_model = FakeModel()
+
+    class PlainTokenizer:
+        def __init__(self) -> None:
+            self.pad_token_id = 0
+            self.eos_token_id = 2
+
+        def __call__(self, text: str, return_tensors: str) -> FakeInputs:
+            return FakeInputs(
+                {"input_ids": [[1, 2, 3]], "text": text, "return_tensors": return_tensors}
+            )
+
+        def decode(self, tokens, skip_special_tokens: bool) -> str:
+            return "Model answer"
+
+    class FakeAutoModel:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return fake_model
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return PlainTokenizer()
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        float32="float32",
+        float16="float16",
+        bfloat16="bfloat16",
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_backend._load_transformers_components",
+        lambda: (FakeAutoModel, FakeAutoTokenizer),
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_backend._load_torch_module",
+        lambda: fake_torch,
+    )
+    backend = TransformersTextBackend(
+        LocalModelConfig(model="SupraLabs/Supra-50M-Instruct", device="cpu")
+    )
+    request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
+        instruction="Summarize failures",
+        raw_input="pytest failed in tests/test_auth.py::test_login",
+        extracted_signal=ExtractedSignal(tests=["tests/test_auth.py::test_login"]),
+        max_output_tokens=96,
+    )
+
+    result = asyncio.run(backend.compress(request))
+
+    assert result == "Model answer"
+    prompt_text = fake_model.generate_calls[0]["text"]
+    assert "Below is an instruction that describes a task" in prompt_text
+    assert "### Instruction:\nSummarize failures" in prompt_text
+    assert "### Input:" in prompt_text
+    assert "pytest failed in tests/test_auth.py::test_login" in prompt_text
+    assert "Never repeat this system message" in prompt_text
+    assert fake_model.generate_calls[0]["do_sample"] is True
+    assert fake_model.generate_calls[0]["temperature"] == pytest.approx(0.7)
+    assert fake_model.generate_calls[0]["top_p"] == pytest.approx(0.9)
+    assert fake_model.generate_calls[0]["top_k"] == 50
+    assert fake_model.generate_calls[0]["repetition_penalty"] == pytest.approx(1.15)
 
 
 def test_transformers_backend_trace_keeps_raw_visible_thought_output(
@@ -1911,28 +1994,118 @@ def test_transformers_backend_repairs_invalid_first_pass_output(
     assert result == "tests/test_cli.py::test_run failed under pytest"
 
 
-def test_apply_text_chat_template_handles_uninspectable_signature() -> None:
-    class BuiltinLikeTokenizer:
-        def apply_chat_template(self, *args, **kwargs):
-            return "templated"
+def test_apply_text_chat_template_falls_back_when_chat_template_is_missing() -> None:
+    class MissingTemplateTokenizer:
+        def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+            raise ValueError(
+                "Cannot use chat template functions because tokenizer.chat_template is not set"
+            )
 
-    original_signature = inspect.signature
-
-    def raising_signature(callable_object):
-        if callable_object.__name__ == "apply_chat_template":
-            raise ValueError("signature unavailable")
-        return original_signature(callable_object)
-
-    tokenizer = BuiltinLikeTokenizer()
+    tokenizer = MissingTemplateTokenizer()
     messages = [{"role": "system", "content": "x"}]
 
-    with pytest.MonkeyPatch.context() as monkeypatch:
-        monkeypatch.setattr(
-            "ctxsift.models.transformers_backend.inspect.signature", raising_signature
-        )
-        result = _apply_text_chat_template(tokenizer, messages)
+    result = _apply_text_chat_template(
+        tokenizer,
+        messages,
+        LocalModelStrategy(
+            backend="transformers",
+            model="example/model",
+            prompt_renderer=PromptRenderMode.CHAT_TEMPLATE_TEXT,
+        ),
+    )
 
-    assert result == "templated"
+    assert result.used_fallback_prompt is True
+    assert result.text.endswith("Assistant:\n")
+
+
+def test_transformers_backend_persists_backend_default_after_missing_chat_template(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingTemplateTokenizer:
+        def __init__(self) -> None:
+            self.pad_token_id = 0
+            self.eos_token_id = 2
+
+        def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+            raise ValueError(
+                "Cannot use chat template functions because tokenizer.chat_template is not set"
+            )
+
+        def __call__(self, text: str, return_tensors: str) -> FakeInputs:
+            return FakeInputs(
+                {"input_ids": [[1, 2, 3]], "text": text, "return_tensors": return_tensors}
+            )
+
+        def decode(self, tokens, skip_special_tokens: bool) -> str:
+            return "Model answer"
+
+    class FakeAutoModel:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return FakeModel()
+
+    class FakeAutoTokenizer:
+        @staticmethod
+        def from_pretrained(model_name: str, **kwargs):
+            return MissingTemplateTokenizer()
+
+    fake_torch = SimpleNamespace(
+        cuda=SimpleNamespace(is_available=lambda: False),
+        float32="float32",
+        float16="float16",
+        bfloat16="bfloat16",
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.local_model_strategy.user_config_path",
+        lambda app_name: tmp_path / app_name,
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_backend._load_transformers_components",
+        lambda: (FakeAutoModel, FakeAutoTokenizer),
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.transformers_backend._load_torch_module",
+        lambda: fake_torch,
+    )
+    backend = TransformersTextBackend(LocalModelConfig(model="example/odd-chat", device="cpu"))
+    request = ModelCompressionInput(
+        intent=CompressionIntent.SUMMARY,
+        instruction="Summarize failures",
+        raw_input="pytest failed",
+        extracted_signal=ExtractedSignal(command_terms=["pytest"]),
+        max_output_tokens=64,
+    )
+
+    result = asyncio.run(backend.compress(request))
+
+    assert result == "Model answer"
+    persisted = next(
+        entry
+        for entry in ensure_strategy_store().strategies
+        if entry.model == "example/odd-chat" and entry.backend == "transformers"
+    )
+    assert persisted.prompt_renderer is PromptRenderMode.BACKEND_DEFAULT
+
+
+def test_transformers_backend_reuses_discovered_strategy_without_reprobe() -> None:
+    backend = TransformersTextBackend(LocalModelConfig(model="example/odd-chat", device="cpu"))
+    strategy = LocalModelStrategy(
+        backend="transformers",
+        model="example/odd-chat",
+        prompt_renderer=PromptRenderMode.BACKEND_DEFAULT,
+        source=StrategySource.DISCOVERED,
+    )
+    runtime = TextRuntime(
+        model=FakeModel(),
+        tokenizer=FakeTokenizer(),
+        input_device="cpu",
+        strategy=strategy,
+    )
+
+    candidates = backend._candidate_strategies(runtime)
+
+    assert candidates == [strategy]
 
 
 def test_transformers_backend_rejects_unknown_dtype(

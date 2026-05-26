@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ctxsift.diagnostics.doctor import DoctorReport, collect_doctor_report_for_config
 from ctxsift.model_preload import ModelPreloadResult, preload_configured_models
+from ctxsift.models.local_model_strategy import synchronize_strategy_store_for_config
 from ctxsift.types import AppConfig
 from ctxsift.workspace.setup import WorkspaceSetupResult, ensure_workspace_initialized
 
@@ -28,6 +29,7 @@ async def run_configure_setup(
     progress: Callable[[str], None] | None = None,
 ) -> ConfigureSetupResult:
     """Initialize workspace state, probe health, and warm configured models."""
+    synchronize_strategy_store_for_config(config.local)
     _report_progress(progress, "Please wait: initializing workspace database...")
     workspace = await ensure_workspace_initialized(
         cwd=cwd,
