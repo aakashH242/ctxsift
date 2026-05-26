@@ -6,7 +6,6 @@
 </p>
 
 [![PyPI](https://img.shields.io/pypi/v/ctxsift.svg)](https://pypi.org/project/ctxsift/)
-[![Python](https://img.shields.io/pypi/pyversions/ctxsift.svg)](https://pypi.org/project/ctxsift/)
 [![CI](https://github.com/aakashh242/ctxsift/actions/workflows/ci.yml/badge.svg)](https://github.com/aakashh242/ctxsift/actions/workflows/ci.yml)
 [![Docs](https://github.com/aakashh242/ctxsift/actions/workflows/docs-ci.yml/badge.svg)](https://github.com/aakashh242/ctxsift/actions/workflows/docs-ci.yml)
 [![License](https://img.shields.io/github/license/aakashh242/ctxsift.svg)](https://github.com/aakashh242/ctxsift/blob/main/LICENSE.md)
