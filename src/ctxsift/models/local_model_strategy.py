@@ -118,7 +118,9 @@ def resolve_local_model_strategy(
     strategy = _stored_strategy_for_config(store, config, backend=backend)
     if strategy is not None:
         return strategy
-    discovered_strategy = _discover_strategy_from_tokenizer(config, backend=backend, tokenizer=tokenizer)
+    discovered_strategy = _discover_strategy_from_tokenizer(
+        config, backend=backend, tokenizer=tokenizer
+    )
     if discovered_strategy is not None:
         _persist_discovered_strategy(discovered_strategy)
         return discovered_strategy
@@ -305,14 +307,12 @@ def probe_candidate_strategies(
     ) -> None:
         if prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT and signature is None:
             return
-        if (
-            thinking_control is ThinkingControlMode.ENABLE_THINKING_FALSE
-            and (signature is None or "enable_thinking" not in signature.parameters)
+        if thinking_control is ThinkingControlMode.ENABLE_THINKING_FALSE and (
+            signature is None or "enable_thinking" not in signature.parameters
         ):
             return
-        if (
-            thinking_control is ThinkingControlMode.THINKING_FALSE
-            and (signature is None or "thinking" not in signature.parameters)
+        if thinking_control is ThinkingControlMode.THINKING_FALSE and (
+            signature is None or "thinking" not in signature.parameters
         ):
             return
         key = (prompt_renderer.value, thinking_control.value)
@@ -533,7 +533,7 @@ def _split_alpaca_user_instruction(user_text: str) -> tuple[str, str]:
     normalized = user_text.strip()
     if not normalized.startswith("Instruction:"):
         return normalized, ""
-    remainder = normalized[len("Instruction:"):].lstrip()
+    remainder = normalized[len("Instruction:") :].lstrip()
     if not remainder:
         return normalized, ""
     head, separator, tail = remainder.partition("\n\n")

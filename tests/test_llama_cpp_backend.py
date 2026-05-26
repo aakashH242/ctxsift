@@ -156,7 +156,9 @@ def test_generate_with_runtime_strategy_uses_alpaca_instruction_prompt() -> None
     assert output == "Model answer"
     assert effective_strategy.prompt_renderer is PromptRenderMode.ALPACA_INSTRUCTION
     assert "Below is an instruction that describes a task" in prompt_text
-    assert "### Instruction:\nSummarize pytest failed in tests/test_auth.py::test_login" in prompt_text
+    assert (
+        "### Instruction:\nSummarize pytest failed in tests/test_auth.py::test_login" in prompt_text
+    )
     assert "### Input:" in prompt_text
     assert "You compress raw tool output into compact recall notes." in prompt_text
     assert model.completion_calls[0]["temperature"] == 0.7

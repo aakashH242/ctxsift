@@ -64,8 +64,7 @@ def test_synchronize_strategy_store_creates_internal_store(
     assert store_path.exists()
     store = ensure_strategy_store()
     assert any(
-        strategy.model == "ibm-granite/granite-4.0-350m-GGUF"
-        for strategy in store.strategies
+        strategy.model == "ibm-granite/granite-4.0-350m-GGUF" for strategy in store.strategies
     )
 
 

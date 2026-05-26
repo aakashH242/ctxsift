@@ -434,19 +434,25 @@ def _generate_with_runtime_strategy(
 ) -> tuple[str, LocalModelStrategy]:
     if runtime.strategy.prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT:
         prompt_text, effective_strategy = _strategy_prompt_text(runtime, messages)
-        return _run_text_completion(
-            runtime.model,
-            prompt=prompt_text,
-            max_output_tokens=max_output_tokens,
-            strategy=runtime.strategy,
-        ), effective_strategy
+        return (
+            _run_text_completion(
+                runtime.model,
+                prompt=prompt_text,
+                max_output_tokens=max_output_tokens,
+                strategy=runtime.strategy,
+            ),
+            effective_strategy,
+        )
     if runtime.strategy.prompt_renderer is PromptRenderMode.ALPACA_INSTRUCTION:
-        return _run_text_completion(
-            runtime.model,
-            prompt=render_nonchat_prompt_with_strategy(messages, runtime.strategy),
-            max_output_tokens=max_output_tokens,
-            strategy=runtime.strategy,
-        ), runtime.strategy
+        return (
+            _run_text_completion(
+                runtime.model,
+                prompt=render_nonchat_prompt_with_strategy(messages, runtime.strategy),
+                max_output_tokens=max_output_tokens,
+                strategy=runtime.strategy,
+            ),
+            runtime.strategy,
+        )
     chat_output = _try_chat_completion(
         runtime.model,
         messages=messages,
@@ -454,12 +460,15 @@ def _generate_with_runtime_strategy(
     )
     if chat_output is not None:
         return chat_output, runtime.strategy
-    return _run_text_completion(
-        runtime.model,
-        prompt=_fallback_prompt(messages),
-        max_output_tokens=max_output_tokens,
-        strategy=runtime.strategy,
-    ), runtime.strategy
+    return (
+        _run_text_completion(
+            runtime.model,
+            prompt=_fallback_prompt(messages),
+            max_output_tokens=max_output_tokens,
+            strategy=runtime.strategy,
+        ),
+        runtime.strategy,
+    )
 
 
 def _strategy_prompt_text(
@@ -469,11 +478,14 @@ def _strategy_prompt_text(
     if runtime.tokenizer is None:
         return _fallback_prompt(messages), _fallback_prompt_strategy(runtime.strategy)
     try:
-        return render_prompt_with_strategy(
-            runtime.tokenizer,
-            messages,
+        return (
+            render_prompt_with_strategy(
+                runtime.tokenizer,
+                messages,
+                runtime.strategy,
+            ),
             runtime.strategy,
-        ), runtime.strategy
+        )
     except ValueError as error:
         if _is_missing_chat_template_error(error):
             return _fallback_prompt(messages), _fallback_prompt_strategy(runtime.strategy)
@@ -486,7 +498,10 @@ def _load_optional_tokenizer(
     *,
     strategy: LocalModelStrategy,
 ) -> Any | None:
-    if strategy.prompt_renderer.value != "chat_template_text" and strategy.source.value != "default":
+    if (
+        strategy.prompt_renderer.value != "chat_template_text"
+        and strategy.source.value != "default"
+    ):
         return None
     try:
         from transformers import AutoTokenizer
@@ -508,9 +523,7 @@ def _is_missing_chat_template_error(error: ValueError) -> bool:
 
 def _fallback_prompt_strategy(strategy: LocalModelStrategy) -> LocalModelStrategy:
     updated_source = (
-        StrategySource.DISCOVERED
-        if strategy.source is StrategySource.DEFAULT
-        else strategy.source
+        StrategySource.DISCOVERED if strategy.source is StrategySource.DEFAULT else strategy.source
     )
     return strategy.model_copy(
         update={
