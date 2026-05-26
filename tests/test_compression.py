@@ -834,7 +834,7 @@ def test_compress_input_unknown_family_fallback_profile_stores_soft_accepted_out
         compression,
         "create_compression_backend",
         lambda config: TransformersTextBackend(
-            LocalModelConfig(model="unknown/model", device="cpu")
+            LocalModelConfig(model="unknown/model", device="auto")
         ),
     )
     request = CompressionRequest(

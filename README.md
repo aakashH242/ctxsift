@@ -21,7 +21,7 @@ It compounds in complex, multistep tasks where rounds of context compaction caus
 commands to get back to speed with latest code state. Just compressing command outputs is not enough - it shifts the
 token tax to these recollection moments. 
 
-**CtxSift** is a skill that helps agents sift through the repeated noise and find the real signals needed for each task.
+**CtxSift** (pronounced Context Sift) is a skill that helps agents sift through the repeated noise and find the real signals needed for every task.
 It compresses tool outputs and caches them so that agents can do a look-up when needing context or recollecting.
 
 ---
