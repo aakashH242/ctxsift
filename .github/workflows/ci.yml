@@ -40,7 +40,7 @@ jobs:
         run: uv sync --frozen
 
       - name: Run lint
-        run: uv run lint
+        run: uv run python -c "from ctxsift.dev import lint; raise SystemExit(lint())"
 
   test:
     runs-on: ubuntu-latest
