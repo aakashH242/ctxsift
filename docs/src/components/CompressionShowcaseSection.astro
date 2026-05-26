@@ -9,30 +9,36 @@ const { showcases } = Astro.props;
 ---
 
 <section class="section-stack mt-14" id="compression-showcases">
-  <div class="landing-panel">
+  <div class="landing-panel section-shell">
     <div class="landing-kicker">Real compression examples</div>
     <div class="compression-showcase-header">
       <div class="compression-showcase-copy-block">
-        <h2 class="compression-showcase-title">
-          Real command output, compressed into smaller recall-ready state.
+        <h2 class="landing-section-heading text-2xl font-semibold tracking-tight leading-snug">
+          See what CtxSift keeps from raw command output and what it strips away.
         </h2>
-        <p class="compression-showcase-intro">
-          These examples come from our benchmark fixtures and latest benchmarked CtxSift outputs. The ratios below are
-          based on raw input tokens versus compressed output tokens for each command.
-        </p>
+        <div class="setup-copy mt-4 text-sm leading-7">
+          <p class="mt-2">
+            These cases come from benchmark fixtures and latest benchmarked outputs, with token counts shown for the
+            raw input and the final compressed record.
+          </p>
+        </div>
       </div>
     </div>
 
     <div class="compression-showcase-list">
       {
-        showcases.map((showcase) => (
+        showcases.map((showcase, index) => (
           <article class="compression-showcase-card">
             <div class="compression-showcase-meta">
               <div class="compression-showcase-meta-left">
                 <div class="compression-showcase-title-row">
-                  <h3 class="compression-showcase-card-title">{showcase.title}</h3>
-                  <span class="compression-showcase-domain">{showcase.domain}</span>
-                  <span class="compression-showcase-intent">{showcase.intent}</span>
+                  <div class="compression-showcase-title-block">
+                    <h3 class="compression-showcase-card-title">{showcase.title}</h3>
+                    <div class="compression-showcase-card-meta" aria-label={`${showcase.domain} ${showcase.intent}`}>
+                      <span>{showcase.domain}</span>
+                      <span>{showcase.intent}</span>
+                    </div>
+                  </div>
                 </div>
                 <div class="compression-showcase-command">
                   <span class="compression-showcase-command-label">Command</span>
@@ -57,14 +63,14 @@ const { showcases } = Astro.props;
             </div>
 
             <div class="compression-showcase-panels">
-              <div class="compression-showcase-panel">
-                <div class="compression-showcase-panel-label">Before</div>
+              <details class="compression-showcase-panel compression-showcase-panel-collapsible" open={index === 0}>
+                <summary class="compression-showcase-panel-label">Before</summary>
                 <pre class="compression-showcase-pre">{showcase.rawPreview}</pre>
-              </div>
-              <div class="compression-showcase-panel">
-                <div class="compression-showcase-panel-label">After</div>
+              </details>
+              <details class="compression-showcase-panel compression-showcase-panel-collapsible" open={index === 0}>
+                <summary class="compression-showcase-panel-label">After</summary>
                 <pre class="compression-showcase-pre compression-showcase-pre-after">{showcase.compressedOutput}</pre>
-              </div>
+              </details>
             </div>
 
             <div class="compression-showcase-source">{showcase.sourceLabel}</div>
