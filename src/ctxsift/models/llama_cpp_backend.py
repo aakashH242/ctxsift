@@ -523,7 +523,9 @@ def _is_missing_chat_template_error(error: ValueError) -> bool:
 
 def _fallback_prompt_strategy(strategy: LocalModelStrategy) -> LocalModelStrategy:
     updated_source = (
-        StrategySource.DISCOVERED if strategy.source is StrategySource.DEFAULT else strategy.source
+        StrategySource.USER_OVERRIDE
+        if strategy.source is StrategySource.USER_OVERRIDE
+        else StrategySource.DISCOVERED
     )
     return strategy.model_copy(
         update={

@@ -248,6 +248,20 @@
 	pointer-events: none;
 }
 
+/* Keep the boxed treatment only for the hero panel. */
+.landing-panel:not(.hero-section) {
+	border: none;
+	background: transparent;
+	box-shadow: none;
+	border-radius: 0;
+	padding: 0;
+	overflow: visible;
+}
+
+.landing-panel:not(.hero-section)::before {
+	display: none;
+}
+
 /* =========================================================
    Kicker label
    ========================================================= */
@@ -651,6 +665,49 @@
 	margin-top: 1.5rem;
 }
 
+/* Top-level section separators for a cleaner flow between landing blocks. */
+.main-content > .section-stack {
+	position: relative;
+}
+
+.main-content > .section-stack + .section-stack {
+	margin-top: 2.25rem;
+	padding-top: 2rem;
+}
+
+.main-content > .section-stack + .section-stack::before {
+	content: '';
+	position: absolute;
+	top: 0;
+	left: 4%;
+	right: 4%;
+	height: 1px;
+	background: linear-gradient(
+		90deg,
+		rgba(14, 165, 233, 0),
+		rgba(56, 189, 248, 0.42) 22%,
+		rgba(191, 219, 254, 0.72) 49%,
+		rgba(255, 255, 255, 0.86) 50%,
+		rgba(191, 219, 254, 0.72) 51%,
+		rgba(16, 185, 129, 0.28) 78%,
+		rgba(14, 165, 233, 0)
+	);
+	opacity: 1;
+	pointer-events: none;
+}
+
+.main-content > .section-stack + .section-stack::after {
+	content: '';
+	position: absolute;
+	top: -0.55rem;
+	left: 18%;
+	right: 18%;
+	height: 1.15rem;
+	background: radial-gradient(ellipse at center, rgba(191, 219, 254, 0.18), rgba(56, 189, 248, 0.12) 45%, transparent 72%);
+	filter: blur(7px);
+	pointer-events: none;
+}
+
 /* =========================================================
    How it works – ops timeline
    ========================================================= */
@@ -1022,6 +1079,11 @@
 	border-color: rgba(125, 211, 252, 0.22);
 }
 
+.landing-panel:not(.hero-section):hover {
+	transform: none;
+	border-color: transparent;
+}
+
 .route-link:hover .route-link-arrow {
 	color: hsl(196, 90%, 70%);
 	transform: translateX(3px);
@@ -1164,6 +1226,12 @@ html[data-theme='light'] .terminal-shell {
 	box-shadow: 0 16px 40px rgba(148, 163, 184, 0.16);
 }
 
+html[data-theme='light'] .landing-panel:not(.hero-section) {
+	border: none;
+	background: transparent;
+	box-shadow: none;
+}
+
 html[data-theme='light'] .compression-showcase-stat-accent {
 	border-color: rgba(59, 130, 246, 0.26);
 	background: linear-gradient(160deg, rgba(239, 246, 255, 0.96), rgba(219, 234, 254, 0.88));
@@ -1274,6 +1342,24 @@ html[data-theme='light'] .proof-table tr.proof-row-best td {
 	color: hsl(220, 22%, 26%);
 }
 
+html[data-theme='light'] .main-content > .section-stack + .section-stack::before {
+	background: linear-gradient(
+		90deg,
+		rgba(37, 99, 235, 0),
+		rgba(59, 130, 246, 0.34) 22%,
+		rgba(191, 219, 254, 0.78) 49%,
+		rgba(255, 255, 255, 0.95) 50%,
+		rgba(191, 219, 254, 0.78) 51%,
+		rgba(14, 165, 233, 0.2) 78%,
+		rgba(37, 99, 235, 0)
+	);
+	opacity: 1;
+}
+
+html[data-theme='light'] .main-content > .section-stack + .section-stack::after {
+	background: radial-gradient(ellipse at center, rgba(59, 130, 246, 0.14), rgba(191, 219, 254, 0.1) 42%, transparent 72%);
+}
+
 /* =========================================================
    Reduced motion
    ========================================================= */
@@ -1347,5 +1433,20 @@ html[data-theme='light'] .proof-table tr.proof-row-best td {
 
 	.route-grid {
 		grid-template-columns: 1fr;
+	}
+
+	.main-content > .section-stack + .section-stack {
+		margin-top: 1.8rem;
+		padding-top: 1.5rem;
+	}
+
+	.main-content > .section-stack + .section-stack::before {
+		left: 2%;
+		right: 2%;
+	}
+
+	.main-content > .section-stack + .section-stack::after {
+		left: 10%;
+		right: 10%;
 	}
 }

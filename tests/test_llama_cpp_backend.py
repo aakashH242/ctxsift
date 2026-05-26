@@ -119,6 +119,7 @@ def test_generate_with_runtime_strategy_falls_back_to_generic_prompt_without_tok
 
     assert output == "Model answer"
     assert effective_strategy.prompt_renderer is PromptRenderMode.BACKEND_DEFAULT
+    assert effective_strategy.source is StrategySource.DISCOVERED
     assert "<|user|>" in model.completion_calls[0]["prompt"]
     assert model.completion_calls[0]["temperature"] == 0.7
     assert model.chat_calls == []

@@ -249,7 +249,11 @@ def persist_runtime_strategy(
     strategy: LocalModelStrategy,
 ) -> LocalModelStrategy:
     """Persist one resolved runtime strategy as a discovered entry."""
-    if strategy.source in {StrategySource.BUILT_IN, StrategySource.USER_OVERRIDE}:
+    if strategy.source in {
+        StrategySource.BUILT_IN,
+        StrategySource.USER_OVERRIDE,
+        StrategySource.DEFAULT,
+    }:
         return strategy
     gguf_filename = (config.gguf_filename or "").strip() or None
     persisted_strategy = LocalModelStrategy(
@@ -305,7 +309,11 @@ def probe_candidate_strategies(
         prompt_renderer: PromptRenderMode,
         thinking_control: ThinkingControlMode,
     ) -> None:
-        if prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT and signature is None:
+        if (
+            prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT
+            and signature is None
+            and thinking_control is not ThinkingControlMode.NONE
+        ):
             return
         if thinking_control is ThinkingControlMode.ENABLE_THINKING_FALSE and (
             signature is None or "enable_thinking" not in signature.parameters
@@ -319,12 +327,20 @@ def probe_candidate_strategies(
         if key in seen:
             return
         seen.add(key)
+        candidate_source = (
+            current_strategy.source
+            if (
+                prompt_renderer is current_strategy.prompt_renderer
+                and thinking_control is current_strategy.thinking_control
+            )
+            else StrategySource.DISCOVERED
+        )
         candidates.append(
             current_strategy.model_copy(
                 update={
                     "prompt_renderer": prompt_renderer,
                     "thinking_control": thinking_control,
-                    "source": StrategySource.DISCOVERED,
+                    "source": candidate_source,
                 }
             )
         )
@@ -371,6 +387,11 @@ def _merge_store_entries(
         key = strategy.key()
         existing = merged.get(key)
         if existing is not None and existing.source is StrategySource.USER_OVERRIDE:
+            continue
+        if existing is not None and _should_keep_discovered_prompt_fallback(
+            existing,
+            strategy,
+        ):
             continue
         merged[key] = strategy
     strategies = sorted(merged.values(), key=lambda entry: entry.key())
@@ -482,6 +503,17 @@ def _persist_discovered_strategy(strategy: LocalModelStrategy) -> None:
         strategies=sorted(merged.values(), key=lambda entry: entry.key()),
     )
     _save_strategy_store(strategy_store_path(), updated_store)
+
+
+def _should_keep_discovered_prompt_fallback(
+    existing: LocalModelStrategy,
+    built_in: LocalModelStrategy,
+) -> bool:
+    if existing.source is not StrategySource.DISCOVERED:
+        return False
+    if existing.prompt_renderer is not PromptRenderMode.BACKEND_DEFAULT:
+        return False
+    return built_in.prompt_renderer is not PromptRenderMode.BACKEND_DEFAULT
 
 
 def _render_alpaca_instruction_prompt(messages: list[dict[str, str]]) -> str:

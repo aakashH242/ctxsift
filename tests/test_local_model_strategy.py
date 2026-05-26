@@ -49,6 +49,14 @@ class PlainChatTemplateTokenizer:
         return "templated"
 
 
+class OpaqueChatTemplateTokenizer:
+    """Tokenizer stub whose chat-template callable cannot be introspected."""
+
+    def apply_chat_template(self, messages, tokenize, add_generation_prompt):
+        del messages, tokenize, add_generation_prompt
+        return "templated"
+
+
 def test_synchronize_strategy_store_creates_internal_store(
     tmp_path: Path,
     monkeypatch,
@@ -149,18 +157,58 @@ def test_persist_prompt_renderer_fallback_updates_discovered_strategy(
 
 
 def test_probe_candidate_strategies_prefers_thinking_control_then_fallback() -> None:
-    current = resolve_local_model_strategy(
-        LocalModelConfig(model="example/hybrid-1b", gguf_filename=None, device="cuda"),
+    current = LocalModelStrategy(
         backend="transformers",
-        tokenizer=EnableThinkingTokenizer(),
+        model="example/hybrid-1b",
+        prompt_renderer=PromptRenderMode.BACKEND_DEFAULT,
+        thinking_control=ThinkingControlMode.NONE,
+        source=StrategySource.DEFAULT,
     )
 
     candidates = probe_candidate_strategies(EnableThinkingTokenizer(), current)
 
-    assert candidates[0].thinking_control is ThinkingControlMode.ENABLE_THINKING_FALSE
+    assert candidates[0].thinking_control is ThinkingControlMode.NONE
+    assert candidates[0].prompt_renderer is PromptRenderMode.BACKEND_DEFAULT
+    assert candidates[0].source is StrategySource.DEFAULT
+    assert any(
+        candidate.prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT
+        and candidate.thinking_control is ThinkingControlMode.ENABLE_THINKING_FALSE
+        and candidate.source is StrategySource.DISCOVERED
+        for candidate in candidates
+    )
     assert any(
         candidate.prompt_renderer is PromptRenderMode.BACKEND_DEFAULT
         and candidate.thinking_control is ThinkingControlMode.NONE
+        for candidate in candidates
+    )
+
+
+def test_probe_candidate_strategies_keeps_plain_chat_template_when_signature_is_unavailable(
+    monkeypatch,
+) -> None:
+    current = LocalModelStrategy(
+        backend="transformers",
+        model="example/opaque-chat",
+        prompt_renderer=PromptRenderMode.BACKEND_DEFAULT,
+        thinking_control=ThinkingControlMode.NONE,
+        source=StrategySource.DEFAULT,
+    )
+    monkeypatch.setattr(
+        "ctxsift.models.local_model_strategy._safe_chat_template_signature",
+        lambda apply_chat_template: None,
+    )
+
+    candidates = probe_candidate_strategies(OpaqueChatTemplateTokenizer(), current)
+
+    assert any(
+        candidate.prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT
+        and candidate.thinking_control is ThinkingControlMode.NONE
+        and candidate.source is StrategySource.DISCOVERED
+        for candidate in candidates
+    )
+    assert not any(
+        candidate.prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT
+        and candidate.thinking_control is ThinkingControlMode.ENABLE_THINKING_FALSE
         for candidate in candidates
     )
 
@@ -193,6 +241,37 @@ def test_merge_store_keeps_user_override_over_built_in() -> None:
 
     assert len(merged.strategies) == 1
     assert merged.strategies[0].source is StrategySource.USER_OVERRIDE
+    assert merged.strategies[0].prompt_renderer is PromptRenderMode.BACKEND_DEFAULT
+
+
+def test_merge_store_keeps_discovered_backend_default_over_built_in_chat_template() -> None:
+    built_in = LocalModelStrategyStore(
+        strategies=[
+            LocalModelStrategy(
+                backend="transformers",
+                model="Qwen/Qwen2.5-1.5B-Instruct",
+                thinking_control=ThinkingControlMode.NONE,
+                prompt_renderer=PromptRenderMode.CHAT_TEMPLATE_TEXT,
+                source=StrategySource.BUILT_IN,
+            )
+        ]
+    )
+    existing = LocalModelStrategyStore(
+        strategies=[
+            LocalModelStrategy(
+                backend="transformers",
+                model="Qwen/Qwen2.5-1.5B-Instruct",
+                thinking_control=ThinkingControlMode.NONE,
+                prompt_renderer=PromptRenderMode.BACKEND_DEFAULT,
+                source=StrategySource.DISCOVERED,
+            )
+        ]
+    )
+
+    merged = _merge_store_entries(built_in, existing)
+
+    assert len(merged.strategies) == 1
+    assert merged.strategies[0].source is StrategySource.DISCOVERED
     assert merged.strategies[0].prompt_renderer is PromptRenderMode.BACKEND_DEFAULT
 
 
@@ -245,3 +324,34 @@ def test_persist_runtime_strategy_keeps_user_override_unchanged() -> None:
     )
 
     assert persisted is override
+
+
+def test_persist_runtime_strategy_does_not_store_plain_default(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "ctxsift.models.local_model_strategy.user_config_path",
+        lambda app_name: tmp_path / app_name,
+    )
+    config = LocalModelConfig(model="example/plain-default", gguf_filename=None, device="cuda")
+    default_strategy = LocalModelStrategy(
+        backend="transformers",
+        model="example/plain-default",
+        prompt_renderer=PromptRenderMode.BACKEND_DEFAULT,
+        thinking_control=ThinkingControlMode.NONE,
+        source=StrategySource.DEFAULT,
+    )
+
+    persisted = persist_runtime_strategy(
+        config,
+        backend="transformers",
+        strategy=default_strategy,
+    )
+
+    assert persisted is default_strategy
+    store = ensure_strategy_store()
+    assert not any(
+        entry.model == "example/plain-default" and entry.backend == "transformers"
+        for entry in store.strategies
+    )
