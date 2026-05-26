@@ -175,7 +175,7 @@ import { compressionShowcases } from '../data/compression-showcases';
 
         <!-- WHY IT EXISTS -->
         <section class="section-stack mt-14" id="why-ctxsift-exists">
-          <div class="landing-panel">
+          <div class="landing-panel section-shell">
             <div class="landing-kicker">The motivation behind CtxSift</div>
             <div class="why-grid">
               <div>
@@ -231,7 +231,7 @@ import { compressionShowcases } from '../data/compression-showcases';
 
         <!-- HOW IT WORKS -->
         <section class="section-stack mt-14" id="how-it-works">
-          <div class="landing-panel">
+          <div class="landing-panel section-shell">
             <div class="landing-kicker">How it works</div>
             <p class="ops-intro">
             With CtxSift, your agents use two steps to keep minimal token footprint: <br>
@@ -239,24 +239,47 @@ import { compressionShowcases } from '../data/compression-showcases';
 2. Look up context later instead of repeatedly re-running commands or dragging raw terminal output back into the session.<br>
 That's it. Unlike other token savers, which can get heavy can confuse the agent with multiple tools, CtxSift keeps it simple and light. No multiple tools, MCP servers or sandbox spin-up dependencies.
                <br><a class="setup-inline-link" href="/docs/blog/command-output-recall/">See why it matters &rarr;</a>
+            </p>
             <div class="ops-timeline">
               <div class="ops-step">
-                <div class="ops-step-badge" aria-hidden="true">&#9889;</div>
+                <div class="ops-step-badge" aria-hidden="true">
+                  <svg class="ops-step-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M13 2 4 14h6l-1 8 9-12h-6z"></path>
+                  </svg>
+                </div>
                 <div class="ops-step-label">Compress</div>
                 <div class="ops-step-copy">Agent uses pipe or command-capture mode with a natural-language instruction to extract exactly what it needs.</div>
               </div>
               <div class="ops-step">
-                <div class="ops-step-badge" aria-hidden="true">&#128204;</div>
+                <div class="ops-step-badge" aria-hidden="true">
+                  <svg class="ops-step-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M12 3v12"></path>
+                    <path d="m7 7 5-4 5 4"></path>
+                    <path d="m8.5 12.5 7 0"></path>
+                    <path d="M10.5 12.5v5.5"></path>
+                  </svg>
+                </div>
                 <div class="ops-step-label">Cache</div>
                 <div class="ops-step-copy">The compressed output is stored automatically with command metadata so it can be searched later instead of recreated.</div>
               </div>
               <div class="ops-step">
-                <div class="ops-step-badge" aria-hidden="true">&#128269;</div>
+                <div class="ops-step-badge" aria-hidden="true">
+                  <svg class="ops-step-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <circle cx="11" cy="11" r="6"></circle>
+                    <path d="m20 20-4.2-4.2"></path>
+                  </svg>
+                </div>
                 <div class="ops-step-label">Recall</div>
                 <div class="ops-step-copy">Agent queries the stored record set, optionally boosted by files, and gets back exactly what it stored earlier.</div>
               </div>
               <div class="ops-step">
-                <div class="ops-step-badge" aria-hidden="true">&#127807;</div>
+                <div class="ops-step-badge" aria-hidden="true">
+                  <svg class="ops-step-badge-icon" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M6 14c0-5.5 4-9 10-10"></path>
+                    <path d="M6 14c2 0 4 .8 5.4 2.2"></path>
+                    <path d="M11.4 16.2c.9.8 1.6 1.9 2 3.1"></path>
+                  </svg>
+                </div>
                 <div class="ops-step-label">Freshness</div>
                 <div class="ops-step-copy">When source files change, results get marked stale so older context gets down-ranked and eventually cleaned up.</div>
               </div>
@@ -269,7 +292,7 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
         <!-- SUPPORTED MODELS -->
         <section class="section-stack mt-6" id="supported-models">
-          <div class="landing-panel">
+          <div class="landing-panel section-shell">
             <div class="landing-kicker">Supported Models</div>
             <div class="proof-grid">
               <div>
@@ -368,11 +391,10 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
           </div>
         </section>
-      </main>
 
-<!-- SETUP PATHS -->
+        <!-- SETUP PATHS -->
         <section class="section-stack mt-6" id="setup-paths">
-          <div class="landing-panel">
+          <div class="landing-panel section-shell">
             <div class="landing-kicker">Choose Your Setup Path</div>
             <div class="setup-grid">
               <div>
@@ -398,19 +420,34 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
               <div class="route-grid route-grid-setup">
                 <a class="route-link" href="/docs/guides/local-models/#cpu-compression-with-llamacpp" id="route-local-cpu">
-                  <span class="route-link-icon">&#128421;</span>
+                  <span class="route-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                      <rect x="4" y="5" width="16" height="10" rx="1.5"></rect>
+                      <path d="M8 19h8"></path>
+                      <path d="M10 15v4"></path>
+                      <path d="M14 15v4"></path>
+                    </svg>
+                  </span>
                   <div class="route-link-label">Local CPU</div>
                   <div class="route-link-copy">Start with the built-in local path and get the lowest-friction setup for everyday use.</div>
                   <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
                 </a>
                 <a class="route-link" href="/docs/guides/local-models/#gpu-compression-with-transformers" id="route-local-gpu">
-                  <span class="route-link-icon">&#9889;</span>
+                  <span class="route-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                      <path d="M13 2 4 14h6l-1 8 9-12h-6z"></path>
+                    </svg>
+                  </span>
                   <div class="route-link-label">Local GPU</div>
                   <div class="route-link-copy">Use CUDA-backed local models when you want faster inference and stronger on-device options.</div>
                   <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
                 </a>
                 <a class="route-link" href="/docs/guides/remote-models/" id="route-remote-provider">
-                  <span class="route-link-icon">&#9729;</span>
+                  <span class="route-link-icon" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" role="img" aria-hidden="true">
+                      <path d="M7 18h9a4 4 0 0 0 .4-8 5.2 5.2 0 0 0-10-.7A3.4 3.4 0 0 0 7 18Z"></path>
+                    </svg>
+                  </span>
                   <div class="route-link-label">Remote Provider</div>
                   <div class="route-link-copy">Connect OpenAI-compatible or LiteLLM-compatible hosted models when local inference is not the right fit.</div>
                   <span class="route-link-arrow" aria-hidden="true">&#8594;</span>
@@ -420,17 +457,6 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
             </div>
 
-
-        <section class="section-stack mt-6" id="installer">
-          <div class="landing-panel">
-                  <p class="mt-2">                <InstallerDownloads
-                  variant="landing"
-                  title="Automated Install"
-                  description="Install with standalone scripts or let your agent install it with the install skill."
-                /></p>
-        </div>
-        </section>
-
             <div class="common-setup-questions" aria-label="Common setup questions">
               <div class="common-setup-heading">Common setup questions</div>
               <div class="common-setup-links">
@@ -439,13 +465,23 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
                 <a class="common-setup-link" href="/docs/getting-started/configure/">What are the configuration options?</a>
                 <a class="common-setup-link" href="/docs/getting-started/configure/#agent-skill-installation">How do I install the skill?</a>
                 <a class="common-setup-link" href="/docs/getting-started/installation/#advanced-pytorch--cuda-version-alignment">Why is my GPU not detected?</a>
-                                <a class="common-setup-link" href="/docs/guides/model-selection/">Which model is best for me?</a>
+                <a class="common-setup-link" href="/docs/guides/model-selection/">Which model is best for me?</a>
               </div>
             </div>
           </div>
-
         </section>
 
+        <section class="section-stack mt-6" id="installer">
+          <div class="landing-panel section-shell section-shell-accent">
+            <InstallerDownloads
+              variant="landing"
+              title="Automated Install"
+              description="Install with standalone scripts or let your agent install it with the install skill."
+            />
+          </div>
+        </section>
+
+      </main>
 
       <!-- ============ FOOTER ============ -->
       <footer class="landing-footer">

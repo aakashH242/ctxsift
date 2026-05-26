@@ -1,0 +1,222 @@
+{
+  "version": 1,
+  "strategies": [
+    {
+      "backend": "llama_cpp",
+      "model": "LiquidAI/LFM2.5-350M-GGUF",
+      "gguf_filename": "LFM2.5-350M-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "LiquidAI/LFM2-350M-Extract-GGUF",
+      "gguf_filename": "LFM2-350M-Extract-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "LiquidAI/LFM2-700M-GGUF",
+      "gguf_filename": "LFM2-700M-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "unsloth/SmolLM2-360M-Instruct-GGUF",
+      "gguf_filename": "SmolLM2-360M-Instruct-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "ibm-granite/granite-4.0-350m-GGUF",
+      "gguf_filename": "granite-4.0-350m-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "unsloth/Qwen3-0.6B-GGUF",
+      "gguf_filename": "Qwen3-0.6B-Q8_0.gguf",
+      "thinking_control": "enable_thinking_false",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "sampled",
+      "temperature": 0.7,
+      "top_p": 0.8,
+      "top_k": 20,
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "unsloth/Qwen2.5-Coder-0.5B-Instruct-128K-GGUF",
+      "gguf_filename": "Qwen2.5-Coder-0.5B-Instruct-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "Qwen/Qwen2.5-0.5B-Instruct-GGUF",
+      "gguf_filename": "qwen2.5-0.5b-instruct-q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "unsloth/Qwen3.5-0.8B-GGUF",
+      "gguf_filename": "Qwen3.5-0.8B-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "sampled",
+      "temperature": 1.0,
+      "top_p": 1.0,
+      "top_k": 20,
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "unsloth/gemma-3-270m-it-GGUF",
+      "gguf_filename": "gemma-3-270m-it-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "unsloth/gemma-3-1b-it-GGUF",
+      "gguf_filename": "gemma-3-1b-it-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "llama_cpp",
+      "model": "LiquidAI/LFM2.5-1.2B-Instruct-GGUF",
+      "gguf_filename": "LFM2.5-1.2B-Instruct-Q8_0.gguf",
+      "thinking_control": "none",
+      "prompt_renderer": "backend_default",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "SupraLabs/Supra-50M-Instruct",
+      "thinking_control": "none",
+      "prompt_renderer": "alpaca_instruction",
+      "decoding_mode": "sampled",
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "top_k": 50,
+      "repetition_penalty": 1.15,
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "LiquidAI/LFM2.5-1.2B-Instruct",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "ibm-granite/granite-4.0-micro",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "unsloth/gemma-3-1b-it",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "ibm-granite/granite-3.3-2b-instruct",
+      "thinking_control": "thinking_false",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "Qwen/Qwen2.5-1.5B-Instruct",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "Qwen/Qwen3-1.7B",
+      "thinking_control": "enable_thinking_false",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "sampled",
+      "temperature": 0.7,
+      "top_p": 0.8,
+      "top_k": 20,
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "Qwen/Qwen3.5-2B",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "sampled",
+      "temperature": 1.0,
+      "top_p": 1.0,
+      "top_k": 20,
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "Qwen/Qwen3.5-0.8B",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "sampled",
+      "temperature": 1.0,
+      "top_p": 1.0,
+      "top_k": 20,
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "HuggingFaceTB/SmolLM2-1.7B-Instruct",
+      "thinking_control": "none",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "deterministic",
+      "source": "built_in"
+    },
+    {
+      "backend": "transformers",
+      "model": "openbmb/MiniCPM5-1B-SFT",
+      "thinking_control": "enable_thinking_false",
+      "prompt_renderer": "chat_template_text",
+      "decoding_mode": "sampled",
+      "temperature": 0.7,
+      "top_p": 0.95,
+      "source": "built_in"
+    }
+  ]
+}

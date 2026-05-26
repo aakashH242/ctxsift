@@ -25,6 +25,8 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-latest
+    environment:
+      name: pypi
     permissions:
       contents: write
       packages: write

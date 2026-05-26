@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +14,17 @@ from ctxsift.models.base import (
     ModelOutputRejectedError,
 )
 from ctxsift.models.hf_hub_cache import resolve_or_download_hf_file
+from ctxsift.models.local_model_strategy import (
+    LocalModelStrategy,
+    PromptRenderMode,
+    StrategySource,
+    llama_completion_options,
+    persist_runtime_strategy,
+    probe_candidate_strategies,
+    render_nonchat_prompt_with_strategy,
+    render_prompt_with_strategy,
+    resolve_local_model_strategy,
+)
 from ctxsift.models.local_runtime import (
     required_gguf_filename,
     recommended_llama_threads,
@@ -52,6 +63,8 @@ class LlamaRuntime:
 
     model: Any
     model_path: Path
+    tokenizer: Any | None
+    strategy: LocalModelStrategy
 
 
 class LlamaCppBackend(ModelBackend):
@@ -107,10 +120,46 @@ class LlamaCppBackend(ModelBackend):
             raise BackendUnavailableError(
                 f"Could not load llama.cpp model from {model_path}: {error}"
             ) from error
-        return LlamaRuntime(model=model, model_path=model_path)
+        strategy = resolve_local_model_strategy(
+            self._config,
+            backend=self.provider_name,
+        )
+        tokenizer = _load_optional_tokenizer(self._config, self._profile, strategy=strategy)
+        if tokenizer is not None:
+            strategy = resolve_local_model_strategy(
+                self._config,
+                backend=self.provider_name,
+                tokenizer=tokenizer,
+            )
+        return LlamaRuntime(
+            model=model,
+            model_path=model_path,
+            tokenizer=tokenizer,
+            strategy=strategy,
+        )
 
     def _generate_text(self, runtime: LlamaRuntime, request: ModelCompressionInput) -> str:
-        first_raw_text, first_output = self._run_generation(
+        primary_error: Exception | None = None
+        for strategy in self._candidate_strategies(runtime):
+            runtime_for_strategy = replace(runtime, strategy=strategy)
+            try:
+                output, effective_strategy = self._generate_text_once(runtime_for_strategy, request)
+            except (BackendUnavailableError, ModelOutputRejectedError) as error:
+                if primary_error is None:
+                    primary_error = error
+                continue
+            self._persist_successful_strategy(runtime, effective_strategy)
+            return output
+        if primary_error is not None:
+            raise primary_error
+        raise BackendUnavailableError("llama.cpp backend returned no viable strategy.")
+
+    def _generate_text_once(
+        self,
+        runtime: LlamaRuntime,
+        request: ModelCompressionInput,
+    ) -> tuple[str, LocalModelStrategy]:
+        first_raw_text, first_output, effective_strategy = self._run_generation(
             runtime,
             request,
             self._build_messages(request),
@@ -128,9 +177,9 @@ class LlamaCppBackend(ModelBackend):
                     raw_output=first_raw_text,
                     recovered_output=first_pass,
                 )
-            return first_pass
+            return first_pass, effective_strategy
 
-        repair_raw_text, repair_output = self._run_generation(
+        repair_raw_text, repair_output, _ = self._run_generation(
             runtime,
             request,
             self._build_repair_messages(request, first_pass),
@@ -153,7 +202,7 @@ class LlamaCppBackend(ModelBackend):
                 ),
             )
         if preferred_candidate is not None:
-            return preferred_candidate.output
+            return preferred_candidate.output, effective_strategy
 
         repair_validation = validate_instruction_aware_output(request, repaired_output)
 
@@ -167,29 +216,40 @@ class LlamaCppBackend(ModelBackend):
             )
         )
 
+    def _candidate_strategies(self, runtime: LlamaRuntime) -> list[LocalModelStrategy]:
+        if runtime.strategy.source is not StrategySource.DEFAULT:
+            return [runtime.strategy]
+        return probe_candidate_strategies(runtime.tokenizer, runtime.strategy)
+
+    def _persist_successful_strategy(
+        self,
+        runtime: LlamaRuntime,
+        strategy: LocalModelStrategy,
+    ) -> None:
+        persisted = persist_runtime_strategy(
+            self._config,
+            backend=self.provider_name,
+            strategy=strategy,
+        )
+        if self._runtime is runtime:
+            self._runtime = replace(runtime, strategy=persisted)
+
     def _run_generation(
         self,
         runtime: LlamaRuntime,
         request: ModelCompressionInput,
         messages: list[dict[str, str]],
-    ) -> tuple[str, str]:
-        chat_output = _try_chat_completion(
-            runtime.model,
+    ) -> tuple[str, str, LocalModelStrategy]:
+        chat_output, effective_strategy = _generate_with_runtime_strategy(
+            runtime=runtime,
             messages=messages,
             max_output_tokens=request.max_output_tokens,
         )
-        if chat_output is None:
-            prompt_text = _fallback_prompt(messages)
-            chat_output = _run_text_completion(
-                runtime.model,
-                prompt=prompt_text,
-                max_output_tokens=request.max_output_tokens,
-            )
         raw_text = chat_output.strip()
         normalized = self._normalize_output(request, raw_text)
         if not normalized:
             raise BackendUnavailableError("llama.cpp backend returned empty output.")
-        return raw_text, normalized
+        return raw_text, normalized, effective_strategy
 
     def _recover_candidate_before_validation(
         self,
@@ -276,13 +336,20 @@ def _load_llama_class() -> Any:
     return Llama
 
 
-def _run_text_completion(model: Any, *, prompt: str, max_output_tokens: int) -> str:
+def _run_text_completion(
+    model: Any,
+    *,
+    prompt: str,
+    max_output_tokens: int,
+    strategy: LocalModelStrategy,
+) -> str:
     try:
         response = model.create_completion(
             prompt=prompt,
-            max_tokens=max_output_tokens,
-            temperature=DEFAULT_LLAMA_TEMPERATURE,
-            echo=False,
+            **llama_completion_options(
+                max_output_tokens=max_output_tokens,
+                strategy=strategy,
+            ),
             stop=list(DEFAULT_LLAMA_STOP_SEQUENCES),
         )
     except Exception as error:
@@ -357,3 +424,112 @@ def _fallback_prompt(messages: list[dict[str, str]]) -> str:
         lines.append(f"<|{role}|>\n{content}")
     lines.append("<|assistant|>")
     return "\n\n".join(lines)
+
+
+def _generate_with_runtime_strategy(
+    *,
+    runtime: LlamaRuntime,
+    messages: list[dict[str, str]],
+    max_output_tokens: int,
+) -> tuple[str, LocalModelStrategy]:
+    if runtime.strategy.prompt_renderer is PromptRenderMode.CHAT_TEMPLATE_TEXT:
+        prompt_text, effective_strategy = _strategy_prompt_text(runtime, messages)
+        return (
+            _run_text_completion(
+                runtime.model,
+                prompt=prompt_text,
+                max_output_tokens=max_output_tokens,
+                strategy=runtime.strategy,
+            ),
+            effective_strategy,
+        )
+    if runtime.strategy.prompt_renderer is PromptRenderMode.ALPACA_INSTRUCTION:
+        return (
+            _run_text_completion(
+                runtime.model,
+                prompt=render_nonchat_prompt_with_strategy(messages, runtime.strategy),
+                max_output_tokens=max_output_tokens,
+                strategy=runtime.strategy,
+            ),
+            runtime.strategy,
+        )
+    chat_output = _try_chat_completion(
+        runtime.model,
+        messages=messages,
+        max_output_tokens=max_output_tokens,
+    )
+    if chat_output is not None:
+        return chat_output, runtime.strategy
+    return (
+        _run_text_completion(
+            runtime.model,
+            prompt=_fallback_prompt(messages),
+            max_output_tokens=max_output_tokens,
+            strategy=runtime.strategy,
+        ),
+        runtime.strategy,
+    )
+
+
+def _strategy_prompt_text(
+    runtime: LlamaRuntime,
+    messages: list[dict[str, str]],
+) -> tuple[str, LocalModelStrategy]:
+    if runtime.tokenizer is None:
+        return _fallback_prompt(messages), _fallback_prompt_strategy(runtime.strategy)
+    try:
+        return (
+            render_prompt_with_strategy(
+                runtime.tokenizer,
+                messages,
+                runtime.strategy,
+            ),
+            runtime.strategy,
+        )
+    except ValueError as error:
+        if _is_missing_chat_template_error(error):
+            return _fallback_prompt(messages), _fallback_prompt_strategy(runtime.strategy)
+        raise
+
+
+def _load_optional_tokenizer(
+    config: LocalModelConfig,
+    profile: Any,
+    *,
+    strategy: LocalModelStrategy,
+) -> Any | None:
+    if (
+        strategy.prompt_renderer is not PromptRenderMode.CHAT_TEMPLATE_TEXT
+        and strategy.source is not StrategySource.DEFAULT
+    ):
+        return None
+    try:
+        from transformers import AutoTokenizer
+    except ImportError:
+        return None
+    tokenizer_kwargs: dict[str, Any] = {"padding_side": "left"}
+    if getattr(profile, "trust_remote_code", False):
+        tokenizer_kwargs["trust_remote_code"] = True
+    try:
+        return AutoTokenizer.from_pretrained(config.model, **tokenizer_kwargs)
+    except Exception:
+        return None
+
+
+def _is_missing_chat_template_error(error: ValueError) -> bool:
+    message = str(error)
+    return "chat_template" in message and "not set" in message
+
+
+def _fallback_prompt_strategy(strategy: LocalModelStrategy) -> LocalModelStrategy:
+    updated_source = (
+        StrategySource.USER_OVERRIDE
+        if strategy.source is StrategySource.USER_OVERRIDE
+        else StrategySource.DISCOVERED
+    )
+    return strategy.model_copy(
+        update={
+            "prompt_renderer": PromptRenderMode.BACKEND_DEFAULT,
+            "source": updated_source,
+        }
+    )

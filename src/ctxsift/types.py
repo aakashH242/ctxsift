@@ -220,6 +220,12 @@ class LocalModelConfig(StrictModel):
     def _validate_cpu_requirements(self) -> "LocalModelConfig":
         if not self.model.strip():
             raise ValueError("local.model cannot be empty.")
+        if (
+            "model" in self.model_fields_set
+            and "gguf_filename" not in self.model_fields_set
+            and self.model.strip() != "ibm-granite/granite-4.0-350m-GGUF"
+        ):
+            self.gguf_filename = None
         normalized_device = self.device.strip().casefold()
         if normalized_device == "cpu" and not (self.gguf_filename or "").strip():
             raise ValueError("local.gguf_filename is required when local.device is cpu.")

@@ -112,15 +112,7 @@
     "device": "cpu"
   },
 
-            {
-      "name": "gpu-supra-50M-instruct",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "SupraLabs/Supra-50M-Instruct",
 
-      "quantization": "none",
-      "device": "cuda"
-    },
                   {
     "name": "gpu-lfm2.5-1.2b-instruct",
     "track": "gpu",
@@ -194,14 +186,7 @@
       "quantization": "none",
       "device": "cuda"
     },
-        {
-      "name": "gpu-phi-4-mini-reasoning",
-      "track": "gpu",
-      "phase": "gpu-screen",
-      "model": "microsoft/Phi-4-mini-reasoning",
-      "quantization": "none",
-      "device": "cuda"
-    },
+
 
     {
       "name": "remote-gpt-4.1-mini",
