@@ -48,6 +48,10 @@ async def _preload_embedding_model(
         progress,
         f"Preparing {label}. This may still take time even if artifacts are already cached.",
     )
+    _report_progress(
+        progress,
+        f"Loading {label}. If artifacts are missing, the upstream model library may now download them.",
+    )
     try:
         backend = create_embedding_backend(config.embedding)
         await backend.preload()
@@ -82,12 +86,20 @@ async def _preload_local_compression_model(
                     progress,
                     f"Preparing {label}. Downloading GGUF artifact because it is not cached yet.",
                 )
+                _report_progress(
+                    progress,
+                    f"Downloading {label}. A Hugging Face progress bar should appear below until the artifact is cached.",
+                )
             else:
                 _report_progress(
                     progress,
                     f"Preparing {label}. Using cached GGUF artifact {cached_gguf.name}.",
                 )
-            gguf_path = await asyncio.to_thread(preload_gguf_artifact, config.local)
+            gguf_path = await asyncio.to_thread(
+                preload_gguf_artifact,
+                config.local,
+                show_progress=cached_gguf is None,
+            )
             return ModelPreloadResult(
                 label=label,
                 ok=True,
@@ -96,6 +108,10 @@ async def _preload_local_compression_model(
         _report_progress(
             progress,
             f"Preparing {label}. This may still take time even if artifacts are already cached.",
+        )
+        _report_progress(
+            progress,
+            f"Loading {label}. If artifacts are missing, the upstream model library may now download them.",
         )
         backend = create_local_backend(config.local)
         await backend.preload()

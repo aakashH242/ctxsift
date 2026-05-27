@@ -306,18 +306,27 @@ def _selected_index_output(candidates: list[str], selected_index: int | None) ->
     return candidates[selected_index]
 
 
-def preload_gguf_artifact(config: LocalModelConfig) -> Path:
+def preload_gguf_artifact(
+    config: LocalModelConfig,
+    *,
+    show_progress: bool = False,
+) -> Path:
     """Download the configured GGUF artifact without loading the model into memory."""
-    return _resolve_gguf_path(config)
+    return _resolve_gguf_path(config, show_progress=show_progress)
 
 
-def _resolve_gguf_path(config: LocalModelConfig) -> Path:
+def _resolve_gguf_path(
+    config: LocalModelConfig,
+    *,
+    show_progress: bool = False,
+) -> Path:
     filename = required_gguf_filename(config)
     try:
         downloaded_path = resolve_or_download_hf_file(
             repo_id=config.model,
             filename=filename,
             cache_dir=config.model_cache_path,
+            show_progress=show_progress,
         )
     except RuntimeError as error:  # pragma: no cover - dependency comes from transformers
         raise BackendUnavailableError(str(error)) from error

@@ -2,6 +2,7 @@
 
 from ctxsift.diagnostics.doctor import (
     DoctorCheck,
+    DoctorOptions,
     DoctorReport,
     collect_doctor_report,
     collect_doctor_report_for_config,
@@ -11,6 +12,7 @@ from ctxsift.diagnostics.doctor import (
 
 __all__ = [
     "DoctorCheck",
+    "DoctorOptions",
     "DoctorReport",
     "collect_doctor_report",
     "collect_doctor_report_for_config",

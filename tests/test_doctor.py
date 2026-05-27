@@ -4,10 +4,12 @@ import asyncio
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+import subprocess
 
 import pytest
 
 import ctxsift.diagnostics.doctor as doctor
+import ctxsift.diagnostics.probes as probes
 from ctxsift.config import store as config_store
 from ctxsift.types import AppConfig, VectorStoreStatus
 
@@ -105,6 +107,83 @@ def test_doctor_reports_optional_runtime_checks(
     assert "[optional] cuda: optional" in rendered
     assert "[optional] onnxruntime: optional" in rendered
     assert "[optional] flashattention: optional" in rendered
+
+
+def test_doctor_skips_slow_cuda_probe_in_configure_mode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        doctor,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(config=AppConfig()),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "optional_package_probe",
+        lambda module_name, label: (True, f"{label} is available."),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "resolve_local_runtime",
+        lambda config: type("RuntimeSelection", (), {"uses_llama_cpp": False})(),
+    )
+
+    def fail_if_called() -> tuple[bool, str]:
+        raise AssertionError("cuda_probe should be skipped in configure mode")
+
+    monkeypatch.setattr(doctor, "cuda_probe", fail_if_called)
+
+    report = asyncio.run(
+        doctor.collect_doctor_report(
+            repo_path,
+            options=doctor.DoctorOptions(include_slow_optional_runtime_checks=False),
+        )
+    )
+    rendered = doctor.render_doctor_report(report)
+
+    assert "[optional] cuda:" not in rendered
+    assert "[optional] onnxruntime: ok" in rendered
+
+
+def test_doctor_progress_reports_each_check(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    repo_path = tmp_path / "repo"
+    (repo_path / ".git").mkdir(parents=True)
+
+    monkeypatch.setattr(
+        doctor,
+        "resolve_config",
+        lambda request: FakeResolvedConfig(config=AppConfig()),
+    )
+    monkeypatch.setattr(doctor, "cuda_probe", lambda: (False, "CUDA is unavailable."))
+    monkeypatch.setattr(
+        doctor,
+        "optional_package_probe",
+        lambda module_name, label: (False, f"{label} is not installed."),
+    )
+    monkeypatch.setattr(
+        doctor,
+        "resolve_local_runtime",
+        lambda config: type("RuntimeSelection", (), {"uses_llama_cpp": False})(),
+    )
+
+    messages: list[str] = []
+    asyncio.run(
+        doctor.collect_doctor_report(
+            repo_path,
+            options=doctor.DoctorOptions(progress=messages.append),
+        )
+    )
+
+    assert "Health check: database..." in messages
+    assert any(message.startswith("[required] database: ok") for message in messages)
+    assert any(message.startswith("Health check: cuda...") for message in messages)
 
 
 def test_doctor_warns_when_remote_is_enabled_without_litellm(
@@ -213,6 +292,18 @@ def test_doctor_reports_llama_cpp_checks_for_local_cpu_runtime(
 
     assert "[optional] llama_cpp: optional" in rendered
     assert "gguf_artifact: ok" in rendered
+
+
+def test_cuda_probe_times_out_cleanly(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_run(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="python -c ...", timeout=8.0)
+
+    monkeypatch.setattr(probes.subprocess, "run", fake_run)
+
+    ok, detail = probes.cuda_probe()
+
+    assert ok is False
+    assert "timed out" in detail
 
 
 def test_gguf_resolution_check_reports_missing_hf_hub(monkeypatch: pytest.MonkeyPatch) -> None:

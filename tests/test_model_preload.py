@@ -29,13 +29,18 @@ class FakeLocalBackend:
 def test_preload_configured_models_warms_embedding_and_downloads_cpu_gguf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    captured_show_progress: list[bool] = []
+
     monkeypatch.setattr(
         model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend()
     )
     monkeypatch.setattr(
         model_preload,
         "preload_gguf_artifact",
-        lambda config: Path("D:/cache/smollm2-360m-instruct-q8_0.gguf"),
+        lambda config, *, show_progress=False: (
+            captured_show_progress.append(show_progress),
+            Path("D:/cache/smollm2-360m-instruct-q8_0.gguf"),
+        )[1],
     )
 
     results = asyncio.run(model_preload.preload_configured_models(AppConfig()))
@@ -45,6 +50,7 @@ def test_preload_configured_models_warms_embedding_and_downloads_cpu_gguf(
     assert "embedding model microsoft/harrier-oss-v1-0.6b" in results[0].detail
     assert "local compression model ibm-granite/granite-4.0-350m-GGUF" in results[1].detail
     assert "smollm2-360m-instruct-q8_0.gguf" in results[1].detail
+    assert captured_show_progress == [True]
 
 
 def test_preload_configured_models_skips_local_model_in_remote_mode(
@@ -88,7 +94,9 @@ def test_preload_configured_models_returns_warning_results_on_failures(
     monkeypatch.setattr(
         model_preload,
         "preload_gguf_artifact",
-        lambda config: (_ for _ in ()).throw(BackendUnavailableError("local failed")),
+        lambda config, *, show_progress=False: (_ for _ in ()).throw(
+            BackendUnavailableError("local failed")
+        ),
     )
 
     results = asyncio.run(model_preload.preload_configured_models(AppConfig()))
@@ -164,3 +172,43 @@ def test_resolve_or_download_hf_file_prefers_cached_artifact(
 
     assert resolved == cached_file
     assert calls == []
+
+
+def test_resolve_or_download_hf_file_can_use_snapshot_download_with_progress(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    snapshot_dir = tmp_path / "snapshot"
+    snapshot_dir.mkdir(parents=True)
+    downloaded_file = snapshot_dir / "model.gguf"
+    downloaded_file.write_text("downloaded", encoding="utf-8")
+
+    hub_module = types.ModuleType("huggingface_hub")
+    setattr(hub_module, "try_to_load_from_cache", lambda repo_id, filename, cache_dir=None: None)
+    setattr(
+        hub_module,
+        "snapshot_download",
+        lambda **kwargs: str(snapshot_dir),
+    )
+    setattr(
+        hub_module,
+        "hf_hub_download",
+        lambda **kwargs: (_ for _ in ()).throw(AssertionError("hf_hub_download should not run")),
+    )
+
+    utils_module = types.ModuleType("huggingface_hub.utils")
+    progress_calls: list[str] = []
+    setattr(utils_module, "enable_progress_bars", lambda: progress_calls.append("enabled"))
+
+    monkeypatch.setitem(sys.modules, "huggingface_hub", hub_module)
+    monkeypatch.setitem(sys.modules, "huggingface_hub.utils", utils_module)
+
+    resolved = hf_hub_cache.resolve_or_download_hf_file(
+        repo_id="repo/model",
+        filename="model.gguf",
+        cache_dir=None,
+        show_progress=True,
+    )
+
+    assert resolved == downloaded_file
+    assert progress_calls == ["enabled"]
