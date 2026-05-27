@@ -4,6 +4,13 @@ import '../styles/landing.css';
 import CompressionShowcaseSection from '../components/CompressionShowcaseSection.astro';
 import InstallerDownloads from '../components/InstallerDownloads.astro';
 import { compressionShowcases } from '../data/compression-showcases';
+import bannerImage from '../assets/banner.png';
+
+const pageTitle = 'Save tokens and extend your coding sessions | CtxSift';
+const pageDescription = 'CtxSift compresses raw command outputs into recallable working memory for coding agents.';
+const siteUrl = (Astro.site ?? new URL('https://ctxsift.dev')).toString();
+const canonicalUrl = new URL('/', siteUrl).toString();
+const socialImageUrl = new URL(bannerImage.src, siteUrl).toString();
 ---
 
 <html lang="en">
@@ -23,11 +30,24 @@ import { compressionShowcases } from '../data/compression-showcases';
     <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
     <link rel="icon" href="/favicon.png?v=2" type="image/png" sizes="512x512" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
-    <title>Save tokens and extend your coding sessions | CtxSift</title>
+    <title>{pageTitle}</title>
     <meta
       name="description"
-      content="CtxSift compresses raw command outputs into recallable working memory for coding agents."
+      content={pageDescription}
     />
+    <link rel="canonical" href={canonicalUrl} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CtxSift" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={socialImageUrl} />
+    <meta property="og:image:alt" content="CtxSift banner preview" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:image" content={socialImageUrl} />
+    <meta name="twitter:image:alt" content="CtxSift banner preview" />
     <script is:inline defer src="https://umami.tabmate.org/script.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9"></script>
     <script is:inline defer src="https://umami.tabmate.org/recorder.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9" data-sample-rate="0.4" data-mask-level="moderate" data-max-duration="300000"></script>
   </head>
@@ -506,6 +526,8 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
           <div class="landing-footer-badge" set:html={`<a href="https://builders.to/projects/ctxsift?utm_source=badge" target="_blank" rel="noopener noreferrer"><img src="https://builders.to/badges/featured-on-builders-small.svg" alt="CtxSift - Featured on Builders.to" width="130" height="40" /></a>`}>
           </div>
           <div class="landing-footer-badge" set:html={`<a href="https://tooldirs.com" target="_blank"><img src="https://tooldirs.com/badge/badge_dark.svg" alt="Featured on ToolDirs" width="200" height="54" /></a>`}>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://www.freeai.run" target="_blank"><img src="https://www.freeai.run/badge/badge_dark.svg" alt="Featured on FreeAI" width="200" height="54" /></a>`}>
           </div>
         </div>
       </footer>
