@@ -36,6 +36,28 @@ Before running the install commands, ensure your environment meets these system 
    - **macOS**: Install Xcode Command Line Tools (`xcode-select --install`).
    - **Windows**: Install the [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) (ensure **Desktop development with C++** is checked).
 
+<Aside type="caution" title="Python 3.13 support">
+
+On **Linux** with **Python 3.13**, `llama-cpp-python` often falls back to a local build and often fails when `CC` or `CXX` points at a compiler that is not actually present.
+
+1. Check the current compiler env vars: `echo "cc=${CC} cxx=${CXX}"`
+2. If they do not resolve cleanly to your host compiler setup, install the toolchain and clear the overrides before install:
+    ```bash frame="none"
+    sudo apt update
+    sudo apt install build-essential cmake pkg-config python3-dev
+    unset CC
+    unset CXX
+    ```
+
+    If you prefer explicit compiler settings instead of clearing them:
+
+    ```bash frame="none"
+    export CC=gcc
+    export CXX=g++
+    ```
+
+</Aside>
+
 ---
 
 ## Choose your installation path
@@ -211,6 +233,8 @@ On Windows, if the normal GPU install still resolves `torch ... +cpu`, force the
 ```bash frame="none"
 uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 ```
+
+On Linux with Python 3.13, if install still fails while building `llama-cpp-python`, double-check that `CC` and `CXX` are either unset or pointed at real host compilers instead of missing names such as `x86_64-linux-gnu-gcc`.
 
 ### Examples:
 

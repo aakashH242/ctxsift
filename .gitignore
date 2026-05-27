@@ -2,6 +2,7 @@
 .ctxsift
 .certs
 infrastructure
+.github/skills
 
 # Operating system files
 .DS_Store

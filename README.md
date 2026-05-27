@@ -39,6 +39,16 @@ It compresses tool outputs and caches them so that agents can do a look-up when 
   - Windows: [Visual Studio](https://visualstudio.microsoft.com/downloads/) or [MinGW-w64](https://www.mingw-w64.org/downloads/)
   - MacOS: [Xcode](https://developer.apple.com/xcode/)
 
+> ❗ **Python 3.13 on Linux**: `llama-cpp-python` may build from source, and install often fails when `CC` or `CXX` points at a compiler that is not actually present.
+>
+> 1. Check the current compiler env vars: `echo "cc=${CC} cxx=${CXX}"`
+> 2. If they do not resolve cleanly to your host compiler setup, install the toolchain and clear the overrides before install:
+>    ```bash frame="none"
+>    sudo apt update
+>    sudo apt install build-essential cmake pkg-config python3-dev
+>    unset CC
+>    unset CXX
+>    ```
 
 ### Install
 
@@ -131,13 +141,30 @@ uv tool install "ctxsift[all]" --with "torch @ https://download.pytorch.org/whl/
 
 1. **GPU extras**: `ctxsift[gpu]` adds the Python-side GPU dependencies, but PyPI will often still resolve a CPU-only `torch` build by default. The PyTorch `--index` is added so `uv` can see CUDA-enabled wheels as candidates. On Windows, that may still not be enough, which is why the Windows examples force `torch` with `--with "torch @ ..."`. You can change the index URL to match the CUDA version you want.
 2. **--index-strategy**: `uv` defaults to `first-index`, which stops on the first index that serves a given package name. That is safer against dependency-confusion issues, but it can reject valid mixed-index installs when the PyTorch index also exposes generic packages. `unsafe-best-match` is appropriate here because the examples use only trusted official sources: PyPI and the official PyTorch wheel index.
-3. If `ctxsift` is not found after installation, run:
+3. **Python 3.13 on Linux**: if install fails while building `llama-cpp-python`, install the host compiler toolchain and clear broken compiler env vars before retrying:
+
+    ```bash frame="none"
+    sudo apt update
+    sudo apt install build-essential cmake pkg-config python3-dev
+    unset CC
+    unset CXX
+    ```
+
+    If you prefer explicit compiler settings instead of unsetting them:
+
+    ```bash frame="none"
+    export CC=gcc
+    export CXX=g++
+    ```
+
+    The common failure mode is `CC` or `CXX` pointing at a compiler name that is not actually installed, such as `x86_64-linux-gnu-gcc`.
+4. If `ctxsift` is not found after installation, run:
 
     ```bash frame="none"
     uv tool update-shell
     ```
-
-Then restart your shell and try `ctxsift` again.
+    
+    Then restart your shell and try `ctxsift` again.
 
 [Read more](https://ctxsift.dev/getting-started/installation/#pytorch-and-cuda-version-alignment)
 
