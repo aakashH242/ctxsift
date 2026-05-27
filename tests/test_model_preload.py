@@ -31,16 +31,22 @@ def test_preload_configured_models_warms_embedding_and_downloads_cpu_gguf(
 ) -> None:
     captured_show_progress: list[bool] = []
 
+    def fake_preload_gguf_artifact(
+        config: AppConfig,
+        *,
+        show_progress: bool = False,
+    ) -> Path:
+        del config
+        captured_show_progress.append(show_progress)
+        return Path("D:/cache/smollm2-360m-instruct-q8_0.gguf")
+
     monkeypatch.setattr(
         model_preload, "create_embedding_backend", lambda config: FakeEmbeddingBackend()
     )
     monkeypatch.setattr(
         model_preload,
         "preload_gguf_artifact",
-        lambda config, *, show_progress=False: (
-            captured_show_progress.append(show_progress),
-            Path("D:/cache/smollm2-360m-instruct-q8_0.gguf"),
-        )[1],
+        fake_preload_gguf_artifact,
     )
 
     results = asyncio.run(model_preload.preload_configured_models(AppConfig()))

@@ -161,21 +161,21 @@ async def _database_check(
         init_result = await initialize_database(db_path)
     except Exception as error:
         check = DoctorCheck(
-                name="database",
-                severity="required",
-                ok=False,
-                detail=f"Database initialization failed for {db_path}: {error}",
+            name="database",
+            severity="required",
+            ok=False,
+            detail=f"Database initialization failed for {db_path}: {error}",
         )
         _report_progress(progress, _render_check_line(check))
         return check, None
     check = DoctorCheck(
-            name="database",
-            severity="required",
-            ok=True,
-            detail=(
-                f"Database initialized at {init_result.db_path} "
-                f"(schema={init_result.schema_version})."
-            ),
+        name="database",
+        severity="required",
+        ok=True,
+        detail=(
+            f"Database initialized at {init_result.db_path} "
+            f"(schema={init_result.schema_version})."
+        ),
     )
     _report_progress(progress, _render_check_line(check))
     return check, init_result
@@ -273,10 +273,10 @@ def _local_runtime_checks(
         runtime = resolve_local_runtime(config.local)
     except BackendUnavailableError as error:
         check = DoctorCheck(
-                name="local_runtime",
-                severity="warning",
-                ok=False,
-                detail=str(error),
+            name="local_runtime",
+            severity="warning",
+            ok=False,
+            detail=str(error),
         )
         _report_progress(progress, _render_check_line(check))
         return [check]
@@ -310,13 +310,13 @@ def _remote_runtime_checks(
         _report_progress(progress, _render_check_line(check))
         return [check]
     check = DoctorCheck(
-            name="litellm",
-            severity="warning",
-            ok=False,
-            detail=(
-                'LiteLLM is not installed. Install it with `uv tool install "ctxsift[remote]"`; '
-                "remote compression will not work until it is available."
-            ),
+        name="litellm",
+        severity="warning",
+        ok=False,
+        detail=(
+            'LiteLLM is not installed. Install it with `uv tool install "ctxsift[remote]"`; '
+            "remote compression will not work until it is available."
+        ),
     )
     _report_progress(progress, _render_check_line(check))
     return [check]
