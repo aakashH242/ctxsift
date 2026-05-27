@@ -74,7 +74,7 @@ See the [CUDA alignment](#pytorch-and-cuda-version-alignment) section for more d
     Use this if you have an NVIDIA GPU supporting CUDA. CtxSift will run local compression using PyTorch and Hugging Face `Transformers`.
 
     ```bash frame="none"
-    uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+    uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 
     # Windows
     uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
@@ -88,7 +88,7 @@ See the [CUDA alignment](#pytorch-and-cuda-version-alignment) section for more d
     For machines with limited VRAM (e.g., under 8 GB) that still want to run local GPU compression. This includes `bitsandbytes` to load models in 8-bit or 4-bit NormalFloat modes.
 
     ```bash frame="none"
-    uv tool install "ctxsift[gpu,quant]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+    uv tool install "ctxsift[gpu,quant]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 
     # Windows
     uv tool install "ctxsift[gpu,quant]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
@@ -107,7 +107,7 @@ See the [CUDA alignment](#pytorch-and-cuda-version-alignment) section for more d
     Use this when compression should stay remote, but you still want recall embeddings to run locally on CUDA instead of CPU.
 
     ```bash frame="none"
-    uv tool install "ctxsift[remote,gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+    uv tool install "ctxsift[remote,gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 
     # Windows
     uv tool install "ctxsift[remote,gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
@@ -120,7 +120,7 @@ See the [CUDA alignment](#pytorch-and-cuda-version-alignment) section for more d
     Installs every optional Python dependency, including remote proxy integrations and quantization libraries. This still does not install NVIDIA drivers or host CUDA toolkits, and it still needs a CUDA-aligned PyTorch wheel index if you want local GPU execution.
 
     ```bash frame="none"
-    uv tool install "ctxsift[all]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+    uv tool install "ctxsift[all]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 
     # Windows
     uv tool install "ctxsift[all]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
@@ -214,9 +214,9 @@ uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/
 
 ### Examples:
 
-**For CUDA 12.1 (Standard default):**
+**For CUDA 12.4 (Standard default):**
 ```bash frame="none"
-uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 ```
 
 **For CUDA 11.8 (Older GPU rigs):**

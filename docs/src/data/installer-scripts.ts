@@ -1,5 +1,5 @@
 const DEFAULT_PACKAGE_NAME = 'ctxsift';
-const DEFAULT_REPO_URL = 'https://ctxsift.dev/docs/getting-started/installation';
+const DEFAULT_REPO_URL = 'https://github.com/aakashh242/ctxsift';
 const DEFAULT_PYPI_INDEX = 'https://pypi.org/simple';
 const DEFAULT_LINUX_CUDA_INDEX = 'https://download.pytorch.org/whl/cu124';
 const DEFAULT_WINDOWS_CUDA_INDEX = 'https://download.pytorch.org/whl/cu124';

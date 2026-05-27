@@ -68,7 +68,7 @@ uv tool install "ctxsift[gpu,quant]" --with "torch @ https://download.pytorch.or
 # Install for remote compression plus local GPU embeddings
 uv tool install "ctxsift[remote,gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 # Windows
-uv tool install "ctxsift[remote,gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple  --index-strategy unsafe-best-match
+uv tool install "ctxsift[remote,gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 
 
 # Install the full package
