@@ -1279,6 +1279,42 @@
 	color: hsl(210, 26%, 80%);
 }
 
+.landing-footer-badges {
+	display: inline-flex;
+	align-items: center;
+	flex-wrap: wrap;
+	justify-content: flex-end;
+	gap: 0.4rem;
+	margin-left: auto;
+}
+
+.landing-footer-badge {
+	display: inline-flex;
+	align-items: center;
+	opacity: 0.64;
+	filter: grayscale(1) saturate(0.72);
+	transition: opacity 180ms ease-out, transform 180ms ease-out, filter 180ms ease-out;
+}
+
+.landing-footer-badge:hover {
+	opacity: 0.92;
+	filter: grayscale(0) saturate(1);
+	transform: translateY(-1px);
+}
+
+.landing-footer-badge a {
+	display: inline-flex;
+	align-items: center;
+}
+
+.landing-footer-badge img {
+	display: block;
+	width: auto;
+	max-width: 110px;
+	max-height: 26px;
+	height: auto;
+}
+
 /* =========================================================
    Light theme overrides
    ========================================================= */
@@ -1445,6 +1481,10 @@ html[data-theme='light'] .proof-table td,
 html[data-theme='light'] .landing-footer,
 html[data-theme='light'] .landing-footer a {
 	color: hsl(220, 16%, 36%);
+}
+
+html[data-theme='light'] .landing-footer-badge {
+	opacity: 0.88;
 }
 
 html[data-theme='light'] .support-strip-label,
@@ -1617,6 +1657,10 @@ html[data-theme='light'] #setup-paths::before {
 
 	.landing-header-actions {
 		justify-content: flex-start;
+	}
+
+	.landing-footer-badge {
+		margin-left: 0;
 	}
 
 	.proof-card-grid {
