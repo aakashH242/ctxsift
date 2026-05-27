@@ -25,7 +25,7 @@ COPY SKILL.md ../SKILL.md
 
 RUN pnpm build
 
-FROM nginx:1.27-alpine AS runtime
+FROM docker.io/library/nginx:1.27-alpine AS runtime
 
 COPY docs/nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=build /app/docs/dist /usr/share/nginx/html
