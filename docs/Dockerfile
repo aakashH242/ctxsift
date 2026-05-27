@@ -13,9 +13,9 @@ ENV NODE_ENV=production \
         PUBLIC_REPO_URL=${PUBLIC_REPO_URL} \
         PUBLIC_INSTALL_PACKAGE=${PUBLIC_INSTALL_PACKAGE}
 
-RUN corepack enable && corepack prepare pnpm@9 --activate
+RUN corepack enable && corepack prepare pnpm@11.3.0 --activate
 
-COPY docs/package.json docs/pnpm-lock.yaml ./
+COPY docs/package.json docs/pnpm-lock.yaml docs/pnpm-workspace.yaml ./
 
 RUN pnpm install --frozen-lockfile
 
