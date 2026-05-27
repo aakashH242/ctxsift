@@ -5,8 +5,12 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import sqlite3
+import subprocess
+import sys
 
 from ctxsift.types import AppConfig, WorkspaceContext
+
+CUDA_PROBE_TIMEOUT_SECONDS = 8.0
 
 
 def sqlite_core_probe() -> tuple[bool, str]:
@@ -51,13 +55,42 @@ def remote_config_probe(config: AppConfig) -> tuple[bool, str]:
 
 def cuda_probe() -> tuple[bool, str]:
     """Probe whether CUDA is available through torch."""
+    probe_code = (
+        "import importlib\n"
+        "try:\n"
+        "    torch = importlib.import_module('torch')\n"
+        "except ImportError:\n"
+        "    print('IMPORT_ERROR')\n"
+        "    raise SystemExit(0)\n"
+        "print('CUDA_AVAILABLE' if torch.cuda.is_available() else 'CUDA_UNAVAILABLE')\n"
+    )
     try:
-        torch = importlib.import_module("torch")
-    except ImportError:
+        completed = subprocess.run(
+            [sys.executable, "-c", probe_code],
+            capture_output=True,
+            text=True,
+            timeout=CUDA_PROBE_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return (
+            False,
+            (
+                "CUDA probe timed out while importing PyTorch or querying CUDA state. "
+                "Run `ctxsift doctor` later for a full probe once the local GPU stack is healthy."
+            ),
+        )
+    stdout = completed.stdout.strip()
+    if "IMPORT_ERROR" in stdout:
         return False, "PyTorch is not installed; CUDA acceleration is unavailable."
-    if torch.cuda.is_available():
+    if "CUDA_AVAILABLE" in stdout:
         return True, "CUDA is available."
-    return False, "CUDA is unavailable."
+    if "CUDA_UNAVAILABLE" in stdout:
+        return False, "CUDA is unavailable."
+    stderr = completed.stderr.strip()
+    if stderr:
+        return False, f"CUDA probe failed: {stderr}"
+    return False, "CUDA probe failed without a usable result."
 
 
 def optional_package_probe(module_name: str, label: str) -> tuple[bool, str]:

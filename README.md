@@ -50,12 +50,12 @@ model - see the [supported models](#local-model-support) section for further det
 > <details>
 > <summary>Requirements matrix</summary>
 >
-> | Compression Mode | Minimum RAM | Minimum VRAM                                       | Comments                                                   |
-> |---|---|----------------------------------------------------|------------------------------------------------------------|
-> | Local, no GPU | 8 GB | N/A                                                | Both embedding and compression models are loaded into RAM  |
-> | Local, with GPU | 2 GB | 8 GB                                               | Both embedding and compression models get loaded into VRAM |
-> | Remote, no GPU | 4 GB | N/A | Only the embedding model gets loaded into RAM              |
-> | Remote, with GPU | 2 GB | 4 GB                                               | Only the embedding model gets loaded into VRAM             |
+> | Compression Mode | Minimum RAM | Minimum VRAM | Comments |
+> |---|---|---|---|
+> | Local, no GPU | 8 GB | N/A | Both embedding and compression models are loaded into RAM. |
+> | Local, with GPU | 2 GB | 8 GB | Both embedding and compression models can move to VRAM, but you still need a CUDA-aligned PyTorch wheel and working NVIDIA drivers. |
+> | Remote, no GPU | 4 GB | N/A | Only the embedding model gets loaded into RAM. |
+> | Remote, with GPU | 2 GB | 4 GB | Remote compression stays remote; only local embeddings use VRAM. This also needs a CUDA-aligned PyTorch wheel if you want embeddings on GPU. |
 > 
 > </details>
 
@@ -64,18 +64,23 @@ model - see the [supported models](#local-model-support) section for further det
 # Install the base package - inference runs on CPU
 uv tool install ctxsift
 
-# Install with GPU add-ons - inference with GPU acceleration
-uv tool install "ctxsift[gpu]"
+# Install with GPU add-ons - local compression + embeddings on GPU
+uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
 
 # Enable quantization support on GPU
-uv tool install "ctxsift[gpu,quant]"
+uv tool install "ctxsift[gpu,quant]" --index https://download.pytorch.org/whl/cu121
 
-# Install with LiteLLM included - use remotely hosted models for inference
+# Install with LiteLLM included - use remotely hosted models for compression
 uv tool install "ctxsift[remote]"
 
+# Install for remote compression plus local GPU embeddings
+uv tool install "ctxsift[remote,gpu]" --index https://download.pytorch.org/whl/cu121
+
 # Install the full package
-uv tool install "ctxsift[all]"
+uv tool install "ctxsift[all]" --index https://download.pytorch.org/whl/cu121
 ```
+
+`ctxsift[gpu]` and related extras add Python-side GPU dependencies, but they do not install NVIDIA drivers or automatically replace the default PyTorch wheel with a CUDA build. If `torch.cuda.is_available()` is false, CtxSift will still run on CPU even if the extra is installed.
 
 If `ctxsift` is not found after installation, run:
 
@@ -463,7 +468,7 @@ CtxSift currently supports these quantization modes for local GPU compression:
 Quantized GPU loads require the optional quantization dependencies:
 
 ```bash frame="none"
-uv tool install "ctxsift[gpu,quant]"
+uv tool install "ctxsift[gpu,quant]" --index https://download.pytorch.org/whl/cu121
 ```
 
 ### Flash Attention

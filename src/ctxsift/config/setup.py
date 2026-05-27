@@ -6,7 +6,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from ctxsift.diagnostics.doctor import DoctorReport, collect_doctor_report_for_config
+from ctxsift.diagnostics.doctor import (
+    DoctorOptions,
+    DoctorReport,
+    collect_doctor_report_for_config,
+)
 from ctxsift.model_preload import ModelPreloadResult, preload_configured_models
 from ctxsift.models.local_model_strategy import synchronize_strategy_store
 from ctxsift.types import AppConfig
@@ -37,7 +41,7 @@ async def run_configure_setup(
         write_ignore=write_ignore,
     )
     _report_progress(progress, "Please wait: running health checks...")
-    doctor = await collect_doctor_report_for_config(cwd, config)
+    doctor = await _run_configure_doctor(cwd, config, progress)
     _report_progress(progress, "Please wait: preparing configured models...")
     model_preloads = await _run_model_preloads(config, progress)
     return ConfigureSetupResult(
@@ -60,3 +64,21 @@ async def _run_model_preloads(
         return await preload_configured_models(config, progress=progress)
     except TypeError:
         return await preload_configured_models(config)
+
+
+async def _run_configure_doctor(
+    cwd: Path,
+    config: AppConfig,
+    progress: Callable[[str], None] | None,
+) -> DoctorReport:
+    try:
+        return await collect_doctor_report_for_config(
+            cwd,
+            config,
+            options=DoctorOptions(
+                include_slow_optional_runtime_checks=False,
+                progress=progress,
+            ),
+        )
+    except TypeError:
+        return await collect_doctor_report_for_config(cwd, config)

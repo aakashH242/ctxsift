@@ -4,6 +4,13 @@ import '../styles/landing.css';
 import CompressionShowcaseSection from '../components/CompressionShowcaseSection.astro';
 import InstallerDownloads from '../components/InstallerDownloads.astro';
 import { compressionShowcases } from '../data/compression-showcases';
+import bannerImage from '../assets/banner.png';
+
+const pageTitle = 'Save tokens and extend your coding sessions | CtxSift';
+const pageDescription = 'CtxSift compresses raw command outputs into recallable working memory for coding agents.';
+const siteUrl = (Astro.site ?? new URL('https://ctxsift.dev')).toString();
+const canonicalUrl = new URL('/', siteUrl).toString();
+const socialImageUrl = new URL(bannerImage.src, siteUrl).toString();
 ---
 
 <html lang="en">
@@ -23,13 +30,26 @@ import { compressionShowcases } from '../data/compression-showcases';
     <link rel="icon" href="/favicon.svg?v=2" type="image/svg+xml" />
     <link rel="icon" href="/favicon.png?v=2" type="image/png" sizes="512x512" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png?v=2" />
-    <title>Save tokens and extend your coding sessions | CtxSift</title>
+    <title>{pageTitle}</title>
     <meta
       name="description"
-      content="CtxSift compresses raw command outputs into recallable working memory for coding agents."
+      content={pageDescription}
     />
-    <script defer src="https://umami.tabmate.org/script.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9"></script>
-    <script defer src="https://umami.tabmate.org/recorder.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9" data-sample-rate="0.4" data-mask-level="moderate" data-max-duration="300000"></script>
+    <link rel="canonical" href={canonicalUrl} />
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="CtxSift" />
+    <meta property="og:title" content={pageTitle} />
+    <meta property="og:description" content={pageDescription} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={socialImageUrl} />
+    <meta property="og:image:alt" content="CtxSift banner preview" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={pageTitle} />
+    <meta name="twitter:description" content={pageDescription} />
+    <meta name="twitter:image" content={socialImageUrl} />
+    <meta name="twitter:image:alt" content="CtxSift banner preview" />
+    <script is:inline defer src="https://umami.tabmate.org/script.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9"></script>
+    <script is:inline defer src="https://umami.tabmate.org/recorder.js" data-website-id="02598b51-968c-46ac-8323-f21035b348b9" data-sample-rate="0.4" data-mask-level="moderate" data-max-duration="300000"></script>
   </head>
   <body class="landing-body">
     <div class="page-wrap">
@@ -484,15 +504,46 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
               <a class="nav-link" href="/docs/guides/benchmark/">Benchmark</a>
               <a class="nav-link" href="/docs/reference/cli/">CLI</a>
         </nav>
+        <div class="landing-footer-badges" aria-label="Verification badges">
+          <div class="landing-footer-badge">
+            <a href="https://kittylaunch.com/p/ctxsift" target="_blank" rel="noopener">
+              <img src="https://kittylaunch.com/api/public/badges/launch_badge.svg?theme=dark&name=CtxSift" width="280" alt="CtxSift on KittyLaunch" data-kittylaunch-badge="1" />
+            </a>
+          </div>
+          <div class="landing-footer-badge">
+            <a href="https://makerhunt.io/project/ctxsift" target="_blank" rel="noopener">
+              <img src="https://makerhunt.io/badges/makerhunt-badge-dark.svg" alt="Featured on MakerHunt" width="200" height="60" />
+            </a>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://uno.directory" target="_blank" rel="noopener">\n  <img src="https://uno.directory/uno-directory.svg" alt="Listed on Uno Directory" width="120" height="30" />\n</a>`}>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://fazier.com/launches/ctxsift.dev" target="_blank">\n  <img src="https://fazier.com/api/v1//public/badges/launch_badges.svg?badge_type=featured&theme=dark" width="250" alt="Fazier badge" />\n</a>`}>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://open-launch.com/projects/ctxsift" target="_blank" rel="noopener">
+    <img src="https://open-launch.com/api/badge/1d60f5cb-edab-4ac7-bce9-91244d4505af/featured-dark.svg" alt="Featured on Open-Launch" width="200" height="50" />
+  </a>`}>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://builders.to/projects/ctxsift?utm_source=badge" target="_blank" rel="noopener noreferrer"><img src="https://builders.to/badges/featured-on-builders-small.svg" alt="CtxSift - Featured on Builders.to" width="130" height="40" /></a>`}>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://tooldirs.com" target="_blank"><img src="https://tooldirs.com/badge/badge_dark.svg" alt="Featured on ToolDirs" width="200" height="54" /></a>`}>
+          </div>
+          <div class="landing-footer-badge" set:html={`<a href="https://www.freeai.run" target="_blank"><img src="https://www.freeai.run/badge/badge_dark.svg" alt="Featured on FreeAI" width="200" height="54" /></a>`}>
+          </div>
+        </div>
       </footer>
     </div>
 
     <!-- ============ THEME TOGGLE SCRIPT ============ -->
     <script>
-      function trackLandingEvent(eventName, payload = {}) {
+      type LandingTheme = 'light' | 'dark';
+      type LandingAnalyticsPayload = Record<string, unknown>;
+      type LandingTrackFn = (name: string, payload?: LandingAnalyticsPayload) => void;
+
+      function trackLandingEvent(eventName: string, payload: LandingAnalyticsPayload = {}) {
         try {
-          if (window.umami && typeof window.umami.track === 'function') {
-            window.umami.track(eventName, payload);
+          const umami = (window as Window & { umami?: { track?: LandingTrackFn } }).umami;
+          if (umami && typeof umami.track === 'function') {
+            umami.track(eventName, payload);
           }
         } catch {
           // Keep landing interactions functional even when analytics is unavailable.
@@ -501,25 +552,27 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
       const themeToggle = document.getElementById('landing-theme-toggle');
 
-      function applyLandingTheme(theme) {
+      function applyLandingTheme(theme: LandingTheme) {
         document.documentElement.dataset.theme = theme === 'light' ? 'light' : 'dark';
         document.documentElement.style.colorScheme = theme === 'light' ? 'light' : 'dark';
       }
 
-      function getBrowserTheme() {
+      function getBrowserTheme(): LandingTheme {
         return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
       }
 
-      if (themeToggle) {
+      if (themeToggle instanceof HTMLElement) {
+        const toggleRoot = themeToggle;
         // Get stored theme or browser default
         const storedLandingTheme = localStorage.getItem('starlight-theme');
-        const resolvedTheme = (storedLandingTheme === 'light' || storedLandingTheme === 'dark') 
-          ? storedLandingTheme 
+        const resolvedTheme = (storedLandingTheme === 'light' || storedLandingTheme === 'dark')
+          ? storedLandingTheme
           : getBrowserTheme();
-        
+
         // Update active button
-        function updateActiveButton(theme) {
-          themeToggle.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+        function updateActiveButton(theme: LandingTheme) {
+          const buttons = Array.from(toggleRoot.querySelectorAll<HTMLElement>('.theme-toggle-btn'));
+          buttons.forEach((btn) => {
             btn.classList.toggle('active', btn.dataset.theme === theme);
           });
         }
@@ -527,10 +580,11 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
         applyLandingTheme(resolvedTheme);
 
         // Handle button clicks
-        themeToggle.querySelectorAll('.theme-toggle-btn').forEach(btn => {
+        const buttons = Array.from(toggleRoot.querySelectorAll<HTMLElement>('.theme-toggle-btn'));
+        buttons.forEach((btn) => {
           btn.addEventListener('click', () => {
-            const previousTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
-            const nextTheme = btn.dataset.theme;
+            const previousTheme: LandingTheme = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+            const nextTheme: LandingTheme = btn.dataset.theme === 'light' ? 'light' : 'dark';
             localStorage.setItem('starlight-theme', nextTheme);
             updateActiveButton(nextTheme);
             applyLandingTheme(nextTheme);
@@ -581,7 +635,7 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
         });
       });
 
-      function inferInstallerPlatform(anchor) {
+      function inferInstallerPlatform(anchor: Element): 'linux' | 'macos' | 'windows' {
         const source = `${anchor.getAttribute('download') || ''} ${anchor.getAttribute('href') || ''}`.toLowerCase();
         if (source.includes('windows')) {
           return 'windows';
@@ -592,7 +646,7 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
         return 'linux';
       }
 
-      const installerLinks = document.querySelectorAll('#installer [data-installer-primary], #installer [data-installer-link], #installer [data-installer-skill]');
+      const installerLinks = document.querySelectorAll<HTMLElement>('#installer [data-installer-primary], #installer [data-installer-link], #installer [data-installer-skill]');
       installerLinks.forEach((link) => {
         link.addEventListener('click', () => {
           if (link.hasAttribute('data-installer-skill')) {
@@ -635,9 +689,13 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
         });
       });
 
-      document.addEventListener('click', (event) => {
-        const anchor = event.target.closest('a[href]');
-        if (!anchor) {
+      document.addEventListener('click', (event: MouseEvent) => {
+        const clickedElement = event.target;
+        if (!(clickedElement instanceof Element)) {
+          return;
+        }
+        const anchor = clickedElement.closest('a[href]');
+        if (!(anchor instanceof HTMLAnchorElement)) {
           return;
         }
 
@@ -702,7 +760,7 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
               return;
             }
 
-            const section = entry.target.id;
+            const section = (entry.target as HTMLElement).id;
             if (seenSections.has(section)) {
               return;
             }
@@ -725,7 +783,14 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
     <!-- ============ TYPEWRITER SCRIPT ============ -->
     <script>
-      const lines = [
+      type TerminalColorKey = 'cmd' | 'out' | 'result' | 'blank' | 'user';
+      type TerminalLine =
+        | { kind: 'typed'; text: string; type: TerminalColorKey }
+        | { kind: 'instant'; text: string; type: TerminalColorKey }
+        | { kind: 'prompted'; prompt: string; answer: string }
+        | { kind: 'blank' };
+
+      const lines: TerminalLine[] = [
         { kind: 'typed', text: '$ uv tool install ctxsift', type: 'cmd' },
         { kind: 'instant', text: 'Installed ctxsift 0.1.0', type: 'result' },
         { kind: 'blank' },
@@ -755,19 +820,19 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
       ];
 
       const isLightTheme = document.documentElement.getAttribute('data-theme') === 'light';
-      const COLOR = {
-        cmd:    isLightTheme ? '#1d4ed8' : '#7dd3fc',
-        out:    isLightTheme ? '#1e293b' : '#94a3b8',
+      const COLOR: Record<TerminalColorKey, string> = {
+        cmd: isLightTheme ? '#1d4ed8' : '#7dd3fc',
+        out: isLightTheme ? '#1e293b' : '#94a3b8',
         result: isLightTheme ? '#15803d' : '#86efac',
-        blank:  '',
-        user:   isLightTheme ? '#0f172a' : '#e2e8f0',
+        blank: '',
+        user: isLightTheme ? '#0f172a' : '#e2e8f0',
       };
 
-      function escHtml(s) {
+      function escHtml(s: string): string {
         return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       }
 
-      function renderLine(line) {
+      function renderLine(line: TerminalLine): string {
         if (line.kind === 'blank') {
           return '\n';
         }
@@ -781,8 +846,9 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
         return `<span style="color:${color}">${escHtml(line.text)}</span>\n`;
       }
 
-      const pre = document.getElementById('terminal-output');
-      if (!pre) throw new Error('terminal-output not found');
+      const terminalOutput = document.getElementById('terminal-output');
+      if (!(terminalOutput instanceof HTMLElement)) throw new Error('terminal-output not found');
+      const pre = terminalOutput;
 
       const noMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
@@ -796,7 +862,7 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
         const LINE_PAUSE = 130;
         const INSTANT_PAUSE = 55;
 
-        function renderCompletedThrough(indexExclusive) {
+        function renderCompletedThrough(indexExclusive: number): string {
           return lines.slice(0, indexExclusive).map(renderLine).join('');
         }
 
@@ -807,6 +873,10 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
           }
 
           const line = lines[lineIdx];
+          if (!line) {
+            pre.innerHTML = content + '<span class="terminal-cursor">|</span>';
+            return;
+          }
           if (line.kind === 'blank') {
             content += '\n';
             lineIdx++;
@@ -826,9 +896,10 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
           if (line.kind === 'typed') {
             const color = COLOR[line.type] || '#e2e8f0';
-            if (charIdx < line.text.length) {
+            const typedText = line.text;
+            if (charIdx < typedText.length) {
               const partial =
-                `<span style="color:${color}">${escHtml(line.text.slice(0, charIdx + 1))}</span>`;
+                `<span style="color:${color}">${escHtml(typedText.slice(0, charIdx + 1))}</span>`;
               pre.innerHTML = renderCompletedThrough(lineIdx) + partial + '<span class="terminal-cursor">|</span>';
               charIdx++;
               setTimeout(typeNextStep, CHAR_DELAY);
@@ -843,9 +914,10 @@ That's it. Unlike other token savers, which can get heavy can confuse the agent 
 
           if (line.kind === 'prompted') {
             const promptHtml = `<span style="color:${COLOR.out}">${escHtml(line.prompt)}</span>`;
-            if (charIdx < line.answer.length) {
+            const answerText = line.answer;
+            if (charIdx < answerText.length) {
               const answerHtml =
-                `<span style="color:${COLOR.user}">${escHtml(line.answer.slice(0, charIdx + 1))}</span>`;
+                `<span style="color:${COLOR.user}">${escHtml(answerText.slice(0, charIdx + 1))}</span>`;
               pre.innerHTML = renderCompletedThrough(lineIdx) + promptHtml + answerHtml + '<span class="terminal-cursor">|</span>';
               charIdx++;
               setTimeout(typeNextStep, CHAR_DELAY);

@@ -35,7 +35,11 @@ from ctxsift.daemon.manager import (
     stop_daemon,
 )
 from ctxsift.daemon.types import DaemonStatus
-from ctxsift.diagnostics.doctor import collect_doctor_report, render_doctor_report_rich
+from ctxsift.diagnostics.doctor import (
+    DoctorOptions,
+    collect_doctor_report,
+    render_doctor_report_rich,
+)
 from ctxsift.execution import (
     CommandExecutionRequest,
     CommandValidationError,
@@ -332,7 +336,12 @@ def config_set(
 @app.command()
 def doctor() -> None:
     """Inspect runtime health and optional features."""
-    report = asyncio.run(collect_doctor_report(Path.cwd()))
+    report = asyncio.run(
+        collect_doctor_report(
+            Path.cwd(),
+            options=DoctorOptions(progress=typer.echo),
+        )
+    )
     console.print(render_doctor_report_rich(report), soft_wrap=True)
 
 

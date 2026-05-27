@@ -17,10 +17,10 @@ Review the table below to choose the right installation path based on your machi
 | Mode | Target Hardware | Min. RAM | Min. VRAM | Active Components | Packages to Install |
 |---|---|---|---|---|---|
 | **Local CPU** | Standard Laptop/PC | 8 GB | N/A | Local `llama.cpp` + local Embeddings | `ctxsift` (Base package) |
-| **Local GPU** | CUDA-supported GPU | 2 GB | 8 GB | `Transformers` (PyTorch) + local Embeddings | `ctxsift[gpu]` |
-| **Local GPU (Quant)** | VRAM-constrained GPU | 2 GB | 4-6 GB | `Transformers` + `bitsandbytes` + local Embeddings | `ctxsift[gpu,quant]` |
+| **Local GPU** | CUDA-supported GPU | 2 GB | 8 GB | `Transformers` (PyTorch) + local Embeddings | `ctxsift[gpu]` plus a CUDA-aligned PyTorch wheel index |
+| **Local GPU (Quant)** | VRAM-constrained GPU | 2 GB | 4-6 GB | `Transformers` + `bitsandbytes` + local Embeddings | `ctxsift[gpu,quant]` plus a CUDA-aligned PyTorch wheel index |
 | **Remote (CPU)** | Cloud/API-focused | 4 GB | N/A | Remote API + local CPU Embeddings | `ctxsift[remote]` |
-| **Remote (GPU)** | Hybrid Cloud + GPU | 2 GB | 4 GB | Remote API + local GPU Embeddings | `ctxsift[remote,gpu]` |
+| **Remote (GPU)** | Hybrid Cloud + GPU | 2 GB | 4 GB | Remote API + local GPU Embeddings | `ctxsift[remote,gpu]` plus a CUDA-aligned PyTorch wheel index |
 
 ---
 
@@ -63,15 +63,17 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
     Use this if you have an NVIDIA GPU supporting CUDA. CtxSift will run local compression using PyTorch and Hugging Face `Transformers`.
 
     ```bash frame="none"
-    uv tool install "ctxsift[gpu]"
+    uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
     ```
+
+    `ctxsift[gpu]` adds the Python-side GPU extras, but it does not install NVIDIA drivers or automatically swap the default CPU-oriented PyTorch wheel for a CUDA wheel. You still need a working host GPU stack and a CUDA-aligned PyTorch index.
   </TabItem>
 
   <TabItem label="GPU with Quantization">
     For machines with limited VRAM (e.g., under 8 GB) that still want to run local GPU compression. This includes `bitsandbytes` to load models in 8-bit or 4-bit NormalFloat modes.
 
     ```bash frame="none"
-    uv tool install "ctxsift[gpu,quant]"
+    uv tool install "ctxsift[gpu,quant]" --index https://download.pytorch.org/whl/cu121
     ```
   </TabItem>
 
@@ -83,11 +85,21 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
     ```
   </TabItem>
 
-  <TabItem label="All Extras">
-    Installs every dependency, including GPU drivers, quantization libraries, and remote proxy integrations.
+  <TabItem label="Remote + GPU Embeddings">
+    Use this when compression should stay remote, but you still want recall embeddings to run locally on CUDA instead of CPU.
 
     ```bash frame="none"
-    uv tool install "ctxsift[all]"
+    uv tool install "ctxsift[remote,gpu]" --index https://download.pytorch.org/whl/cu121
+    ```
+
+    Remote mode does not make the hosted provider use your GPU. The GPU here applies only to the local embedding runtime.
+  </TabItem>
+
+  <TabItem label="All Extras">
+    Installs every optional Python dependency, including remote proxy integrations and quantization libraries. This still does not install NVIDIA drivers or host CUDA toolkits, and it still needs a CUDA-aligned PyTorch wheel index if you want local GPU execution.
+
+    ```bash frame="none"
+    uv tool install "ctxsift[all]" --index https://download.pytorch.org/whl/cu121
     ```
   </TabItem>
 </Tabs>
@@ -167,6 +179,8 @@ uv tool update-shell
 <Aside type="caution">
 `uv tool install` installs CtxSift inside a standalone virtual environment. By default, it retrieves the standard PyTorch wheel index. If your local system requires a specific CUDA version (e.g., CUDA 11.8 or CUDA 12.4), PyTorch may fall back to CPU mode or crash if the wheel and host drivers mismatch.
 </Aside>
+
+Python extras cannot install kernel-level NVIDIA drivers for you. Treat `ctxsift[gpu]` as "enable the Python packages needed for GPU mode" rather than "make this machine CUDA-ready from scratch."
 
 To force `uv` to compile or install CtxSift with a specific PyTorch index aligning with your CUDA toolkit version, pass the `--index` or `--with` overrides during installation.
 

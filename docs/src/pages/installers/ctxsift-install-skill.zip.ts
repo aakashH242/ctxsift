@@ -16,7 +16,7 @@ export const GET: APIRoute = async () => {
   const content = await readRootSkillMarkdown();
   const zipBytes = buildSingleFileZip(ARCHIVE_PATH, Buffer.from(content, 'utf-8'));
 
-  return new Response(zipBytes, {
+  return new Response(Buffer.from(zipBytes), {
     headers: {
       'Content-Type': 'application/zip',
       'Content-Disposition': `attachment; filename="${DOWNLOAD_NAME}"`,

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from rich.console import Group
@@ -43,36 +44,100 @@ class DoctorReport:
     checks: list[DoctorCheck]
 
 
-async def collect_doctor_report(cwd: Path) -> DoctorReport:
+@dataclass(frozen=True)
+class DoctorOptions:
+    """Execution options for one doctor run."""
+
+    include_slow_optional_runtime_checks: bool = True
+    progress: Callable[[str], None] | None = None
+
+
+async def collect_doctor_report(
+    cwd: Path,
+    *,
+    options: DoctorOptions | None = None,
+) -> DoctorReport:
     """Collect doctor checks without mutating repo-tracked files."""
     resolved_config = resolve_config(ConfigResolutionRequest(cwd=cwd))
-    return await collect_doctor_report_for_config(cwd, resolved_config.config)
+    return await collect_doctor_report_for_config(
+        cwd,
+        resolved_config.config,
+        options=options,
+    )
 
 
-async def collect_doctor_report_for_config(cwd: Path, config: AppConfig) -> DoctorReport:
+async def collect_doctor_report_for_config(
+    cwd: Path,
+    config: AppConfig,
+    *,
+    options: DoctorOptions | None = None,
+) -> DoctorReport:
     """Collect doctor checks for one explicit config snapshot."""
+    resolved_options = options or DoctorOptions()
     workspace = detect_workspace_context(cwd)
     db_path = Path(config.db_path or workspace.db_path or "").expanduser()
-    checks: list[DoctorCheck] = [
-        _probe_check("git_workspace", "warning", git_probe(workspace)),
-        _probe_check("remote_config", "warning", remote_config_probe(config)),
-        _probe_check("sqlite_core", "required", sqlite_core_probe()),
-        _probe_check("sqlite_fts5", "required", fts5_probe()),
-    ]
-    db_check, init_result = await _database_check(db_path)
-    checks.insert(0, db_check)
+    checks: list[DoctorCheck] = []
+    db_check, init_result = await _database_check(
+        db_path,
+        progress=resolved_options.progress,
+    )
+    checks.append(db_check)
+    checks.append(
+        _run_sync_probe_check(
+            "git_workspace",
+            "warning",
+            lambda: git_probe(workspace),
+            progress=resolved_options.progress,
+        )
+    )
+    checks.append(
+        _run_sync_probe_check(
+            "remote_config",
+            "warning",
+            lambda: remote_config_probe(config),
+            progress=resolved_options.progress,
+        )
+    )
+    checks.append(
+        _run_sync_probe_check(
+            "sqlite_core",
+            "required",
+            sqlite_core_probe,
+            progress=resolved_options.progress,
+        )
+    )
+    checks.append(
+        _run_sync_probe_check(
+            "sqlite_fts5",
+            "required",
+            fts5_probe,
+            progress=resolved_options.progress,
+        )
+    )
     if init_result is not None:
-        checks.append(await _sqlite_vec_check(db_path, config.embedding.model))
-    else:
         checks.append(
-            DoctorCheck(
-                name="sqlite_vec",
-                severity="warning",
-                ok=False,
-                detail="Skipped sqlite-vec probe because the database could not be initialized.",
+            await _sqlite_vec_check(
+                db_path,
+                config.embedding.model,
+                progress=resolved_options.progress,
             )
         )
-    checks.extend(_optional_runtime_checks(config))
+    else:
+        skipped_check = DoctorCheck(
+            name="sqlite_vec",
+            severity="warning",
+            ok=False,
+            detail="Skipped sqlite-vec probe because the database could not be initialized.",
+        )
+        checks.append(skipped_check)
+        _report_progress(resolved_options.progress, _render_check_line(skipped_check))
+    checks.extend(
+        _runtime_checks(
+            config,
+            include_slow_optional_runtime_checks=resolved_options.include_slow_optional_runtime_checks,
+            progress=resolved_options.progress,
+        )
+    )
     return DoctorReport(checks=checks)
 
 
@@ -86,44 +151,55 @@ def render_doctor_report_rich(report: DoctorReport):
     return Group(*(_render_check_text(check) for check in report.checks))
 
 
-async def _database_check(db_path: Path) -> tuple[DoctorCheck, StorageInitResult | None]:
+async def _database_check(
+    db_path: Path,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> tuple[DoctorCheck, StorageInitResult | None]:
+    _report_progress(progress, "Health check: database...")
     try:
         init_result = await initialize_database(db_path)
     except Exception as error:
-        return (
-            DoctorCheck(
-                name="database",
-                severity="required",
-                ok=False,
-                detail=f"Database initialization failed for {db_path}: {error}",
-            ),
-            None,
-        )
-    return (
-        DoctorCheck(
+        check = DoctorCheck(
             name="database",
             severity="required",
-            ok=True,
-            detail=(
-                f"Database initialized at {init_result.db_path} "
-                f"(schema={init_result.schema_version})."
-            ),
+            ok=False,
+            detail=f"Database initialization failed for {db_path}: {error}",
+        )
+        _report_progress(progress, _render_check_line(check))
+        return check, None
+    check = DoctorCheck(
+        name="database",
+        severity="required",
+        ok=True,
+        detail=(
+            f"Database initialized at {init_result.db_path} "
+            f"(schema={init_result.schema_version})."
         ),
-        init_result,
     )
+    _report_progress(progress, _render_check_line(check))
+    return check, init_result
 
 
-async def _sqlite_vec_check(db_path: Path, configured_model_name: str) -> DoctorCheck:
+async def _sqlite_vec_check(
+    db_path: Path,
+    configured_model_name: str,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> DoctorCheck:
+    _report_progress(progress, "Health check: sqlite_vec...")
     status = await probe_vector_store(db_path)
     if not status.available:
-        return DoctorCheck(
+        check = DoctorCheck(
             "sqlite_vec",
             "warning",
             False,
             status.warning or "sqlite-vec is unavailable; recall will use FTS5 only.",
         )
+        _report_progress(progress, _render_check_line(check))
+        return check
     if status.model_name and status.model_name != configured_model_name:
-        return DoctorCheck(
+        check = DoctorCheck(
             "sqlite_vec",
             "warning",
             False,
@@ -132,85 +208,125 @@ async def _sqlite_vec_check(db_path: Path, configured_model_name: str) -> Doctor
                 f"DB model={status.model_name}, configured model={configured_model_name}."
             ),
         )
+        _report_progress(progress, _render_check_line(check))
+        return check
     detail = f"sqlite-vec is available (vec_version={status.sqlite_vec_version}"
     if status.dimension is not None:
         detail += f", dim={status.dimension}"
     detail += ")."
-    return DoctorCheck(
+    check = DoctorCheck(
         "sqlite_vec",
         "warning",
         True,
         detail,
     )
+    _report_progress(progress, _render_check_line(check))
+    return check
 
 
-def _optional_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
-    checks = [
-        _probe_check("cuda", "optional", cuda_probe()),
-        _probe_check(
+def _runtime_checks(
+    config: AppConfig,
+    *,
+    include_slow_optional_runtime_checks: bool,
+    progress: Callable[[str], None] | None = None,
+) -> list[DoctorCheck]:
+    checks: list[DoctorCheck] = []
+    if include_slow_optional_runtime_checks:
+        checks.append(
+            _run_sync_probe_check(
+                "cuda",
+                "optional",
+                cuda_probe,
+                progress=progress,
+            )
+        )
+    checks.append(
+        _run_sync_probe_check(
             "onnxruntime",
             "optional",
-            optional_package_probe("onnxruntime", "ONNX Runtime"),
-        ),
-        _probe_check(
+            lambda: optional_package_probe("onnxruntime", "ONNX Runtime"),
+            progress=progress,
+        )
+    )
+    checks.append(
+        _run_sync_probe_check(
             "flashattention",
             "optional",
-            flash_attention_probe(),
-        ),
-    ]
-    checks.extend(_remote_runtime_checks(config))
-    checks.extend(_local_runtime_checks(config))
-    checks.extend(_quantization_runtime_checks(config))
+            flash_attention_probe,
+            progress=progress,
+        )
+    )
+    checks.extend(_remote_runtime_checks(config, progress=progress))
+    checks.extend(_local_runtime_checks(config, progress=progress))
+    checks.extend(_quantization_runtime_checks(config, progress=progress))
     return checks
 
 
-def _local_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+def _local_runtime_checks(
+    config: AppConfig,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> list[DoctorCheck]:
     if config.remote.base_url.strip():
         return []
     try:
         runtime = resolve_local_runtime(config.local)
     except BackendUnavailableError as error:
-        return [
-            DoctorCheck(
-                name="local_runtime",
-                severity="warning",
-                ok=False,
-                detail=str(error),
-            )
-        ]
+        check = DoctorCheck(
+            name="local_runtime",
+            severity="warning",
+            ok=False,
+            detail=str(error),
+        )
+        _report_progress(progress, _render_check_line(check))
+        return [check]
     if runtime.uses_llama_cpp:
         checks = [
-            _probe_check(
+            _run_sync_probe_check(
                 "llama_cpp",
                 "optional",
-                optional_package_probe("llama_cpp", "llama-cpp-python"),
+                lambda: optional_package_probe("llama_cpp", "llama-cpp-python"),
+                progress=progress,
             )
         ]
-        checks.append(_gguf_resolution_check(config))
+        gguf_check = _gguf_resolution_check(config)
+        _report_progress(progress, _render_check_line(gguf_check))
+        checks.append(gguf_check)
         return checks
     return []
 
 
-def _remote_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+def _remote_runtime_checks(
+    config: AppConfig,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> list[DoctorCheck]:
     if not config.remote.base_url.strip():
         return []
+    _report_progress(progress, "Health check: litellm...")
     ok, detail = optional_package_probe("litellm", "LiteLLM")
     if ok:
-        return [DoctorCheck("litellm", "warning", True, detail)]
-    return [
-        DoctorCheck(
-            name="litellm",
-            severity="warning",
-            ok=False,
-            detail=(
-                'LiteLLM is not installed. Install it with `uv tool install "ctxsift[remote]"`; '
-                "remote compression will not work until it is available."
-            ),
-        )
-    ]
+        check = DoctorCheck("litellm", "warning", True, detail)
+        _report_progress(progress, _render_check_line(check))
+        return [check]
+    check = DoctorCheck(
+        name="litellm",
+        severity="warning",
+        ok=False,
+        detail=(
+            'LiteLLM is not installed. Install it with `uv tool install "ctxsift[remote]"`; '
+            "remote compression will not work until it is available."
+        ),
+    )
+    _report_progress(progress, _render_check_line(check))
+    return [check]
 
 
-def _quantization_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
+def _quantization_runtime_checks(
+    config: AppConfig,
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> list[DoctorCheck]:
     if config.remote.base_url.strip():
         return []
     try:
@@ -223,18 +339,20 @@ def _quantization_runtime_checks(config: AppConfig) -> list[DoctorCheck]:
     if mode is LocalQuantizationMode.NONE:
         return []
     checks = [
-        _probe_check(
+        _run_sync_probe_check(
             "accelerate",
             "warning",
-            optional_package_probe("accelerate", "Accelerate"),
+            lambda: optional_package_probe("accelerate", "Accelerate"),
+            progress=progress,
         )
     ]
     if mode.value.startswith("bnb-"):
         checks.append(
-            _probe_check(
+            _run_sync_probe_check(
                 "bitsandbytes",
                 "warning",
-                optional_package_probe("bitsandbytes", "bitsandbytes"),
+                lambda: optional_package_probe("bitsandbytes", "bitsandbytes"),
+                progress=progress,
             )
         )
         return checks
@@ -286,6 +404,24 @@ def _gguf_resolution_check(config: AppConfig) -> DoctorCheck:
 def _probe_check(name: str, severity: str, probe: tuple[bool, str]) -> DoctorCheck:
     ok, detail = probe
     return DoctorCheck(name=name, severity=severity, ok=ok, detail=detail)
+
+
+def _run_sync_probe_check(
+    name: str,
+    severity: str,
+    probe: Callable[[], tuple[bool, str]],
+    *,
+    progress: Callable[[str], None] | None = None,
+) -> DoctorCheck:
+    _report_progress(progress, f"Health check: {name}...")
+    check = _probe_check(name, severity, probe())
+    _report_progress(progress, _render_check_line(check))
+    return check
+
+
+def _report_progress(progress: Callable[[str], None] | None, message: str) -> None:
+    if progress is not None:
+        progress(message)
 
 
 def _render_check_line(check: DoctorCheck) -> str:
