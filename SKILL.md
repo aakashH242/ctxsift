@@ -45,22 +45,52 @@ CtxSift uses a language model to compress tool outputs. This can be a model runn
 
 ## Install Commands
 
+
 ```bash 
-# Install the base package - inference runs on CPU
+# Install the base package - inference runs on CPU (Linux + Windows)
 uv tool install ctxsift
-
-# Install with GPU add-ons - inference with GPU acceleration
-uv tool install "ctxsift[gpu]"
-
-# Enable quantization support on GPU
-uv tool install "ctxsift[gpu,quant]"
-
-# Install with LiteLLM included - use remotely hosted models for inference
+# Install with LiteLLM included - use remotely hosted models for compression (Linux + Windows)
 uv tool install "ctxsift[remote]"
 
+
+# Install with GPU add-ons - local compression + embeddings on GPU (Linux)
+uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+
+
+# Enable quantization support on GPU (Linux)
+uv tool install "ctxsift[gpu,quant]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[gpu,quant]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+
+
+# Install for remote compression plus local GPU embeddings
+uv tool install "ctxsift[remote,gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[remote,gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+
+
 # Install the full package
-uv tool install "ctxsift[all]"
+uv tool install "ctxsift[all]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[all]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 ```
+
+#### NOTES
+
+1. **GPU extras**: `ctxsift[gpu]` adds the Python-side GPU dependencies, but PyPI will often still resolve a CPU-only `torch` build by default. The PyTorch `--index` is added so `uv` can see CUDA-enabled wheels as candidates. On Windows, that may still not be enough, which is why the Windows examples force `torch` with `--with "torch @ ..."`. You can change the index URL to match the CUDA version you want.
+2. **--index-strategy**: `uv` defaults to `first-index`, which stops on the first index that serves a given package name. That is safer against dependency-confusion issues, but it can reject valid mixed-index installs when the PyTorch index also exposes generic packages. `unsafe-best-match` is appropriate here because the examples use only trusted official sources: PyPI and the official PyTorch wheel index.
+3. If `ctxsift` is not found after installation, run:
+
+    ```bash frame="none"
+    uv tool update-shell
+    ```
+
+Then restart your shell and try `ctxsift` again.
+
+[Read more](https://ctxsift.dev/getting-started/installation/#pytorch-and-cuda-version-alignment)
+
 
 If `ctxsift` is not found after installation, run:
 

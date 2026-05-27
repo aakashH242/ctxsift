@@ -8,7 +8,7 @@ interface Props {
 const {
   variant = 'docs',
   title = 'Download install script or install skill',
-  description = 'The installer asks for a version and package extras, then runs uv tool install for that choice.',
+  description = 'The installer asks for a version and extras. On GPU installs, it also asks for the CUDA wheel index, and on Windows it asks for the exact torch wheel URL.',
 } = Astro.props;
 
 const wrapperClass = `installer-downloads installer-downloads--${variant}`;
