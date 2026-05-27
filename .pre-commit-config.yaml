@@ -1,0 +1,11 @@
+default_install_hook_types:
+  - pre-commit
+
+repos:
+  - repo: local
+    hooks:
+      - id: no-repeat
+        name: no_repeat
+        entry: uv run python tools/run_no_repeat_hook.py
+        language: system
+        pass_filenames: false

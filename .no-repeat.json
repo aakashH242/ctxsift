@@ -1,0 +1,96 @@
+{
+  "concurrency": 8,
+  "fail_on_error": true,
+  "strings_to_template": [
+    {
+      "value": "https://ctxsift.dev",
+      "pattern": "<%=public_site_url=%>",
+      "include_extensions": [
+        ".md",
+        ".mdx",
+        ".sh",
+        ".ps1",
+        ".ts"
+      ],
+      "locations": [
+        "README.md",
+        "docs/src/",
+        "installer/",
+        "SKILL.md"
+      ]
+    },
+    {
+      "value": "https://raw.githubusercontent.com/aakashh242/ctxsift/main",
+      "pattern": "<%=raw_content_url=%>",
+
+      "locations": [
+        "README.md"
+      ]
+    },
+    {
+      "value": "--with \"torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl\"",
+
+      "pattern": "<%=windows_torch_cu124_wheel=%>",
+      "include_extensions": [
+        ".md",
+        ".mdx",
+        ".sh",
+        ".ps1",
+        ".ts"
+      ],
+      "locations": [
+        "README.md",
+        "docs/",
+        "SKILL.md"
+      ]
+    },
+        {
+      "value": "--default-index https://pypi.org/simple",
+      "pattern": "<%=default_pypi_index=%>",
+      "include_extensions": [
+        ".md",
+        ".mdx",
+        ".sh",
+        ".ps1",
+        ".ts"
+      ],
+      "locations": [
+        "README.md",
+        "docs/",
+        "SKILL.md"
+      ]
+    },
+        {
+      "value": "--index https://download.pytorch.org/whl/cu124",
+      "pattern": "<%=torch_index_cu124=%>",
+      "include_extensions": [
+        ".md",
+        ".mdx",
+        ".sh",
+        ".ps1",
+        ".ts"
+      ],
+      "locations": [
+        "README.md",
+        "docs/",
+        "SKILL.md"
+      ]
+    },
+            {
+      "value": "--index-strategy unsafe-best-match",
+      "pattern": "<%=index_strategy=%>",
+      "include_extensions": [
+        ".md",
+        ".mdx",
+        ".sh",
+        ".ps1",
+        ".ts"
+      ],
+      "locations": [
+        "README.md",
+        "docs/",
+        "SKILL.md"
+      ]
+    }
+  ]
+}

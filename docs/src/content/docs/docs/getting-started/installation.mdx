@@ -43,7 +43,18 @@ Before running the install commands, ensure your environment meets these system 
 You can use standalone installer scripts given below or let your agent install **CtxSift** for you by using the installation skill.
 When installing manually, use `uv tool install` to install CtxSift in an your environment that is globally accessible on your terminal path.
 
-<InstallerDownloads title="Automated Installation" description="Install with standalone scripts or let your agent install it with the install skill."/>
+<InstallerDownloads title="Automated Installation" description="Install with standalone scripts or let your agent install it with the install skill. The Linux and Windows scripts now ask for extras and, on GPU installs, the CUDA wheel defaults from the current docs."/>
+
+The standalone install scripts are meant to remove the friction of the manual GPU install flow. They ask for:
+
+- the version to install
+- the extras set you want, using the allowed values `remote`, `gpu`, `quant`, or `all`
+- on Linux GPU installs, the CUDA wheel index, defaulting to the current docs recommendation
+- on Windows GPU installs, both the CUDA wheel index and the exact `torch` wheel URL, again defaulting to the current docs recommendation
+
+If you just press Enter, the script uses the same defaults shown later in this page.
+
+See the [CUDA alignment](#pytorch-and-cuda-version-alignment) section for more details.
 
 ---
 
@@ -63,17 +74,24 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
     Use this if you have an NVIDIA GPU supporting CUDA. CtxSift will run local compression using PyTorch and Hugging Face `Transformers`.
 
     ```bash frame="none"
-    uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
+    uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+
+    # Windows
+    uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+
     ```
 
-    `ctxsift[gpu]` adds the Python-side GPU extras, but it does not install NVIDIA drivers or automatically swap the default CPU-oriented PyTorch wheel for a CUDA wheel. You still need a working host GPU stack and a CUDA-aligned PyTorch index.
+    `ctxsift[gpu]` adds the Python-side GPU extras, but it does not install NVIDIA drivers or guarantee that uv will swap the default CPU-oriented PyTorch wheel for a CUDA wheel. You still need a working host GPU stack and a CUDA-aligned PyTorch index. Keep PyPI explicit and use `--index-strategy unsafe-best-match`, because the PyTorch index also serves some generic packages and uv's default `first-index` strategy can otherwise reject compatible versions from PyPI. After install, verify the resolved `torch` build instead of checking for split `nvidia-*` Python packages, which are often absent on Windows.
   </TabItem>
 
   <TabItem label="GPU with Quantization">
     For machines with limited VRAM (e.g., under 8 GB) that still want to run local GPU compression. This includes `bitsandbytes` to load models in 8-bit or 4-bit NormalFloat modes.
 
     ```bash frame="none"
-    uv tool install "ctxsift[gpu,quant]" --index https://download.pytorch.org/whl/cu121
+    uv tool install "ctxsift[gpu,quant]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+
+    # Windows
+    uv tool install "ctxsift[gpu,quant]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
     ```
   </TabItem>
 
@@ -89,7 +107,10 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
     Use this when compression should stay remote, but you still want recall embeddings to run locally on CUDA instead of CPU.
 
     ```bash frame="none"
-    uv tool install "ctxsift[remote,gpu]" --index https://download.pytorch.org/whl/cu121
+    uv tool install "ctxsift[remote,gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+
+    # Windows
+    uv tool install "ctxsift[remote,gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
     ```
 
     Remote mode does not make the hosted provider use your GPU. The GPU here applies only to the local embedding runtime.
@@ -99,7 +120,10 @@ When installing manually, use `uv tool install` to install CtxSift in an your en
     Installs every optional Python dependency, including remote proxy integrations and quantization libraries. This still does not install NVIDIA drivers or host CUDA toolkits, and it still needs a CUDA-aligned PyTorch wheel index if you want local GPU execution.
 
     ```bash frame="none"
-    uv tool install "ctxsift[all]" --index https://download.pytorch.org/whl/cu121
+    uv tool install "ctxsift[all]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
+
+    # Windows
+    uv tool install "ctxsift[all]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
     ```
   </TabItem>
 </Tabs>
@@ -174,26 +198,36 @@ uv tool update-shell
 
 ---
 
-## Advanced: PyTorch & CUDA version alignment
+## PyTorch and CUDA version alignment
 
 <Aside type="caution">
 `uv tool install` installs CtxSift inside a standalone virtual environment. By default, it retrieves the standard PyTorch wheel index. If your local system requires a specific CUDA version (e.g., CUDA 11.8 or CUDA 12.4), PyTorch may fall back to CPU mode or crash if the wheel and host drivers mismatch.
 </Aside>
 
-Python extras cannot install kernel-level NVIDIA drivers for you. Treat `ctxsift[gpu]` as "enable the Python packages needed for GPU mode" rather than "make this machine CUDA-ready from scratch."
+Python extras cannot install kernel-level NVIDIA drivers for you. To make CUDA-aligned PyTorch wheels available to `uv`, keep PyPI as the explicit default index, add the matching PyTorch wheel index alongside it, and use `--index-strategy unsafe-best-match` so uv can still choose compatible generic packages from PyPI.
 
-To force `uv` to compile or install CtxSift with a specific PyTorch index aligning with your CUDA toolkit version, pass the `--index` or `--with` overrides during installation.
+On Windows, if the normal GPU install still resolves `torch ... +cpu`, force the CUDA wheel explicitly with `--with`:
+
+```bash frame="none"
+uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+```
 
 ### Examples:
 
 **For CUDA 12.1 (Standard default):**
 ```bash frame="none"
-uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
+uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu121 --index-strategy unsafe-best-match
 ```
 
 **For CUDA 11.8 (Older GPU rigs):**
 ```bash frame="none"
-uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu118
+uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu118 --index-strategy unsafe-best-match
+```
+
+Check the final PyTorch build directly:
+
+```bash frame="none"
+uv tool run --from "ctxsift[gpu]" python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available())"
 ```
 
 ---

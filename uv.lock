@@ -455,7 +455,7 @@ wheels = [
 
 [[package]]
 name = "ctxsift"
-version = "1.0.2"
+version = "1.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },
@@ -467,7 +467,6 @@ dependencies = [
     { name = "rich" },
     { name = "sentence-transformers" },
     { name = "sqlite-vec" },
-    { name = "torch" },
     { name = "transformers" },
     { name = "typer" },
 ]
@@ -476,12 +475,12 @@ dependencies = [
 all = [
     { name = "accelerate" },
     { name = "bitsandbytes" },
-    { name = "flash-attn", marker = "sys_platform != 'win32'" },
+    { name = "flash-attn", marker = "python_full_version < '3.13' and sys_platform != 'win32'" },
     { name = "litellm" },
     { name = "onnxruntime-gpu" },
 ]
 gpu = [
-    { name = "flash-attn", marker = "sys_platform != 'win32'" },
+    { name = "flash-attn", marker = "python_full_version < '3.13' and sys_platform != 'win32'" },
     { name = "onnxruntime-gpu" },
 ]
 quant = [
@@ -510,8 +509,8 @@ requires-dist = [
     { name = "aiosqlite", specifier = "==0.22.1" },
     { name = "bitsandbytes", marker = "extra == 'all'", specifier = "==0.49.2" },
     { name = "bitsandbytes", marker = "extra == 'quant'", specifier = "==0.49.2" },
-    { name = "flash-attn", marker = "sys_platform != 'win32' and extra == 'all'", specifier = "==2.8.3" },
-    { name = "flash-attn", marker = "sys_platform != 'win32' and extra == 'gpu'", specifier = "==2.8.3" },
+    { name = "flash-attn", marker = "python_full_version < '3.13' and sys_platform != 'win32' and extra == 'all'", specifier = "==2.8.3" },
+    { name = "flash-attn", marker = "python_full_version < '3.13' and sys_platform != 'win32' and extra == 'gpu'", specifier = "==2.8.3" },
     { name = "huggingface-hub", specifier = "==1.15.0" },
     { name = "litellm", marker = "extra == 'all'", specifier = "==1.84.0" },
     { name = "litellm", marker = "extra == 'remote'", specifier = "==1.84.0" },
@@ -524,7 +523,6 @@ requires-dist = [
     { name = "rich", specifier = "==15.0.0" },
     { name = "sentence-transformers", specifier = "==5.5.0" },
     { name = "sqlite-vec", specifier = "==0.1.9" },
-    { name = "torch", specifier = "==2.12.0" },
     { name = "transformers", specifier = "==5.8.1" },
     { name = "typer", specifier = "==0.25.1" },
 ]
@@ -689,8 +687,8 @@ name = "flash-attn"
 version = "2.8.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "einops" },
-    { name = "torch" },
+    { name = "einops", marker = "python_full_version < '3.15'" },
+    { name = "torch", marker = "python_full_version < '3.15'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/3b/b2/8d76c41ad7974ee264754709c22963447f7f8134613fd9ce80984ed0dab7/flash_attn-2.8.3.tar.gz", hash = "sha256:1e71dd64a9e0280e0447b8a0c2541bad4bf6ac65bdeaa2f90e51a9e57de0370d", size = 8447812, upload-time = "2025-08-15T08:28:12.911Z" }
 

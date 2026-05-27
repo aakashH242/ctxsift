@@ -27,6 +27,8 @@ It compresses tool outputs and caches them so that agents can do a look-up when 
 
 ## Getting Started
 
+> For detailed installation guide, [read the docs here](https://ctxsift.dev/docs/getting-started/installation/)
+
 ### Prerequisites
 
 - **Python ≥ 3.12** — [python.org/downloads](https://www.python.org/downloads/)
@@ -44,7 +46,6 @@ CtxSift uses a language model to compress tool outputs. This can be a model runn
 You can choose the installation path best suited to your environment. When using local models, you can override the default
 model - see the [supported models](#local-model-support) section for further details. 
 
-
 > ❗ For the best experience, please see the minimum hardware requirements below.
 > 
 > <details>
@@ -59,36 +60,86 @@ model - see the [supported models](#local-model-support) section for further det
 > 
 > </details>
 
+#### Automated
+
+If you do not want to assemble the `uv tool install` command by hand, use the interactive installer scripts in [installer/](./installer). They prompt for the version, extras, and GPU-specific wheel settings when needed.
+
+Run them from a checked-out repo:
+
+```bash
+# Linux
+bash installer/ctxsift-install-linux.sh
+
+# macOS
+bash installer/ctxsift-install-macos.sh
+```
+
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -File .\installer\ctxsift-install-windows.ps1
+```
+
+Or run them directly from GitHub:
+
+```bash
+# Linux
+curl -fsSL https://raw.githubusercontent.com/aakashh242/ctxsift/main/installer/ctxsift-install-linux.sh | bash
+
+# macOS
+curl -fsSL https://raw.githubusercontent.com/aakashh242/ctxsift/main/installer/ctxsift-install-macos.sh | bash
+```
+
+```powershell
+# Windows PowerShell
+powershell -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/aakashh242/ctxsift/main/installer/ctxsift-install-windows.ps1 -OutFile $env:TEMP\ctxsift-install-windows.ps1; & $env:TEMP\ctxsift-install-windows.ps1"
+```
+
+#### Manual
 
 ```bash 
-# Install the base package - inference runs on CPU
+# Install the base package - inference runs on CPU (Linux + Windows)
 uv tool install ctxsift
-
-# Install with GPU add-ons - local compression + embeddings on GPU
-uv tool install "ctxsift[gpu]" --index https://download.pytorch.org/whl/cu121
-
-# Enable quantization support on GPU
-uv tool install "ctxsift[gpu,quant]" --index https://download.pytorch.org/whl/cu121
-
-# Install with LiteLLM included - use remotely hosted models for compression
+# Install with LiteLLM included - use remotely hosted models for compression (Linux + Windows)
 uv tool install "ctxsift[remote]"
 
+
+# Install with GPU add-ons - local compression + embeddings on GPU (Linux)
+uv tool install "ctxsift[gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+
+
+# Enable quantization support on GPU (Linux)
+uv tool install "ctxsift[gpu,quant]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[gpu,quant]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+
+
 # Install for remote compression plus local GPU embeddings
-uv tool install "ctxsift[remote,gpu]" --index https://download.pytorch.org/whl/cu121
+uv tool install "ctxsift[remote,gpu]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[remote,gpu]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple  --index-strategy unsafe-best-match
+
 
 # Install the full package
-uv tool install "ctxsift[all]" --index https://download.pytorch.org/whl/cu121
+uv tool install "ctxsift[all]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
+# Windows
+uv tool install "ctxsift[all]" --with "torch @ https://download.pytorch.org/whl/cu124/torch-2.6.0%2Bcu124-cp312-cp312-win_amd64.whl" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 ```
 
-`ctxsift[gpu]` and related extras add Python-side GPU dependencies, but they do not install NVIDIA drivers or automatically replace the default PyTorch wheel with a CUDA build. If `torch.cuda.is_available()` is false, CtxSift will still run on CPU even if the extra is installed.
+#### NOTES
 
-If `ctxsift` is not found after installation, run:
+1. **GPU extras**: `ctxsift[gpu]` adds the Python-side GPU dependencies, but PyPI will often still resolve a CPU-only `torch` build by default. The PyTorch `--index` is added so `uv` can see CUDA-enabled wheels as candidates. On Windows, that may still not be enough, which is why the Windows examples force `torch` with `--with "torch @ ..."`. You can change the index URL to match the CUDA version you want.
+2. **--index-strategy**: `uv` defaults to `first-index`, which stops on the first index that serves a given package name. That is safer against dependency-confusion issues, but it can reject valid mixed-index installs when the PyTorch index also exposes generic packages. `unsafe-best-match` is appropriate here because the examples use only trusted official sources: PyPI and the official PyTorch wheel index.
+3. If `ctxsift` is not found after installation, run:
 
-```bash frame="none"
-uv tool update-shell
-```
+    ```bash frame="none"
+    uv tool update-shell
+    ```
 
 Then restart your shell and try `ctxsift` again.
+
+[Read more](https://ctxsift.dev/getting-started/installation/#pytorch-and-cuda-version-alignment)
 
 ### First-time setup
 
@@ -107,6 +158,8 @@ ctxsift doctor
 # Test compression
 echo "alpha\nbeta\ngamma" | ctxsift compress --intent exact-lines "Return only the first line, no explanations."
 ```
+
+[Read more](https://ctxsift.dev/docs/getting-started/doctor/)
 
 ---
 
@@ -133,10 +186,11 @@ We have [benchmarked](benchmark) a few models to help you get started.
 You can also run the benchmark to see how a model not listed here will perform. Learn more about it [here](benchmark/README.md).
 To view the latest benchmark, open `benchmark/results/viewer.html` to inspect the latest static dashboard snapshot. The viewer now shows two score views: **recovered** as the main score, and **raw** beside it so you can see how much deterministic recovery helped. It also shows visible-thought density, so you can tell when a model is "thinking out loud" in the final answer instead of returning only the requested output. That includes both leaked think-tags and common meta lines like `Okay, the user wants...` or `I should return...`. Benchmark scoring now follows the explicit compression intent for each case, so strict outputs are judged by the contract the caller actually asked for, not by an older family label.
 
-**CPU models** - GGUF quantized models running on CPU via the built-in `llama.cpp` engine. Sorted by average latency, fastest first.
+[Latest Benchmark Scores](https://ctxsift.dev/benchmark-viewer.html)
 
 <details>
 <summary>Benchmarked CPU models</summary>
+**CPU models** - GGUF quantized models running on CPU via the built-in `llama.cpp` engine. Sorted by average latency, fastest first.
 
 > Scores below come from the latest local CPU benchmark snapshot at `benchmark/results/cpu-models-20260524T014526Z` on an i7-12700F with 64 GiB RAM. `Score` here means the benchmark's main recovered score. Treat latency as relative, not absolute.
 
@@ -468,7 +522,7 @@ CtxSift currently supports these quantization modes for local GPU compression:
 Quantized GPU loads require the optional quantization dependencies:
 
 ```bash frame="none"
-uv tool install "ctxsift[gpu,quant]" --index https://download.pytorch.org/whl/cu121
+uv tool install "ctxsift[gpu,quant]" --default-index https://pypi.org/simple --index https://download.pytorch.org/whl/cu124 --index-strategy unsafe-best-match
 ```
 
 ### Flash Attention
@@ -483,7 +537,7 @@ CtxSift currently supports these attention modes for local GPU compression:
 - `flash_attention_2`: the optimized Flash Attention path; can improve throughput and reduce memory use on supported CUDA setups
 
 One practical constraint: `flash_attention_2` depends on the Flash Attention package and is not universally 
-available across platforms. On Windows in particular, `auto` or `sdpa` is usually the safer recommendation.
+available across platforms. On Windows in particular, `auto` or `sdpa` is usually the safer recommendation. On Python 3.13 and newer, `ctxsift[gpu]` also skips `flash-attn` during installation and falls back to the standard PyTorch attention backends unless you install a compatible Flash Attention build yourself.
 
 ---
 
