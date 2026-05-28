@@ -9,6 +9,8 @@ import pytest
 from ctxsift.execution import (
     CommandExecutionRequest,
     CommandValidationError,
+    _launch_argv,
+    _powershell_command_from_argv,
     detect_shell_syntax,
     execute_command,
 )
@@ -69,3 +71,47 @@ def test_execute_command_rejects_non_positive_timeout(tmp_path: Path) -> None:
 
     with pytest.raises(CommandValidationError, match="at least 1 ms"):
         asyncio.run(execute_command(request))
+
+
+def test_launch_argv_uses_windows_shell_fallback_for_unresolved_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = CommandExecutionRequest(
+        argv=("echo", "alpha\\nbeta\\ngamma"),
+        shell=False,
+        cwd=tmp_path,
+    )
+
+    monkeypatch.setattr("ctxsift.execution._is_windows", lambda: True)
+    monkeypatch.setattr("ctxsift.execution._windows_shell_executable", lambda: "powershell.exe")
+    monkeypatch.setattr("ctxsift.execution.shutil.which", lambda command: None)
+
+    launch_argv = _launch_argv(request)
+
+    assert launch_argv == (
+        "powershell.exe",
+        "-NoProfile",
+        "-Command",
+        "& 'echo' 'alpha\\nbeta\\ngamma'",
+    )
+
+
+def test_launch_argv_keeps_direct_exec_for_resolved_windows_command(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = CommandExecutionRequest(
+        argv=("python", "-V"),
+        shell=False,
+        cwd=tmp_path,
+    )
+
+    monkeypatch.setattr("ctxsift.execution._is_windows", lambda: True)
+    monkeypatch.setattr("ctxsift.execution.shutil.which", lambda command: "C:/Python/python.exe")
+
+    assert _launch_argv(request) == ("python", "-V")
+
+
+def test_powershell_command_from_argv_escapes_single_quotes() -> None:
+    assert _powershell_command_from_argv(("echo", "it's")) == "& 'echo' 'it''s'"

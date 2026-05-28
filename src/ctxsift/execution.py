@@ -161,6 +161,8 @@ async def _execute_subprocess(request: CommandExecutionRequest) -> CommandExecut
 def _launch_argv(request: CommandExecutionRequest) -> tuple[str, ...]:
     if request.shell:
         return _shell_launch_argv(request.argv[0])
+    if _should_use_windows_shell_fallback(request.argv):
+        return _windows_safe_argv_shell_launch(request.argv)
     return request.argv
 
 
@@ -255,6 +257,33 @@ def _shell_launch_argv(command: str) -> tuple[str, ...]:
             return executable, "/C", command
         return executable, "-NoProfile", "-Command", command
     return "/bin/sh", "-c", command
+
+
+def _should_use_windows_shell_fallback(argv: tuple[str, ...]) -> bool:
+    if not _is_windows() or not argv:
+        return False
+    command = argv[0]
+    command_path = Path(command)
+    if command_path.is_absolute():
+        return False
+    if command_path.parent != Path():
+        return False
+    return shutil.which(command) is None
+
+
+def _windows_safe_argv_shell_launch(argv: tuple[str, ...]) -> tuple[str, ...]:
+    executable = _windows_shell_executable()
+    if executable.lower().endswith("cmd.exe"):
+        return executable, "/C", subprocess.list2cmdline(list(argv))
+    return executable, "-NoProfile", "-Command", _powershell_command_from_argv(argv)
+
+
+def _powershell_command_from_argv(argv: tuple[str, ...]) -> str:
+    return "& " + " ".join(_powershell_literal(token) for token in argv)
+
+
+def _powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def _windows_shell_executable() -> str:

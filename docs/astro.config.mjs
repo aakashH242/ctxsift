@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
+import starlightLlmsTxt from 'starlight-llms-txt';
 
 import tailwindcss from '@tailwindcss/vite';
 
@@ -13,19 +14,24 @@ export default defineConfig({
             description: 'Local-first command output compression and recall for coding agents.',
             tagline: 'Save tokens. Keep context. Recover state faster.',
             customCss: ['/src/styles/global.css'],
+            plugins: [starlightLlmsTxt()],
             titleDelimiter: '·',
             head: [
                 {
                     tag: 'link',
-                    attrs: { rel: 'icon', href: '/favicon.svg?v=2', type: 'image/svg+xml' },
+                    attrs: { rel: 'icon', href: '/favicon.ico', sizes: 'any' },
                 },
                 {
                     tag: 'link',
-                    attrs: { rel: 'icon', href: '/favicon.png?v=2', type: 'image/png', sizes: '512x512' },
+                    attrs: { rel: 'icon', href: '/favicon.svg', type: 'image/svg+xml' },
                 },
                 {
                     tag: 'link',
-                    attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png?v=2' },
+                    attrs: { rel: 'icon', href: '/favicon.png', type: 'image/png', sizes: '512x512' },
+                },
+                {
+                    tag: 'link',
+                    attrs: { rel: 'apple-touch-icon', href: '/apple-touch-icon.png' },
                 },
                 {
                     tag: 'script',

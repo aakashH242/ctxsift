@@ -66,6 +66,18 @@ ctxsift compress --intent INTENT [OPTIONS] INSTRUCTION -- COMMAND [ARGS]...
 * **`--max-output-tokens`** (Integer)
   Overrides the default model output limit (e.g., sets output limit to `1024` tokens for this run).
 
+<Aside type="tip" title="When shell mode is required">
+Use `--shell` for real shell syntax such as pipelines, redirects, glob expansion, command substitution, `&&`, and `||`. On Windows PowerShell, also use `--shell` for PowerShell expressions or subexpressions such as `$env:FOO`, `$(...)`, or `| % { ... }`.
+</Aside>
+
+<Aside type="tip" title="Windows PowerShell newlines">
+If you want real newlines inside a PowerShell string argument, use backticks instead of a literal `\n`.
+
+```powershell frame="none"
+ctxsift compress --intent exact-lines "return only the first line" -- echo "alpha`nbeta`ngamma"
+```
+</Aside>
+
 ### Usage Examples
 
 ```bash frame="none"
