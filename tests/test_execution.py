@@ -113,5 +113,26 @@ def test_launch_argv_keeps_direct_exec_for_resolved_windows_command(
     assert _launch_argv(request) == ("python", "-V")
 
 
+def test_launch_argv_escapes_cmd_metacharacters_in_windows_shell_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    request = CommandExecutionRequest(
+        argv=("echo", "alpha beta&gamma delta", "pipe|caret^percent%bang!", "paren()"),
+        shell=False,
+        cwd=tmp_path,
+    )
+
+    monkeypatch.setattr("ctxsift.execution._is_windows", lambda: True)
+    monkeypatch.setattr("ctxsift.execution._windows_shell_executable", lambda: "cmd.exe")
+    monkeypatch.setattr("ctxsift.execution.shutil.which", lambda command: None)
+
+    assert _launch_argv(request) == (
+        "cmd.exe",
+        "/C",
+        'echo "alpha beta"^&"gamma delta" pipe^|caret^^percent^%bang^! paren^(^)',
+    )
+
+
 def test_powershell_command_from_argv_escapes_single_quotes() -> None:
     assert _powershell_command_from_argv(("echo", "it's")) == "& 'echo' 'it''s'"

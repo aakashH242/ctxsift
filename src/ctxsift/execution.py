@@ -27,6 +27,7 @@ SHELL_SYNTAX_LABELS = (
 )
 
 CODE_LITERAL_FLAGS = {"-c", "-command"}
+CMD_EXE_METACHARACTERS = frozenset("^&|<>()%!")
 
 
 @dataclass(frozen=True)
@@ -274,8 +275,34 @@ def _should_use_windows_shell_fallback(argv: tuple[str, ...]) -> bool:
 def _windows_safe_argv_shell_launch(argv: tuple[str, ...]) -> tuple[str, ...]:
     executable = _windows_shell_executable()
     if executable.lower().endswith("cmd.exe"):
-        return executable, "/C", subprocess.list2cmdline(list(argv))
+        return executable, "/C", _cmd_exe_command_from_argv(argv)
     return executable, "-NoProfile", "-Command", _powershell_command_from_argv(argv)
+
+
+def _cmd_exe_command_from_argv(argv: tuple[str, ...]) -> str:
+    return " ".join(_cmd_exe_token(token) for token in argv)
+
+
+def _cmd_exe_token(token: str) -> str:
+    if token == "":
+        return '""'
+    parts: list[str] = []
+    literal_chars: list[str] = []
+    for char in token:
+        if char in CMD_EXE_METACHARACTERS:
+            _flush_cmd_literal(parts, literal_chars)
+            parts.append("^" + char)
+            continue
+        literal_chars.append(char)
+    _flush_cmd_literal(parts, literal_chars)
+    return "".join(parts)
+
+
+def _flush_cmd_literal(parts: list[str], literal_chars: list[str]) -> None:
+    if not literal_chars:
+        return
+    parts.append(subprocess.list2cmdline(["".join(literal_chars)]))
+    literal_chars.clear()
 
 
 def _powershell_command_from_argv(argv: tuple[str, ...]) -> str:
