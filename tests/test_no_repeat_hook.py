@@ -58,7 +58,7 @@ def test_stage_changed_files_stages_exact_relative_paths(
             "add",
             "--",
             "README.md",
-            "docs\\guide.md",
+            str(Path("docs") / "guide.md"),
         ]
     ]
 
