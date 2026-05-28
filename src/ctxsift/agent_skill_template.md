@@ -64,6 +64,8 @@ Use `--shell` only when the command needs shell parsing, such as pipes, redirect
 ctxsift compress --intent summary --shell "Summarize only the final failing lines. Preserve the first real error exactly." -- "pytest -q 2>&1 | tail -n 80"
 ```
 
+On Windows PowerShell, also use `--shell` for PowerShell expressions or subexpressions such as `$env:FOO`, `$(...)`, or pipeline script blocks like `| % { ... }`.
+
 ### Last resort: pipe fallback
 
 Use pipe mode only when the command has already run, the output already exists, or wrapping the command directly is impractical.
@@ -189,6 +191,8 @@ ctxsift compress --intent exact-format "Return only the kubectl command to delet
 
 - Use `--shell` only for shell syntax such as pipes, redirects, glob expansion, command substitution, `&&`, `||`, or compound commands.
 
+- On Windows PowerShell, also use `--shell` for PowerShell expressions or subexpressions such as `$env:FOO`, `$(...)`, or `| % { ... }`.
+
 - Use pipe mode only as a fallback when output already exists or command-capture is impractical.
 
 - Do not use CtxSift for small commands whose raw output is already concise, such as `pwd`, `git branch`, `git status --short`, simple `ls`, or short single-file inspection.
@@ -239,6 +243,14 @@ ctxsift compress --intent summary "Summarize the build blocker in 2 short senten
 ctxsift compress --intent bullet-list "Summarize risky changes in at most 5 bullets. Mention only files with behavioral or security impact." -- git diff
 ```
 
+### Windows PowerShell newline example
+
+When you want real newlines in a PowerShell string argument, use backticks instead of a literal `\n`.
+
+```powershell frame="none"
+ctxsift compress --intent exact-lines "Return only the first line. No prose." -- echo "alpha`nbeta`ngamma"
+```
+
 ```bash frame="none"
 ctxsift compress --intent table "Return a table with columns file, change_type, risk, and reason. Include only meaningful code changes." -- git diff --stat
 ```
@@ -281,3 +293,7 @@ ctxsift daemon stop
 `ctxsift configure` is interactive. Do not run it unless the user explicitly wants guided setup or local configuration.
 
 If `ctxsift doctor` shows missing configuration, dependency problems, daemon problems, or unavailable model/runtime errors, report the concrete issue and ask the user to fix configuration only when the agent cannot safely proceed.
+
+---
+
+# If you need live documentation, visit https://ctxsift.dev/llms.txt and follow the instructions there.

@@ -183,7 +183,13 @@ ctxsift configure
 ctxsift doctor
 
 # Test compression
-echo "alpha\nbeta\ngamma" | ctxsift compress --intent exact-lines "Return only the first line, no explanations."
+printf "alpha\nbeta\ngamma\n" | ctxsift compress --intent exact-lines "Return only the first line, no explanations."
+```
+
+On Windows PowerShell, use backticks for real newlines in inline string examples:
+
+```powershell frame="none"
+ctxsift compress --intent exact-lines "Return only the first line, no explanations." -- echo "alpha`nbeta`ngamma"
 ```
 
 [Read more](https://ctxsift.dev/docs/getting-started/doctor/)

@@ -497,7 +497,7 @@ def _render_ctxsift_skill_markdown() -> str:
     template = (
         resources.files("ctxsift").joinpath("agent_skill_template.md").read_text(encoding="utf-8")
     )
-    return template.format(ctxsift_version=__version__)
+    return template.replace("{ctxsift_version}", __version__)
 
 
 def _render_antigravity_plugin_manifest() -> str:

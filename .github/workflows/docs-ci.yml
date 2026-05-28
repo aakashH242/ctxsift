@@ -55,4 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           test -f dist/robots.txt
+          test -f dist/llms.txt
+          test -f dist/llms-full.txt
+          test -f dist/llms-small.txt
           test -f dist/sitemap-index.xml

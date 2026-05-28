@@ -27,6 +27,7 @@ SHELL_SYNTAX_LABELS = (
 )
 
 CODE_LITERAL_FLAGS = {"-c", "-command"}
+CMD_EXE_METACHARACTERS = frozenset("^&|<>()%!")
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,8 @@ async def _execute_subprocess(request: CommandExecutionRequest) -> CommandExecut
 def _launch_argv(request: CommandExecutionRequest) -> tuple[str, ...]:
     if request.shell:
         return _shell_launch_argv(request.argv[0])
+    if _should_use_windows_shell_fallback(request.argv):
+        return _windows_safe_argv_shell_launch(request.argv)
     return request.argv
 
 
@@ -255,6 +258,59 @@ def _shell_launch_argv(command: str) -> tuple[str, ...]:
             return executable, "/C", command
         return executable, "-NoProfile", "-Command", command
     return "/bin/sh", "-c", command
+
+
+def _should_use_windows_shell_fallback(argv: tuple[str, ...]) -> bool:
+    if not _is_windows() or not argv:
+        return False
+    command = argv[0]
+    command_path = Path(command)
+    if command_path.is_absolute():
+        return False
+    if command_path.parent != Path():
+        return False
+    return shutil.which(command) is None
+
+
+def _windows_safe_argv_shell_launch(argv: tuple[str, ...]) -> tuple[str, ...]:
+    executable = _windows_shell_executable()
+    if executable.lower().endswith("cmd.exe"):
+        return executable, "/C", _cmd_exe_command_from_argv(argv)
+    return executable, "-NoProfile", "-Command", _powershell_command_from_argv(argv)
+
+
+def _cmd_exe_command_from_argv(argv: tuple[str, ...]) -> str:
+    return " ".join(_cmd_exe_token(token) for token in argv)
+
+
+def _cmd_exe_token(token: str) -> str:
+    if token == "":
+        return '""'
+    parts: list[str] = []
+    literal_chars: list[str] = []
+    for char in token:
+        if char in CMD_EXE_METACHARACTERS:
+            _flush_cmd_literal(parts, literal_chars)
+            parts.append("^" + char)
+            continue
+        literal_chars.append(char)
+    _flush_cmd_literal(parts, literal_chars)
+    return "".join(parts)
+
+
+def _flush_cmd_literal(parts: list[str], literal_chars: list[str]) -> None:
+    if not literal_chars:
+        return
+    parts.append(subprocess.list2cmdline(["".join(literal_chars)]))
+    literal_chars.clear()
+
+
+def _powershell_command_from_argv(argv: tuple[str, ...]) -> str:
+    return "& " + " ".join(_powershell_literal(token) for token in argv)
+
+
+def _powershell_literal(value: str) -> str:
+    return "'" + value.replace("'", "''") + "'"
 
 
 def _windows_shell_executable() -> str:

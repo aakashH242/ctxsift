@@ -51,6 +51,18 @@ Command capture mode runs the command as a subprocess and captures stdout, stder
 Prefer command capture mode when the exit code or stderr matter to the agent, or when you want freshness tracking tied to git state. Use pipe mode for quick one-liners or when the output is already available.
 </Aside>
 
+<Aside type="tip" title="When to switch to shell mode">
+Stay in argv mode for ordinary commands and arguments. Switch to `--shell` only when the command needs real shell parsing, such as pipelines, redirects, glob expansion, command substitution, `&&`, or `||`. On Windows PowerShell, also use `--shell` for PowerShell expressions or subexpressions such as `$env:FOO`, `$(...)`, or `| % { ... }`.
+</Aside>
+
+<Aside type="tip" title="Windows PowerShell newlines">
+When you want actual newlines inside a PowerShell string argument, use backticks instead of a literal `\n`.
+
+```powershell frame="none"
+ctxsift compress --intent exact-lines "return only the first line" -- echo "alpha`nbeta`ngamma"
+```
+</Aside>
+
 ---
 
 ## The `--intent` flag
