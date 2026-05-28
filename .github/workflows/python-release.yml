@@ -5,6 +5,11 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to backfill into CHANGELOG.md (for example, v1.0.5)
+        required: true
+        type: string
 
 concurrency:
   group: python-release-${{ github.ref }}
@@ -12,6 +17,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     outputs:
       package_version: ${{ steps.package_version.outputs.value }}
@@ -70,12 +76,13 @@ jobs:
           if-no-files-found: error
 
   publish:
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
     needs: build
     permissions:
       id-token: write
       contents: write
-      pull-requests: read
+      pull-requests: write
     environment:
       name: pypi
       url: https://pypi.org/p/ctxsift
@@ -121,13 +128,20 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import os
+            import subprocess
           from datetime import datetime, timezone
           from pathlib import Path
 
           path = Path("CHANGELOG.md")
           tag = os.environ["RELEASE_TAG"]
           notes = os.environ["RELEASE_NOTES"].strip()
-          today = datetime.now(timezone.utc).date().isoformat()
+            try:
+              release_date = subprocess.check_output(
+                ["git", "log", "-1", "--format=%cs", f"refs/tags/{tag}"],
+                text=True,
+              ).strip()
+            except subprocess.CalledProcessError:
+              release_date = datetime.now(timezone.utc).date().isoformat()
           header = "# Changelog\n\nThis file is updated automatically after tagged Python releases are published to PyPI.\n\n"
 
           if path.exists():
@@ -148,23 +162,13 @@ jobs:
                   else:
                       body_start = ""
 
-          entry = f"## {tag} - {today}\n\n{notes}\n"
+            entry = f"## {tag} - {release_date}\n\n{notes}\n"
           new_text = header + entry
           if body_start:
               new_text += "\n" + body_start
 
           path.write_text(new_text, encoding="utf-8")
           PY
-
-      - name: Commit CHANGELOG.md
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: stefanzweifel/git-auto-commit-action@v6
-        with:
-          branch: ${{ github.event.repository.default_branch }}
-          commit_message: "docs: update changelog for ${{ github.ref_name }} [skip ci]"
-          commit_user_name: github-actions[bot]
-          commit_user_email: 41898282+github-actions[bot]@users.noreply.github.com
-          file_pattern: CHANGELOG.md
 
       - name: Create GitHub release with auto-generated notes
         if: startsWith(github.ref, 'refs/tags/v')
@@ -201,3 +205,125 @@ jobs:
               generate_release_notes: false,
               make_latest: "legacy",
             });
+
+      - name: Open changelog pull request
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/changelog-${{ github.ref_name }}
+          base: ${{ github.event.repository.default_branch }}
+          delete-branch: true
+          commit-message: "docs: update changelog for ${{ github.ref_name }} [skip ci]"
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          title: "docs: update changelog for ${{ github.ref_name }}"
+          body: |
+            This automated PR updates CHANGELOG.md for `${{ github.ref_name }}` after the PyPI release workflow published the release.
+
+            The changelog body uses the same generated release notes that were used for the GitHub release.
+          add-paths: |
+            CHANGELOG.md
+
+  changelog-backfill:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Check out repository default branch
+        uses: actions/checkout@v6.0.2
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.repository.default_branch }}
+
+      - name: Validate release tag exists
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git rev-parse --verify "refs/tags/${RELEASE_TAG}^{tag}" >/dev/null
+
+      - name: Build changelog
+        id: build_changelog
+        uses: mikepenz/release-changelog-builder-action@v6
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        with:
+          mode: PR
+          toTag: ${{ github.event.inputs.release_tag }}
+          configurationJson: |
+            {
+              "template": "## What's Changed\n\n#{{CHANGELOG}}",
+              "pr_template": "- #{{TITLE}} by @#{{AUTHOR}} in ##{{NUMBER}}",
+              "empty_template": "- No changes"
+            }
+
+      - name: Update CHANGELOG.md
+        env:
+          RELEASE_TAG: ${{ github.event.inputs.release_tag }}
+          RELEASE_NOTES: ${{ steps.build_changelog.outputs.changelog }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import subprocess
+          from datetime import datetime, timezone
+          from pathlib import Path
+
+          path = Path("CHANGELOG.md")
+          tag = os.environ["RELEASE_TAG"]
+          notes = os.environ["RELEASE_NOTES"].strip()
+          try:
+              release_date = subprocess.check_output(
+                  ["git", "log", "-1", "--format=%cs", f"refs/tags/{tag}"],
+                  text=True,
+              ).strip()
+          except subprocess.CalledProcessError:
+              release_date = datetime.now(timezone.utc).date().isoformat()
+          header = "# Changelog\n\nThis file is updated automatically after tagged Python releases are published to PyPI.\n\n"
+
+          if path.exists():
+              existing = path.read_text(encoding="utf-8")
+          else:
+              existing = header
+
+          if f"## {tag}\n" in existing or f"## {tag} - " in existing:
+              raise SystemExit(0)
+
+          body_start = existing
+          if existing.startswith("# Changelog"):
+              first_blank = existing.find("\n\n")
+              if first_blank != -1:
+                  second_blank = existing.find("\n\n", first_blank + 2)
+                  if second_blank != -1:
+                      body_start = existing[second_blank + 2 :].lstrip()
+                  else:
+                      body_start = ""
+
+          entry = f"## {tag} - {release_date}\n\n{notes}\n"
+          new_text = header + entry
+          if body_start:
+              new_text += "\n" + body_start
+
+          path.write_text(new_text, encoding="utf-8")
+          PY
+
+      - name: Open changelog pull request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          branch: automation/changelog-${{ github.event.inputs.release_tag }}
+          base: ${{ github.event.repository.default_branch }}
+          delete-branch: true
+          commit-message: "docs: update changelog for ${{ github.event.inputs.release_tag }} [skip ci]"
+          committer: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          author: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
+          title: "docs: update changelog for ${{ github.event.inputs.release_tag }}"
+          body: |
+            This automated PR backfills CHANGELOG.md for `${{ github.event.inputs.release_tag }}` without re-publishing the package.
+
+            The changelog body uses the same generated release note format as the tagged Python release workflow.
+          add-paths: |
+            CHANGELOG.md
