@@ -128,7 +128,7 @@ jobs:
           set -euo pipefail
           python - <<'PY'
           import os
-            import subprocess
+          import subprocess
           from datetime import datetime, timezone
           from pathlib import Path
 
