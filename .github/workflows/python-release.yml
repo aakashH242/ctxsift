@@ -243,7 +243,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          git rev-parse --verify "refs/tags/${RELEASE_TAG}^{tag}" >/dev/null
+          git rev-parse --verify "refs/tags/${RELEASE_TAG}^{commit}" >/dev/null
 
       - name: Build changelog
         id: build_changelog
