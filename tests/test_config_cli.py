@@ -245,3 +245,37 @@ def test_config_set_supports_local_llama_context_window_key(
 
     assert set_result.exit_code == 0
     assert "llama_context_window = 16384" in show_result.stdout
+
+
+def test_config_set_supports_embedding_batch_size_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "embedding.batch_size", "32", "--global"],
+    )
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert "batch_size = 32" in show_result.stdout
+
+
+def test_config_set_supports_recall_anchor_term_limit_key(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+
+    set_result = runner.invoke(
+        app,
+        ["config", "set", "recall.anchor_term_limit", "5", "--global"],
+    )
+    show_result = runner.invoke(app, ["config", "show", "--global"])
+
+    assert set_result.exit_code == 0
+    assert "anchor_term_limit = 5" in show_result.stdout

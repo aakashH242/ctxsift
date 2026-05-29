@@ -70,3 +70,10 @@ def test_embedding_prompt_changes_change_embedding_signature() -> None:
     )
 
     assert signature_hash(base) != signature_hash(custom)
+
+
+def test_embedding_batch_size_changes_change_embedding_signature() -> None:
+    base = build_embedding_signature(EmbeddingConfig())
+    custom = build_embedding_signature(EmbeddingConfig(batch_size=32))
+
+    assert signature_hash(base) != signature_hash(custom)

@@ -95,6 +95,8 @@ Settings for the Sentence Transformers model used to compute vector embeddings f
   Tensor data type. Options: `auto`, `float32`, `float16`, `bfloat16`.
 * **`embedding.attn_implementation`** (String, Default: `auto`)
   Attention implementation. Options: `auto`, `sdpa`, `flash_attention_2`.
+* **`embedding.batch_size`** (Integer, Default: `8`)
+  Sentence Transformers micro-batch size used within each embedding encode call.
 * **`embedding.max_length`** (Integer, Default: `32768`)
   Maximum token length threshold for embedding operations.
 * **`embedding.query_prompt_name`** (String, Default: `""`)

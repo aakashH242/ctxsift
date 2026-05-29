@@ -98,6 +98,8 @@ def test_configure_writes_workspace_scope_by_default(
     )
 
     assert result.exit_code == 0
+    assert "Configure mode: Basic settings" in result.stdout
+    assert "advanced/full settings" in result.stdout
     workspace_config = repo_path / ".git" / "ctxsift" / "config.toml"
     assert workspace_config.exists()
     assert "Updated workspace config" in result.stdout
@@ -115,6 +117,8 @@ def test_configure_writes_workspace_scope_by_default(
     assert 'gguf_filename = "granite-4.0-350m-Q8_0.gguf"' in text
     assert 'quantization = "none"' in text
     assert 'model = "microsoft/harrier-oss-v1-0.6b"' in text
+    assert "batch_size = 8" in text
+    assert "anchor_term_limit = 3" in text
     assert "recovery_enabled = true" in text
 
 
@@ -128,9 +132,10 @@ def test_configure_can_set_local_model_cache_path(
 
     result = runner.invoke(
         app,
-        ["configure"],
+        ["configure", "--full"],
         input=_configure_input(
             compression_mode="local",
+            full=True,
             local_model_cache_path="D:/ctxsift-model-cache",
             save_target="global",
             write_ignore_answer="",
@@ -138,6 +143,7 @@ def test_configure_can_set_local_model_cache_path(
     )
 
     assert result.exit_code == 0
+    assert "Configure mode: advanced/full settings" in result.stdout
     assert "Local model cache path override" in result.output
     text = isolated_config_paths.read_text(encoding="utf-8")
     assert 'model_cache_path = "D:/ctxsift-model-cache"' in text
@@ -153,9 +159,10 @@ def test_configure_can_disable_response_recovery(
 
     result = runner.invoke(
         app,
-        ["configure"],
+        ["configure", "--full"],
         input=_configure_input(
             compression_mode="local",
+            full=True,
             recovery_enabled="n",
             save_target="global",
             write_ignore_answer="",
@@ -169,6 +176,58 @@ def test_configure_can_disable_response_recovery(
     assert "recovery_enabled = false" in text
 
 
+def test_configure_can_set_embedding_batch_size(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(configure_flow, "_cuda_available", lambda: False)
+
+    result = runner.invoke(
+        app,
+        ["configure", "--full"],
+        input=_configure_input(
+            compression_mode="local",
+            full=True,
+            embedding_batch_size="24",
+            save_target="global",
+            write_ignore_answer="",
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Embedding batch size" in result.output
+    text = isolated_config_paths.read_text(encoding="utf-8")
+    assert "batch_size = 24" in text
+
+
+def test_configure_can_set_recall_anchor_term_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_config_paths: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(configure_flow, "_cuda_available", lambda: False)
+
+    result = runner.invoke(
+        app,
+        ["configure", "--full"],
+        input=_configure_input(
+            compression_mode="local",
+            full=True,
+            recall_anchor_term_limit="6",
+            save_target="global",
+            write_ignore_answer="",
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert "Recall anchor term limit" in result.output
+    text = isolated_config_paths.read_text(encoding="utf-8")
+    assert "anchor_term_limit = 6" in text
+
+
 def test_configure_hides_database_path_override_and_clears_existing_value(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -180,9 +239,10 @@ def test_configure_hides_database_path_override_and_clears_existing_value(
 
     result = runner.invoke(
         app,
-        ["configure"],
+        ["configure", "--full"],
         input=_configure_input(
             compression_mode="remote",
+            full=True,
             save_target="global",
             write_ignore_answer="",
         ),
@@ -215,7 +275,7 @@ def test_configure_global_writes_remote_values(
     text = isolated_config_paths.read_text(encoding="utf-8")
     assert 'base_url = "http://localhost:4000"' in text
     assert 'model_name = "gpt-4o-mini"' in text
-    assert 'api_version = "2025-01-01"' in text
+    assert 'api_version = ""' in text
     assert (tmp_path / ".ctxsift" / "ctxsift.db").exists()
     assert "Preloaded local compression model" not in result.stdout
     assert "Remote base URL" in result.output
@@ -254,9 +314,10 @@ def test_configure_succeeds_when_remote_litellm_warning_is_reported(
 
     result = runner.invoke(
         app,
-        ["configure"],
+        ["configure", "--full"],
         input=_configure_input(
             compression_mode="remote",
+            full=True,
             save_target="global",
             write_ignore_answer="",
         ),
@@ -277,9 +338,10 @@ def test_configure_rejects_invalid_final_config(
     monkeypatch.chdir(tmp_path)
     result = runner.invoke(
         app,
-        ["configure"],
+        ["configure", "--full"],
         input=_configure_input(
             compression_mode="local",
+            full=True,
             recall_default_limit="0",
             save_target="global",
             write_ignore_answer="",
@@ -428,14 +490,17 @@ def test_init_command_is_not_available() -> None:
 
 def _configure_input(
     compression_mode: str,
+    full: bool = False,
     recovery_enabled: str = "",
     recall_default_limit: str = "10",
     recall_min_score: str = "120",
     weak_fallback_min_score: str = "90",
     weak_fallback_limit: str = "1",
+    recall_anchor_term_limit: str = "3",
     local_device: str = "",
     local_model_cache_path: str = "",
     embedding_device: str = "auto",
+    embedding_batch_size: str = "8",
     save_target: str = "global",
     write_ignore_answer: str | None = None,
     include_gguf_prompt: bool = True,
@@ -443,45 +508,59 @@ def _configure_input(
     values = [
         compression_mode,
         "512",
-        "90000",
-        "1",
-        recovery_enabled,
     ]
+    if full:
+        values.extend(
+            [
+                "90000",
+                "1",
+                recovery_enabled,
+            ]
+        )
     if compression_mode == "local":
         values.extend([local_device, ""])
         if include_gguf_prompt:
             values.append("")
-        values.append(local_model_cache_path)
-        values.append("auto")
+        if full:
+            values.append(local_model_cache_path)
+            values.append("auto")
     if compression_mode == "remote":
         values.extend(
             [
                 "http://localhost:4000",
                 "gpt-4o-mini",
                 "sk-test",
-                "2025-01-01",
-                "auto",
             ]
         )
-    values.extend(
-        [
-            "microsoft/harrier-oss-v1-0.6b",
-            embedding_device,
-            "auto",
-            "",
-            "",
-            "",
-            "32768",
-            recall_default_limit,
-            "50",
-            "50",
-            "0.75",
-            recall_min_score,
-            weak_fallback_min_score,
-            weak_fallback_limit,
-            save_target,
-        ]
-    )
+        if full:
+            values.extend(
+                [
+                    "2025-01-01",
+                    "auto",
+                ]
+            )
+    values.append("microsoft/harrier-oss-v1-0.6b")
+    if full:
+        values.extend(
+            [
+                embedding_device,
+                "auto",
+                embedding_batch_size,
+                "",
+                "",
+                "",
+                "32768",
+                recall_default_limit,
+                "50",
+                "50",
+                recall_anchor_term_limit,
+                "0.75",
+                recall_min_score,
+                weak_fallback_min_score,
+                weak_fallback_limit,
+            ]
+        )
+    values.append(save_target)
     if write_ignore_answer is not None:
         values.append(write_ignore_answer)
     return "\n".join(values) + "\n"

@@ -46,6 +46,7 @@ def build_embedding_signature(config: EmbeddingConfig) -> EmbeddingRuntimeSignat
         device=config.device,
         dtype=config.dtype,
         attn_implementation=config.attn_implementation,
+        batch_size=config.batch_size,
         query_prompt_name=config.query_prompt_name,
         query_prompt=config.query_prompt,
         document_prompt_name=config.document_prompt_name,

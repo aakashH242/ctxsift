@@ -341,6 +341,8 @@ CtxSift has two core operations that the skill injects into an agent's workflow.
 ## Configuration
 
 > See [.env.example](.env.example) for more details on each setting.
+> 
+> Use `ctxsift configure --full` to configure all settings via the guided walkthrough.
 
 CtxSift is built to run with minimal configuration overhead but, power users can change CtxSift's settings as they wish. 
 Configuration can be applied using the CLI or by setting environment variables in your workspace.

@@ -26,7 +26,7 @@ from ctxsift.config import (
     set_config_value,
 )
 from ctxsift.config.setup import run_configure_setup
-from ctxsift.config.flow import prompt_for_config, prompt_for_save_scope
+from ctxsift.config.flow import prompt_for_config_with_mode, prompt_for_save_scope
 from ctxsift.daemon.manager import (
     daemon_statuses,
     required_daemon_specs,
@@ -86,6 +86,13 @@ def _not_implemented(command_name: str) -> None:
 
 @app.command()
 def configure(
+    full: Annotated[
+        bool,
+        typer.Option(
+            "--full",
+            help="Show all advanced configure prompts instead of the lightweight first-run flow.",
+        ),
+    ] = False,
     write_ignore: Annotated[
         bool | None,
         typer.Option(
@@ -103,8 +110,12 @@ def configure(
             cwd=current_directory,
         )
     )
+    if full:
+        typer.echo("Configure mode: advanced/full settings")
+    else:
+        typer.echo("Configure mode: Basic settings (use --full for advanced/full settings)")
     try:
-        updated_config = prompt_for_config(resolved.config)
+        updated_config = prompt_for_config_with_mode(resolved.config, full=full)
         selected_scope = prompt_for_save_scope(
             workspace_path=Path(workspace.workspace_config_path),
             global_path=global_paths.write_path,

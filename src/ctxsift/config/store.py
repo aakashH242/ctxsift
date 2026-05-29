@@ -127,6 +127,7 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
         ("embedding", "attn_implementation"),
         TypeAdapter(str),
     ),
+    "embedding.batch_size": ConfigKeySpec(("embedding", "batch_size"), TypeAdapter(int)),
     "embedding.query_prompt_name": ConfigKeySpec(
         ("embedding", "query_prompt_name"),
         TypeAdapter(str),
@@ -147,6 +148,10 @@ CONFIG_KEY_SPECS: dict[str, ConfigKeySpec] = {
     ),
     "recall.vector_candidate_limit": ConfigKeySpec(
         ("recall", "vector_candidate_limit"),
+        TypeAdapter(int),
+    ),
+    "recall.anchor_term_limit": ConfigKeySpec(
+        ("recall", "anchor_term_limit"),
         TypeAdapter(int),
     ),
     "recall.max_vector_distance": ConfigKeySpec(
@@ -212,6 +217,7 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_EMBEDDING_DEVICE": ("embedding", "device"),
     "CTXSIFT_EMBEDDING_DTYPE": ("embedding", "dtype"),
     "CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION": ("embedding", "attn_implementation"),
+    "CTXSIFT_EMBEDDING_BATCH_SIZE": ("embedding", "batch_size"),
     "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": ("embedding", "query_prompt_name"),
     "CTXSIFT_EMBEDDING_QUERY_PROMPT": ("embedding", "query_prompt"),
     "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": ("embedding", "document_prompt_name"),
@@ -219,6 +225,7 @@ ENVIRONMENT_KEY_MAP: dict[str, tuple[str, ...]] = {
     "CTXSIFT_RECALL_DEFAULT_LIMIT": ("recall", "default_limit"),
     "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": ("recall", "lexical_candidate_limit"),
     "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": ("recall", "vector_candidate_limit"),
+    "CTXSIFT_RECALL_ANCHOR_TERM_LIMIT": ("recall", "anchor_term_limit"),
     "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": ("recall", "max_vector_distance"),
     "CTXSIFT_RECALL_MIN_SCORE": ("recall", "min_score"),
     "CTXSIFT_RECALL_WEAK_FALLBACK_MIN_SCORE": ("recall", "weak_fallback_min_score"),
@@ -255,6 +262,7 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_EMBEDDING_DEVICE": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DTYPE": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION": TypeAdapter(str),
+    "CTXSIFT_EMBEDDING_BATCH_SIZE": TypeAdapter(int),
     "CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_QUERY_PROMPT": TypeAdapter(str),
     "CTXSIFT_EMBEDDING_DOCUMENT_PROMPT_NAME": TypeAdapter(str),
@@ -262,6 +270,7 @@ ENVIRONMENT_ADAPTERS: dict[str, TypeAdapter[Any]] = {
     "CTXSIFT_RECALL_DEFAULT_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": TypeAdapter(int),
+    "CTXSIFT_RECALL_ANCHOR_TERM_LIMIT": TypeAdapter(int),
     "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": TypeAdapter(float),
     "CTXSIFT_RECALL_MIN_SCORE": TypeAdapter(int),
     "CTXSIFT_RECALL_WEAK_FALLBACK_MIN_SCORE": TypeAdapter(int),

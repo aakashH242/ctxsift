@@ -12,8 +12,18 @@ this once.
 ctxsift configure
 ```
 
+For the full advanced prompt set:
+
+```bash frame="none"
+ctxsift configure --full
+```
+
 This walks you through choosing local or remote compression, picking a model, writing a config file for your machine or workspace and installing the skill.
 This will also pre-download the required models so that you can start using it right away.
+
+By default, `ctxsift configure` now uses a lightweight first-run flow. It asks only core choices (compression mode, max output tokens, model essentials, embedding model, save target), while keeping all other settings at defaults.
+
+Use `ctxsift configure --full` when you want to tune advanced settings (timeouts, retries, recovery, embedding internals, recall thresholds, and other performance knobs) during setup.
 
 After running it, verify everything is working:
 
@@ -252,11 +262,14 @@ Recall uses a local Sentence Transformers-compatible embedding model. This runs 
 | `embedding.device` | `auto` | `CTXSIFT_EMBEDDING_DEVICE` |
 | `embedding.dtype` | `auto` | `CTXSIFT_EMBEDDING_DTYPE` |
 | `embedding.attn_implementation` | `auto` | `CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION` |
+| `embedding.batch_size` | `8` | `CTXSIFT_EMBEDDING_BATCH_SIZE` |
 | `embedding.max_length` | `32768` | `CTXSIFT_EMBEDDING_MAX_LENGTH` |
 
 **`embedding.backend`** — `auto` prefers ONNX Runtime for the default Harrier model on CPU when available, otherwise falls back to Torch.
 
 **`embedding.model`** — Must be a Sentence Transformers-compatible model. Switching models changes the embedding dimension, which can require reinitializing the vector store for a workspace.
+
+**`embedding.batch_size`** — Controls the micro-batch size used inside each embedding encode call. Raise it when you want more throughput and have headroom; lower it if you hit memory pressure.
 
 Advanced embedding prompt overrides (leave empty unless you know what they do):
 
@@ -277,6 +290,7 @@ These control how many candidates are fetched and scored during a recall search.
 | `recall.default_limit` | `10` | `CTXSIFT_RECALL_DEFAULT_LIMIT` | Max results shown when `--limit` is not passed |
 | `recall.lexical_candidate_limit` | `50` | `CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT` | BM25 candidates before hybrid fusion |
 | `recall.vector_candidate_limit` | `50` | `CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT` | Vector candidates before hybrid fusion |
+| `recall.anchor_term_limit` | `3` | `CTXSIFT_RECALL_ANCHOR_TERM_LIMIT` | High-signal anchors appended only to long vector recall queries; `0` disables it |
 | `recall.max_vector_distance` | `0.75` | `CTXSIFT_RECALL_MAX_VECTOR_DISTANCE` | Smaller = stricter semantic filtering |
 
 Higher candidate limits improve recall quality but cost more SQLite and vector search work. The defaults are tuned for typical session sizes.
@@ -348,12 +362,14 @@ CTXSIFT_EMBEDDING_BACKEND=auto
 CTXSIFT_EMBEDDING_DEVICE=auto
 CTXSIFT_EMBEDDING_DTYPE=auto
 CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION=auto
+CTXSIFT_EMBEDDING_BATCH_SIZE=8
 CTXSIFT_EMBEDDING_MAX_LENGTH=32768
 
 # Recall
 CTXSIFT_RECALL_DEFAULT_LIMIT=10
 CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT=50
 CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT=50
+CTXSIFT_RECALL_ANCHOR_TERM_LIMIT=3
 CTXSIFT_RECALL_MAX_VECTOR_DISTANCE=0.75
 
 # Daemon

@@ -196,7 +196,7 @@ class SentenceTransformersBackend(EmbeddingBackend):
 
     def _common_encode_kwargs(self) -> dict[str, Any]:
         return {
-            "batch_size": 1,
+            "batch_size": self.config.batch_size,
             "convert_to_numpy": True,
             "device": self._resolved_device(),
             "normalize_embeddings": True,
