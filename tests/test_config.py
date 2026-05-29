@@ -27,11 +27,13 @@ def test_app_config_defaults_are_stable() -> None:
     assert config.embedding.backend == "auto"
     assert config.embedding.device == "auto"
     assert config.embedding.attn_implementation == "auto"
+    assert config.embedding.batch_size == 8
     assert config.embedding.query_prompt_name == ""
     assert config.embedding.query_prompt == ""
     assert config.recall.default_limit == 10
     assert config.recall.lexical_candidate_limit == 50
     assert config.recall.vector_candidate_limit == 50
+    assert config.recall.anchor_term_limit == 3
     assert config.recall.max_vector_distance == 0.75
     assert config.recall.min_score == 120
     assert config.recall.weak_fallback_min_score == 90
@@ -140,9 +142,11 @@ def test_environment_layer_maps_supported_env_vars() -> None:
             "CTXSIFT_EMBEDDING_QUERY_PROMPT": "Instruct: custom\nQuery: ",
             "CTXSIFT_EMBEDDING_BACKEND": "onnx",
             "CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION": "sdpa",
+            "CTXSIFT_EMBEDDING_BATCH_SIZE": "24",
             "CTXSIFT_RECALL_DEFAULT_LIMIT": "12",
             "CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT": "44",
             "CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT": "33",
+            "CTXSIFT_RECALL_ANCHOR_TERM_LIMIT": "4",
             "CTXSIFT_RECALL_MAX_VECTOR_DISTANCE": "0.61",
             "CTXSIFT_RECALL_MIN_SCORE": "140",
             "CTXSIFT_RECALL_WEAK_FALLBACK_MIN_SCORE": "95",
@@ -168,11 +172,13 @@ def test_environment_layer_maps_supported_env_vars() -> None:
     assert layer["embedding"]["model"] == "mini"
     assert layer["embedding"]["backend"] == "onnx"
     assert layer["embedding"]["attn_implementation"] == "sdpa"
+    assert layer["embedding"]["batch_size"] == 24
     assert layer["embedding"]["query_prompt_name"] == "web_search_query"
     assert layer["embedding"]["query_prompt"] == "Instruct: custom\nQuery: "
     assert layer["recall"]["default_limit"] == 12
     assert layer["recall"]["lexical_candidate_limit"] == 44
     assert layer["recall"]["vector_candidate_limit"] == 33
+    assert layer["recall"]["anchor_term_limit"] == 4
     assert layer["recall"]["max_vector_distance"] == 0.61
     assert layer["recall"]["min_score"] == 140
     assert layer["recall"]["weak_fallback_min_score"] == 95

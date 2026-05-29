@@ -309,6 +309,74 @@ def test_recall_records_include_vector_only_candidates(
     assert "vector" in results[0].matched_fields
 
 
+def test_recall_records_compact_only_vector_queries_for_verbose_requests(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ctxsift.recall.orchestrator as recall_module
+
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    captured: dict[str, str] = {}
+    query = (
+        "Please help me figure out why the login flow started failing after the refactor "
+        "and make the recall query more precise for later debugging. The traceback ends "
+        "with AuthError from src/auth.py while pytest tests/test_auth.py::test_login "
+        "reproduces it reliably."
+    )
+
+    async def fake_search_records(db_path: Path, query: str, file_filters=None, limit: int = 50):
+        captured["lexical_query"] = query
+        return []
+
+    async def fake_vector_hits(*args, **kwargs):
+        captured["vector_query"] = args[1]
+        return []
+
+    monkeypatch.setattr(recall_module, "search_records", fake_search_records)
+    monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
+
+    results = asyncio.run(recall_records(query, repo_path))
+
+    assert results == []
+    assert captured["lexical_query"] == query
+    assert captured["vector_query"] != query
+    assert "AuthError" in captured["vector_query"]
+    assert "src/auth.py" in captured["vector_query"]
+    assert "tests/test_auth.py::test_login" in captured["vector_query"]
+
+
+def test_recall_records_keep_short_queries_for_vector_search(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    import ctxsift.recall.orchestrator as recall_module
+
+    repo_path = tmp_path / "repo"
+    git_dir = repo_path / ".git"
+    git_dir.mkdir(parents=True)
+    captured: dict[str, str] = {}
+    query = "AuthError src/auth.py pytest"
+
+    async def fake_search_records(db_path: Path, query: str, file_filters=None, limit: int = 50):
+        captured["lexical_query"] = query
+        return []
+
+    async def fake_vector_hits(*args, **kwargs):
+        captured["vector_query"] = args[1]
+        return []
+
+    monkeypatch.setattr(recall_module, "search_records", fake_search_records)
+    monkeypatch.setattr(recall_module, "_vector_hits", fake_vector_hits)
+
+    results = asyncio.run(recall_records(query, repo_path))
+
+    assert results == []
+    assert captured["lexical_query"] == query
+    assert captured["vector_query"] == query
+
+
 def test_build_hybrid_records_ignores_missing_vector_backed_record_ids(tmp_path: Path) -> None:
     request = HybridRecallRequest(
         lexical_records=[],

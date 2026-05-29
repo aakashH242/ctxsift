@@ -10,6 +10,7 @@ from ctxsift.embeddings import create_embedding_backend
 from ctxsift.embeddings.base import EmbeddingBackendUnavailableError, QueryEmbeddingRequest
 from ctxsift.recall.freshness import assess_record_freshness
 from ctxsift.recall.hybrid import HybridRecallRequest, build_hybrid_records
+from ctxsift.recall.query_prep import prepare_vector_recall_query
 from ctxsift.recall.temporal import render_capture_time
 from ctxsift.storage.retention import schedule_retention_cleanup
 from ctxsift.shared.db_path import resolved_db_path
@@ -47,6 +48,12 @@ async def recall_records(
     resolved_limit = limit or recall_config.default_limit
     normalized_query = query.casefold().strip()
     search_terms_list = _search_terms(query)
+    vector_query = prepare_vector_recall_query(
+        query,
+        cwd=Path(workspace.cwd),
+        workspace_root=Path(workspace.workspace_root),
+        anchor_term_limit=recall_config.anchor_term_limit,
+    )
     lexical_records = await search_records(
         db_path,
         query,
@@ -55,7 +62,7 @@ async def recall_records(
     )
     vector_hits = await _vector_hits(
         db_path,
-        query,
+        vector_query,
         resolved_config.config.embedding,
         resolved_config.config.daemon,
         resolved_config.config.timeout_ms,

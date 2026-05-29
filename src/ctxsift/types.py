@@ -250,6 +250,7 @@ class EmbeddingConfig(StrictModel):
     query_prompt_name: str = ""
     query_prompt: str = ""
     document_prompt_name: str = ""
+    batch_size: int = Field(default=8, ge=1)
     max_length: int = 32768
 
 
@@ -276,6 +277,7 @@ class RecallConfig(StrictModel):
     default_limit: int = Field(default=10, ge=1)
     lexical_candidate_limit: int = Field(default=50, ge=1)
     vector_candidate_limit: int = Field(default=50, ge=1)
+    anchor_term_limit: int = Field(default=3, ge=0)
     max_vector_distance: float = Field(default=0.75, ge=0.0)
     min_score: int = Field(default=120, ge=0)
     weak_fallback_min_score: int = Field(default=90, ge=0)

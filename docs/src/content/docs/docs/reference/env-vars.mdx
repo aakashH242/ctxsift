@@ -50,6 +50,7 @@ Environment variables override both global and workspace `config.toml` settings 
 | `CTXSIFT_EMBEDDING_DEVICE` | `embedding.device` | Embedding hardware device: `auto`, `cpu`, `cuda`. |
 | `CTXSIFT_EMBEDDING_DTYPE` | `embedding.dtype` | Embedding model precision. |
 | `CTXSIFT_EMBEDDING_ATTN_IMPLEMENTATION` | `embedding.attn_implementation` | Attention mechanism backend. |
+| `CTXSIFT_EMBEDDING_BATCH_SIZE` | `embedding.batch_size` | Sentence Transformers micro-batch size per encode call. |
 | `CTXSIFT_EMBEDDING_MAX_LENGTH` | `embedding.max_length` | Maximum sequence context limit. |
 | `CTXSIFT_EMBEDDING_QUERY_PROMPT_NAME`| `embedding.query_prompt_name`| Preset query prompt template. |
 | `CTXSIFT_EMBEDDING_QUERY_PROMPT` | `embedding.query_prompt` | Custom query prompt prefix string. |
@@ -62,6 +63,7 @@ Environment variables override both global and workspace `config.toml` settings 
 | `CTXSIFT_RECALL_DEFAULT_LIMIT` | `recall.default_limit` | Default number of recall results returned. |
 | `CTXSIFT_RECALL_LEXICAL_CANDIDATE_LIMIT`| `recall.lexical_candidate_limit`| Max lexical candidate matches queried. |
 | `CTXSIFT_RECALL_VECTOR_CANDIDATE_LIMIT` | `recall.vector_candidate_limit` | Max semantic vector candidate matches queried. |
+| `CTXSIFT_RECALL_ANCHOR_TERM_LIMIT` | `recall.anchor_term_limit` | Number of anchors appended to long vector recall queries; `0` disables compaction. |
 | `CTXSIFT_RECALL_MAX_VECTOR_DISTANCE` | `recall.max_vector_distance` | Cosine distance similarity filter limit. |
 
 ### Daemons

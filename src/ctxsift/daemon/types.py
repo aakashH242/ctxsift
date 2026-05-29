@@ -48,6 +48,7 @@ class EmbeddingRuntimeSignature(StrictModel):
     device: str
     dtype: str
     attn_implementation: str
+    batch_size: int
     query_prompt_name: str
     query_prompt: str
     document_prompt_name: str

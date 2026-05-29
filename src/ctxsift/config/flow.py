@@ -36,6 +36,11 @@ console = Console()
 
 def prompt_for_config(current: AppConfig) -> AppConfig:
     """Collect one full config interactively using current values as defaults."""
+    return prompt_for_config_with_mode(current, full=False)
+
+
+def prompt_for_config_with_mode(current: AppConfig, *, full: bool) -> AppConfig:
+    """Collect config interactively using a lite or full prompt set."""
     _render_configure_header()
     _render_section("Compression")
     compression_mode = _prompt_choice(
@@ -48,129 +53,47 @@ def prompt_for_config(current: AppConfig) -> AppConfig:
         default=current.max_output_tokens,
         type=int,
     )
-    timeout_ms = typer.prompt(
-        "Timeout (ms)",
-        default=current.timeout_ms,
-        type=int,
-    )
-    retries = typer.prompt(
-        "Retries",
-        default=current.retries,
-        type=int,
-    )
-    _render_note(
-        "Unsure? Keep recovery enabled and run a benchmark with your desired model to find whether it helps or not.",
-        title="Response recovery",
-    )
-    recovery_enabled = typer.confirm(
-        "Keep deterministic response recovery enabled?",
-        default=current.recovery_enabled,
-    )
-    local = _local_config_for_mode(current, compression_mode)
-    remote = _remote_config_for_mode(current, compression_mode)
-    _render_section("Embeddings")
-    embedding_model = typer.prompt(
-        "Embedding model",
-        default=current.embedding.model,
-    )
-    embedding_device = typer.prompt(
-        "Embedding device",
-        default=current.embedding.device,
-    )
-    embedding_dtype = typer.prompt(
-        "Embedding dtype",
-        default=current.embedding.dtype,
-    )
-    query_prompt_name = typer.prompt(
-        "Embedding query prompt name",
-        default=current.embedding.query_prompt_name,
-        show_default=bool(current.embedding.query_prompt_name),
-    )
-    query_prompt = typer.prompt(
-        "Embedding query prompt",
-        default=current.embedding.query_prompt,
-        show_default=bool(current.embedding.query_prompt),
-    )
-    document_prompt_name = typer.prompt(
-        "Embedding document prompt name",
-        default=current.embedding.document_prompt_name,
-        show_default=bool(current.embedding.document_prompt_name),
-    )
-    embedding_max_length = typer.prompt(
-        "Embedding max length",
-        default=current.embedding.max_length,
-        type=int,
-    )
-    _render_section("Recall")
-    recall_default_limit = typer.prompt(
-        "Recall default limit",
-        default=current.recall.default_limit,
-        type=int,
-    )
-    lexical_candidate_limit = typer.prompt(
-        "Recall lexical candidate limit",
-        default=current.recall.lexical_candidate_limit,
-        type=int,
-    )
-    vector_candidate_limit = typer.prompt(
-        "Recall vector candidate limit",
-        default=current.recall.vector_candidate_limit,
-        type=int,
-    )
-    max_vector_distance = typer.prompt(
-        "Recall max vector distance",
-        default=current.recall.max_vector_distance,
-        type=float,
-    )
-    recall_min_score = typer.prompt(
-        "Recall minimum score",
-        default=current.recall.min_score,
-        type=int,
-    )
-    weak_fallback_min_score = typer.prompt(
-        "Recall weak fallback minimum score",
-        default=current.recall.weak_fallback_min_score,
-        type=int,
-    )
-    weak_fallback_limit = typer.prompt(
-        "Recall weak fallback limit",
-        default=current.recall.weak_fallback_limit,
-        type=int,
-    )
-    return AppConfig.model_validate(
-        {
-            "timeout_ms": timeout_ms,
-            "retries": retries,
-            "max_output_tokens": max_output_tokens,
-            "recovery_enabled": recovery_enabled,
-            "db_path": None,
-            "remote": remote.model_dump(mode="json"),
-            "local": local.model_dump(mode="json"),
-            "embedding": {
-                "model": embedding_model,
-                "backend": current.embedding.backend,
-                "device": embedding_device,
-                "dtype": embedding_dtype,
-                "attn_implementation": current.embedding.attn_implementation,
-                "query_prompt_name": query_prompt_name,
-                "query_prompt": query_prompt,
-                "document_prompt_name": document_prompt_name,
-                "max_length": embedding_max_length,
-            },
-            "recall": {
-                "default_limit": recall_default_limit,
-                "lexical_candidate_limit": lexical_candidate_limit,
-                "vector_candidate_limit": vector_candidate_limit,
-                "max_vector_distance": max_vector_distance,
-                "min_score": recall_min_score,
-                "weak_fallback_min_score": weak_fallback_min_score,
-                "weak_fallback_limit": weak_fallback_limit,
-            },
-        }
-    )
+    timeout_ms = current.timeout_ms
+    retries = current.retries
+    recovery_enabled = current.recovery_enabled
+    if full:
+        timeout_ms = typer.prompt(
+            "Timeout (ms)",
+            default=current.timeout_ms,
+            type=int,
+        )
+        retries = typer.prompt(
+            "Retries",
+            default=current.retries,
+            type=int,
+        )
+        _render_note(
+            "Unsure? Keep recovery enabled and run a benchmark with your desired model to find whether it helps or not.",
+            title="Response recovery",
+        )
+        recovery_enabled = typer.confirm(
+            "Keep deterministic response recovery enabled?",
+            default=current.recovery_enabled,
+        )
+    local = _local_config_for_mode(current, compression_mode, full=full)
+    remote = _remote_config_for_mode(current, compression_mode, full=full)
+    embedding = _prompt_embedding_config(current, full=full)
+    recall = _prompt_recall_config(current, full=full)
+
+    config_payload = current.model_dump(mode="json")
+    config_payload["timeout_ms"] = timeout_ms
+    config_payload["retries"] = retries
+    config_payload["max_output_tokens"] = max_output_tokens
+    config_payload["recovery_enabled"] = recovery_enabled
+    config_payload["db_path"] = None
+    config_payload["remote"] = remote.model_dump(mode="json")
+    config_payload["local"] = local.model_dump(mode="json")
+    config_payload["embedding"] = embedding
+    config_payload["recall"] = recall
+    return AppConfig.model_validate(config_payload)
 
 
-def _local_config_for_mode(current: AppConfig, compression_mode: str):
+def _local_config_for_mode(current: AppConfig, compression_mode: str, *, full: bool):
     if compression_mode == "remote":
         return current.local
     _render_section("Local Compression")
@@ -204,33 +127,41 @@ def _local_config_for_mode(current: AppConfig, compression_mode: str):
         )
     else:
         local_gguf_filename = None
-    _render_model_cache_note(current.local.model_cache_path)
-    local_model_cache_path = typer.prompt(
-        "Local model cache path override",
-        default=current.local.model_cache_path or "",
-        show_default=bool(current.local.model_cache_path),
-    )
-    local_dtype = typer.prompt(
-        "Local dtype",
-        default=current.local.dtype,
-    )
+    local_model_cache_path = current.local.model_cache_path
+    local_dtype = current.local.dtype
+    if full:
+        _render_model_cache_note(current.local.model_cache_path)
+        local_model_cache_path = typer.prompt(
+            "Local model cache path override",
+            default=current.local.model_cache_path or "",
+            show_default=bool(current.local.model_cache_path),
+        )
+        local_dtype = typer.prompt(
+            "Local dtype",
+            default=current.local.dtype,
+        )
     return current.local.model_validate(
         {
             **current.local.model_dump(mode="json"),
             "model": local_model,
             "gguf_filename": local_gguf_filename,
             "device": local_device,
-            "model_cache_path": local_model_cache_path or None,
+            "model_cache_path": (local_model_cache_path or None),
             "dtype": local_dtype,
         }
     )
 
 
-def _remote_config_for_mode(current: AppConfig, compression_mode: str) -> RemoteModelConfig:
+def _remote_config_for_mode(
+    current: AppConfig,
+    compression_mode: str,
+    *,
+    full: bool,
+) -> RemoteModelConfig:
     if compression_mode == "local":
         return RemoteModelConfig()
     _render_section("Remote Compression")
-    return _prompt_remote_config(current.remote, remote_enabled=True)
+    return _prompt_remote_config(current.remote, remote_enabled=True, full=full)
 
 
 def prompt_for_save_scope(workspace_path: Path, global_path: Path) -> ConfigScope:
@@ -258,7 +189,12 @@ def prompt_for_save_scope(workspace_path: Path, global_path: Path) -> ConfigScop
         typer.echo("Invalid value. Choose `workspace` or `global`.", err=True)
 
 
-def _prompt_remote_config(current: RemoteModelConfig, remote_enabled: bool) -> RemoteModelConfig:
+def _prompt_remote_config(
+    current: RemoteModelConfig,
+    remote_enabled: bool,
+    *,
+    full: bool,
+) -> RemoteModelConfig:
     if not remote_enabled:
         return RemoteModelConfig()
     base_url = typer.prompt(
@@ -275,16 +211,19 @@ def _prompt_remote_config(current: RemoteModelConfig, remote_enabled: bool) -> R
         hide_input=True,
         show_default=False,
     )
-    api_version = typer.prompt(
-        "Remote API version",
-        default=current.api_version,
-        show_default=bool(current.api_version),
-    )
-    reasoning_mode = _prompt_enum(
-        "Remote reasoning mode",
-        current.reasoning_mode,
-        TypeAdapter(ReasoningMode),
-    )
+    api_version = current.api_version
+    reasoning_mode = current.reasoning_mode.value
+    if full:
+        api_version = typer.prompt(
+            "Remote API version",
+            default=current.api_version,
+            show_default=bool(current.api_version),
+        )
+        reasoning_mode = _prompt_enum(
+            "Remote reasoning mode",
+            current.reasoning_mode,
+            TypeAdapter(ReasoningMode),
+        )
     return RemoteModelConfig.model_validate(
         {
             "base_url": base_url,
@@ -294,6 +233,100 @@ def _prompt_remote_config(current: RemoteModelConfig, remote_enabled: bool) -> R
             "reasoning_mode": reasoning_mode,
         }
     )
+
+
+def _prompt_embedding_config(current: AppConfig, *, full: bool) -> dict[str, object]:
+    _render_section("Embeddings")
+    embedding_model = typer.prompt(
+        "Embedding model",
+        default=current.embedding.model,
+    )
+    embedding_payload = current.embedding.model_dump(mode="json")
+    embedding_payload["model"] = embedding_model
+    if not full:
+        return embedding_payload
+    embedding_payload["device"] = typer.prompt(
+        "Embedding device",
+        default=current.embedding.device,
+    )
+    embedding_payload["dtype"] = typer.prompt(
+        "Embedding dtype",
+        default=current.embedding.dtype,
+    )
+    embedding_payload["batch_size"] = typer.prompt(
+        "Embedding batch size",
+        default=current.embedding.batch_size,
+        type=int,
+    )
+    embedding_payload["query_prompt_name"] = typer.prompt(
+        "Embedding query prompt name",
+        default=current.embedding.query_prompt_name,
+        show_default=bool(current.embedding.query_prompt_name),
+    )
+    embedding_payload["query_prompt"] = typer.prompt(
+        "Embedding query prompt",
+        default=current.embedding.query_prompt,
+        show_default=bool(current.embedding.query_prompt),
+    )
+    embedding_payload["document_prompt_name"] = typer.prompt(
+        "Embedding document prompt name",
+        default=current.embedding.document_prompt_name,
+        show_default=bool(current.embedding.document_prompt_name),
+    )
+    embedding_payload["max_length"] = typer.prompt(
+        "Embedding max length",
+        default=current.embedding.max_length,
+        type=int,
+    )
+    return embedding_payload
+
+
+def _prompt_recall_config(current: AppConfig, *, full: bool) -> dict[str, object]:
+    if not full:
+        return current.recall.model_dump(mode="json")
+    _render_section("Recall")
+    recall_payload = current.recall.model_dump(mode="json")
+    recall_payload["default_limit"] = typer.prompt(
+        "Recall default limit",
+        default=current.recall.default_limit,
+        type=int,
+    )
+    recall_payload["lexical_candidate_limit"] = typer.prompt(
+        "Recall lexical candidate limit",
+        default=current.recall.lexical_candidate_limit,
+        type=int,
+    )
+    recall_payload["vector_candidate_limit"] = typer.prompt(
+        "Recall vector candidate limit",
+        default=current.recall.vector_candidate_limit,
+        type=int,
+    )
+    recall_payload["anchor_term_limit"] = typer.prompt(
+        "Recall anchor term limit",
+        default=current.recall.anchor_term_limit,
+        type=int,
+    )
+    recall_payload["max_vector_distance"] = typer.prompt(
+        "Recall max vector distance",
+        default=current.recall.max_vector_distance,
+        type=float,
+    )
+    recall_payload["min_score"] = typer.prompt(
+        "Recall minimum score",
+        default=current.recall.min_score,
+        type=int,
+    )
+    recall_payload["weak_fallback_min_score"] = typer.prompt(
+        "Recall weak fallback minimum score",
+        default=current.recall.weak_fallback_min_score,
+        type=int,
+    )
+    recall_payload["weak_fallback_limit"] = typer.prompt(
+        "Recall weak fallback limit",
+        default=current.recall.weak_fallback_limit,
+        type=int,
+    )
+    return recall_payload
 
 
 def _prompt_enum(prompt: str, current, adapter: TypeAdapter) -> str:
